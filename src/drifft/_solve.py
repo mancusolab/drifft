@@ -4,13 +4,9 @@
 import math
 from typing import Literal, NamedTuple
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import lineax as lx
-
-from ._operator import expected_segregating_values
-from ._plan import TransitionPlan
 
 
 class ExpectedVisitsResult(NamedTuple):
@@ -43,37 +39,9 @@ class ExpectedVisitsResult(NamedTuple):
     converged: jax.Array
 
 
-def build_segregating_operator(
-    plan: TransitionPlan, selection_strength: jax.Array | float
-) -> lx.FunctionLinearOperator:
-    r"""Represent the transient transition as a Lineax function operator.
-
-    **Arguments:**
-
-    - `plan`: Selection-independent float64 geometry.
-    - `selection_strength`: Scalar selection coefficient in `[0, 1]`.
-
-    **Returns:**
-
-    An untagged `FunctionLinearOperator` on vectors of length `M-1`. Its `.T`
-    automatically transposes the implemented approximation, including routing.
-
-    **Failure Modes:**
-
-    Selection range and finite input values are caller preconditions. No
-    symmetry or positive-definiteness assumptions are attached to the operator.
-    """
-    spec = jax.ShapeDtypeStruct((plan.gene_copies - 1,), jnp.float64)
-    return lx.FunctionLinearOperator(
-        lambda values: expected_segregating_values(plan, selection_strength, values),
-        spec,
-    )
-
-
-@eqx.filter_jit
-def expected_visits(
-    plan: TransitionPlan,
-    selection_strength: jax.Array | float,
+def _expected_visits(
+    operator: lx.FunctionLinearOperator,
+    gene_copies: int,
     *,
     solver: Literal["gmres", "bicgstab"] = "gmres",
     rtol: float = 1e-9,
@@ -85,8 +53,8 @@ def expected_visits(
 
     **Arguments:**
 
-    - `plan`: Selection-independent FFT plan, constructed with x64 enabled.
-    - `selection_strength`: Selection in `[0, 1]`; pass a JAX scalar to reuse compilation.
+    - `operator`: Square segregating-state expectation operator.
+    - `gene_copies`: Population size in haploid copies, fixed during the solve.
     - `solver`: `"gmres"` or `"bicgstab"`; no symmetric-matrix solver is valid.
     - `rtol`, `atol`: Finite nonnegative solver tolerances, at least one positive.
       These are separate from the plan's approximation tolerance.
@@ -128,16 +96,16 @@ def expected_visits(
             rtol=rtol,
             atol=atol,
             max_steps=max_steps,
-            restart=min(restart, plan.gene_copies - 1),
+            restart=min(restart, gene_copies - 1),
         )
     elif solver == "bicgstab":
         algorithm = lx.BiCGStab(rtol=rtol, atol=atol, max_steps=max_steps)
     else:
         raise ValueError("solver must be 'gmres' or 'bicgstab'")
-    transpose = build_segregating_operator(plan, selection_strength).T
-    spec = jax.ShapeDtypeStruct((plan.gene_copies - 1,), jnp.float64)
+    transpose = operator.T
+    spec = jax.ShapeDtypeStruct((gene_copies - 1,), jnp.float64)
     system = lx.FunctionLinearOperator(lambda v: v - transpose.mv(v), spec)
-    rhs = jnp.zeros(plan.gene_copies - 1, dtype=jnp.float64).at[0].set(1.0)
+    rhs = jnp.zeros(gene_copies - 1, dtype=jnp.float64).at[0].set(1.0)
     solution = lx.linear_solve(system, rhs, algorithm, throw=False)
     # Recompute the residual rather than trusting the solver's termination code.
     residual = jnp.max(jnp.abs(system.mv(solution.value) - rhs))

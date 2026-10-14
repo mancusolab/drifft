@@ -1,5 +1,8 @@
 # Validation and CPU measurements
 
+These measurements and verification counts predate the `Transition` API refactor.
+The benchmark script now uses the object API; rerun it for current timings.
+
 Measured 2026-10-13 on macOS 26.4.1 ARM64, JAX CPU device 0, float64.
 Versions: JAX/jaxlib 0.11.2, Lineax 0.1.1, NumPy 2.5.4, SciPy 1.18.1.
 No GPU was available. Raw measurements, configuration and versions are in

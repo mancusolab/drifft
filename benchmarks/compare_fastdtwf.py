@@ -19,6 +19,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 
@@ -113,7 +114,6 @@ def run(args: argparse.Namespace) -> None:
         jax.block_until_ready(plan)
         planning_seconds = time.perf_counter() - start
         plan_bytes = sum(leaf.nbytes for leaf in jax.tree.leaves(plan))
-        counts = jnp.arange(gene_copies + 1, dtype=jnp.float64)
         random_mass = jax.random.uniform(
             jax.random.fold_in(jax.random.key(args.seed), gene_copies),
             (gene_copies + 1,),
@@ -124,18 +124,13 @@ def run(args: argparse.Namespace) -> None:
             "uniform": jnp.ones(gene_copies + 1, dtype=jnp.float64) / (gene_copies + 1),
             "random": random_mass / random_mass.sum(),
         }
-        # Hold selection as a dynamic argument so compilation is reused across s.
-        advance = jax.jit(
-            lambda selection, mass, plan=plan: jax.linear_transpose(
-                lambda values: drifft.expected_next_values(plan, selection, values),
-                jnp.zeros_like(mass),
-            )(mass)[0]
-        )
+        advance = eqx.filter_jit(drifft.Transition.advance)
         for selection in args.selections:
             scalar = jnp.asarray(selection, dtype=jnp.float64)
-            probabilities = drifft.underdominance(counts / gene_copies, scalar)
+            transition = drifft.Transition(plan, drifft.Underdominance(scalar))
+            probabilities = transition.probabilities
             # Copies are outside both timed kernels. fastDTWF reuses these
-            # probabilities; drifft recomputes them inside expected_next_values,
+            # probabilities; drifft recomputes them inside Transition.advance,
             # a conservative timing asymmetry for drifft.
             host_probabilities = np.asarray(probabilities)
             torch_probabilities = torch.tensor(host_probabilities, dtype=torch.float64)
@@ -153,7 +148,7 @@ def run(args: argparse.Namespace) -> None:
             drifft_transitions = {}
             for name, mass in inputs.items():
                 value, timing = timed_call(
-                    partial(advance, scalar, mass),
+                    partial(advance, transition, mass),
                     args.repeats,
                     synchronize=True,
                 )
@@ -161,9 +156,7 @@ def run(args: argparse.Namespace) -> None:
             drifft_solve = None
             if gene_copies <= args.solve_max_m:
                 result, timing = timed_call(
-                    partial(
-                        drifft.expected_visits, plan, scalar, max_steps=args.max_steps
-                    ),
+                    partial(transition.expected_visits, max_steps=args.max_steps),
                     args.repeats,
                     synchronize=True,
                 )

@@ -1,6 +1,7 @@
 """Public keyword signatures and result containers."""
 
 # Functional Core: public API and JAX transformation contracts.
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -16,18 +17,15 @@ def test_transition_api_keywords_under_jit():
     assert isinstance(plan, drifft.TransitionPlan)
     assert plan.gene_copies == 512
     values = jnp.linspace(-1.0, 1.0, 513)
-    actual = jax.jit(drifft.expected_next_values)(
-        plan, selection_strength=jnp.asarray(0.1), values=values
-    )
+    model = drifft.Transition(plan, selection=drifft.Underdominance(strength=0.1))
+    actual = eqx.filter_jit(model.expect)(values=values)
     frequency = np.arange(513) / 512
     probabilities = (frequency - 0.1 * frequency * (1 - frequency)) / (
         1 - 0.2 * frequency * (1 - frequency)
     )
     transition = binom.pmf(np.arange(513)[None, :], 512, probabilities[:, None])
     np.testing.assert_allclose(actual, transition @ values, atol=1e-12)
-    segregating = jax.jit(drifft.expected_segregating_values)(
-        plan, selection_strength=jnp.asarray(0.1), values=values[1:-1]
-    )
+    segregating = eqx.filter_jit(model.expect_segregating)(values=values[1:-1])
     np.testing.assert_allclose(
         segregating, transition[1:-1, 1:-1] @ values[1:-1], atol=1e-12
     )
@@ -35,7 +33,9 @@ def test_transition_api_keywords_under_jit():
 
 def test_expected_visits_result_fields_survive_pytree_roundtrip():
     plan = drifft.build_transition_plan(gene_copies=16)
-    result = drifft.expected_visits(plan, selection_strength=jnp.asarray(0.1))
+    result = drifft.Transition(
+        plan, drifft.Underdominance(jnp.asarray(0.1))
+    ).expected_visits()
     assert isinstance(result, drifft.ExpectedVisitsResult)
     assert bool(result.converged)
     assert result.visits.shape == (15,)

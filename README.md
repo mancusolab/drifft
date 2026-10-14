@@ -2,7 +2,8 @@
 
 Matrix-free Wright–Fisher transition operators in JAX, with an exact local
 diagonal–Toeplitz–diagonal binomial factorization and Lineax occupation solves.
-The statistical model uses `M=2N` gene copies and symmetric underdominance
+The statistical model uses `M=2N` gene copies and accepts arbitrary JAX-compatible
+selection functions. The built-in `Underdominance` model uses
 `q_s(x) = (x-s*x*(1-x))/(1-2*s*x*(1-x))`, for `0 <= s <= 1`.
 
 ## Installation and use
@@ -14,52 +15,81 @@ uv run pytest -p no:capture
 ```
 
 ```python
+import equinox as eqx
 import jax
 import jax.numpy as jnp
-import drifft as wf
+import drifft
 
-jax.config.update("jax_enable_x64", True)  # required; no import-time config changes
-plan = wf.build_transition_plan(gene_copies=20000)
-expect_next = jax.jit(wf.expected_next_values)
-next_values = expect_next(plan, jnp.asarray(0.05), jnp.ones(20001))
+jax.config.update("jax_enable_x64", True)
+plan = drifft.build_transition_plan(gene_copies=20000)
+transition = drifft.Transition(
+    plan, selection=drifft.Underdominance(strength=0.05)
+)
 
-segregating_values = jax.jit(wf.expected_segregating_values)(plan, jnp.asarray(0.05), jnp.ones(19999))
-operator = wf.build_segregating_operator(plan, jnp.asarray(0.05))
-next_mass = jax.jit(lambda mass: operator.T.mv(mass))(jnp.ones(19999))
+# Compile stable functions that accept the transition as a PyTree argument.
+expect = eqx.filter_jit(drifft.Transition.expect)
+advance = eqx.filter_jit(drifft.Transition.advance)
+expected_values = expect(transition, jnp.ones(20001))
+next_distribution = advance(transition, jnp.zeros(20001).at[1].set(1.0))
 
-result = wf.expected_visits(plan, jnp.asarray(0.05))
+result = transition.expected_visits()  # already JIT-compiled
 if not bool(result.converged):
     raise RuntimeError(f"{result.status}: residual={result.residual_norm}")
-visits = result.visits  # index 0 is state i=1
+visits = result.visits  # index zero is one mutant copy; includes generation zero
 ```
 
-Build the plan once and reuse it for different JAX scalar values of `selection_strength`.
-Shapes/configuration are static PyTree metadata; array leaves remain dynamic.
-`expected_visits` is already JIT-compiled. Forward functions are undecorated
-so callers can choose a single JIT boundary around their surrounding computation.
-Neither repeated matvecs nor solves use host callbacks, SciPy, or host transfers.
+Build the plan once and reuse it across transitions. `Transition` binds the plan
+without rebuilding it. Selection parameters are dynamic array leaves, while
+shape/configuration metadata are static. For another selection strength, construct
+`Transition(plan, Underdominance(new_strength))` and pass it to the same compiled
+function. Scalar strengths are normalized to float64 automatically.
 
 | API | Contract |
 | --- | --- |
-| `build_transition_plan(gene_copies, **options)` | Host-side planning, independent of selection |
-| `expected_next_values(plan, selection_strength, values)` | Full operator, length `M+1`, absorbing endpoints |
-| `expected_segregating_values(plan, selection_strength, values)` | Transient operator, length `M-1`, zero boundary padding |
-| `build_segregating_operator(plan, selection_strength)` | `FunctionLinearOperator`; `.T` transposes the implemented map |
-| `expected_visits(plan, selection_strength, ...)` | Solve `(I-Q.T)g=e1`; return `visits`, status, stats, residual and convergence flag |
-| `apply_probabilities(plan, p, v)` | Evaluate at arbitrary 1-D success probabilities; extension point for another `q` |
-| `apply_p_banded(M, s, v, tail_tol=...)` | Independent JAX banded reference; make `M` and tolerance static under JIT |
+| `build_transition_plan(gene_copies, **options)` | Host-side preparation for the destination population |
+| `Transition(plan, selection=...)` | Bind a JAX-compatible frequency-to-probability callable |
+| `Transition.from_probabilities(plan, probabilities)` | Bind explicit probabilities, one per source row |
+| `transition.expect(values)` | Destination values to source expectations: `P @ values` |
+| `transition.advance(distribution)` | Source mass to destination mass: `P.T @ distribution` |
+| `transition.expect_segregating(values)` | Interior expectations with endpoint values zero |
+| `transition.advance_segregating(distribution)` | Interior mass propagation, discarding endpoint hits |
+| `transition.as_lineax(segregating=False)` | Expectation operator; `.T` advances mass |
+| `transition.expected_visits(**options)` | Square-transition visits from one copy, with convergence diagnostics |
 
-Inputs must be real vectors with the documented shapes; success probabilities
-must lie in `[0,1]`, and selection must be a scalar in `[0,1]`. These value ranges
-are caller preconditions. The production kernels do not insert runtime callbacks
-to validate them. Plans reject invalid configuration and require float64.
+`expect` and `advance` have different directions and are intentionally named
+explicitly. Neither changes the input, clips outputs, nor normalizes probability
+mass. Segregating operations remove endpoint contributions; they do not condition
+on survival. All repeated numerical operations are JAX-only with no host callbacks.
 
-The expectation functions map values assigned to next-generation states to their
-expectations at each current state; they do not advance a probability distribution.
-The transposed operator advances probability mass. Segregating expectations use
-zero values at absorption and are not conditioned on survival. `expected_visits`
-starts from one mutant copy and includes generation zero. The plan stores its
-population size as `plan.gene_copies`; the result stores counts as `result.visits`.
+Custom selection models use the same interface:
+
+```python
+# Any JAX-compatible callable that returns one probability per frequency works.
+custom = drifft.Transition(plan, selection=lambda frequency: frequency**2)
+# An Equinox callable can carry dynamic parameters for inference or sweeps.
+# Alternatively, supply already evaluated probabilities explicitly.
+offspring_probabilities = custom.probabilities
+explicit = drifft.Transition.from_probabilities(plan, offspring_probabilities)
+```
+
+Model probabilities are evaluated during application, keeping parameter updates
+and differentiation connected. With explicit probabilities, construct them inside
+the differentiated function if gradients through their construction are needed.
+Use Equinox fields for trainable parameters instead of closing over changing
+Python values in fresh lambdas.
+
+For population-size changes, the plan specifies destination size and
+`Transition(plan, selection=..., source_gene_copies=...)` specifies source size.
+`expect` maps destination-length values to source-length expectations; `advance`
+performs the reverse mapping for mass. Explicit probabilities may also describe
+sampled source rows. Segregating and expected-visits operations assume complete,
+ordered allele-count grids; expected visits additionally requires equal source
+and destination sizes. A full changing-size demographic workflow is not provided.
+
+Inputs must have the documented shapes. Frequencies and probabilities must be in
+`[0, 1]`, and `Underdominance.strength` must be scalar and in `[0, 1]`. Shape checks
+raise during construction or tracing; finite values and numerical ranges remain
+caller preconditions to avoid runtime callbacks. Plans require float64.
 
 ## Approximation and configuration
 
@@ -120,7 +150,10 @@ reports; these estimates do not imply a GPU speed advantage.
 The solver choices are `solver="gmres"` (default) and `"bicgstab"`. Defaults are
 `rtol=1e-9`, `atol=1e-11`, `max_steps=2000`, `restart=50` (GMRES only). There are
 no symmetry/positive-definiteness tags and no CG option. The right-hand side is
-one at transient array index zero. `Q` is substochastic and never renormalized.
+one at transient array index zero. `Q` is the interior restriction and is never
+renormalized. For custom selection, visits stop at the first endpoint hit even
+if the full transition would allow leaving endpoints. Finite visits require
+eventual endpoint hitting.
 
 `result.converged` requires a successful Lineax status, finite output, and a
 fresh infinity-norm residual no larger than `atol+rtol`. Always check it.
@@ -134,7 +167,7 @@ benchmarks also evaluate residuals against the exact dense transition matrix,
 occupation-vector error, and total absorption time. Large systems have sampled
 one-step accuracy checks; large near-neutral solves are not certified by them.
 There is currently no preconditioner or rigorous a posteriori exact-model error
-bound. Derivatives with respect to `s` are tested at an interior value against
+bound. Derivatives with respect to selection strength are tested at an interior value against
 finite differences, but no global smoothness guarantee is made at block seams,
 the boundary switch, or endpoints of arbitrary supplied probability maps.
 

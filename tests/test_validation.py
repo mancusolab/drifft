@@ -32,13 +32,13 @@ def test_shapes_and_solver_options():
         wf.build_transition_plan(16, balance="yes")  # ty: ignore[invalid-argument-type] -- deliberate invalid input
     plan = wf.build_transition_plan(16)
     with pytest.raises(ValueError):
-        wf.expected_next_values(plan, 0.0, jnp.ones(16))
+        wf.Transition(plan, wf.Underdominance(0.0)).expect(jnp.ones(16))
     with pytest.raises(ValueError):
-        wf.expected_segregating_values(plan, 0.0, jnp.ones(16))
+        wf.Transition(plan, wf.Underdominance(0.0)).expect_segregating(jnp.ones(16))
     with pytest.raises(ValueError):
-        wf.expected_visits(plan, 0.0, solver="cg")  # ty: ignore[invalid-argument-type] -- unsupported solver
+        wf.Transition(plan, wf.Underdominance(0.0)).expected_visits(solver="cg")  # ty: ignore[invalid-argument-type] -- unsupported solver
     with pytest.raises(ValueError):
-        wf.expected_visits(plan, 0.0, max_steps=0)
+        wf.Transition(plan, wf.Underdominance(0.0)).expected_visits(max_steps=0)
 
 
 @pytest.mark.parametrize(
@@ -54,7 +54,9 @@ def test_shapes_and_solver_options():
 def test_solver_rejects_invalid_static_options(options):
     plan = wf.build_transition_plan(16)
     with pytest.raises(ValueError, match="finite|integer"):
-        wf.expected_visits(plan, jnp.asarray(0.0), **options)
+        wf.Transition(plan, wf.Underdominance(jnp.asarray(0.0))).expected_visits(
+            **options
+        )
 
 
 def test_plan_constructor_rejects_inconsistent_metadata():

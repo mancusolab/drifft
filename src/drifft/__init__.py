@@ -1,25 +1,14 @@
-"""Matrix-free Wright–Fisher transition operators."""
+"""Matrix-free Wright–Fisher transitions with reusable Equinox models."""
 
 # Functional Core: public API exports.
-from ._operator import (
-    apply_p_banded,
-    apply_probabilities,
-    expected_next_values,
-    expected_segregating_values,
-    underdominance,
-)
+from ._operator import Transition, Underdominance
 from ._plan import TransitionPlan, build_transition_plan
-from ._solve import ExpectedVisitsResult, build_segregating_operator, expected_visits
+from ._solve import ExpectedVisitsResult
 
 __all__ = [
     "ExpectedVisitsResult",
+    "Transition",
     "TransitionPlan",
-    "build_segregating_operator",
+    "Underdominance",
     "build_transition_plan",
-    "expected_next_values",
-    "expected_segregating_values",
-    "expected_visits",
-    "apply_p_banded",
-    "apply_probabilities",
-    "underdominance",
 ]

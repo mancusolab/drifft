@@ -32,6 +32,7 @@ def worker(args: argparse.Namespace) -> None:
     selection = args.selections[0]
     metadata: dict[str, Any] = {}
     if args.worker == "drifft":
+        import equinox as eqx
         import jax
         import jax.numpy as jnp
 
@@ -42,18 +43,13 @@ def worker(args: argparse.Namespace) -> None:
         jax.config.update("jax_enable_x64", True)
         jax.config.update("jax_enable_compilation_cache", False)
         plan = drifft.build_transition_plan(gene_copies, tail_tol=args.tail_tol)
-        mass = jnp.full(gene_copies + 1, 1.0 / (gene_copies + 1), dtype=jnp.float64)
-        scalar = jnp.asarray(selection, dtype=jnp.float64)
-        jax.block_until_ready((plan, mass, scalar))
-        advance = jax.jit(
-            lambda s, mass: jax.linear_transpose(
-                lambda values: drifft.expected_next_values(plan, s, values),
-                jnp.zeros_like(mass),
-            )(mass)[0]
-        )
+        jax_mass = jnp.full(gene_copies + 1, 1.0 / (gene_copies + 1), dtype=jnp.float64)
+        transition = drifft.Transition(plan, selection=drifft.Underdominance(selection))
+        jax.block_until_ready((transition, jax_mass))
+        advance = eqx.filter_jit(drifft.Transition.advance)
 
         def call():
-            return advance(scalar, mass).block_until_ready()
+            return advance(transition, jax_mass).block_until_ready()
 
         packages = ("drifft", "jax", "jaxlib", "equinox", "lineax", "numpy", "scipy")
     else:

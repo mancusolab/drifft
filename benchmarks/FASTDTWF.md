@@ -1,5 +1,10 @@
 # fastDTWF comparison
 
+Recorded measurements below were collected before the Transition-object API
+refactor and retained through commit `9e3e694`. Raw JSON is retained as historical
+evidence; the updated scripts use `Transition.advance`
+and may produce different timings. Run them again for current performance claims.
+
 The optional comparison uses upstream [fastDTWF 0.0.6](https://github.com/jeffspence/fastDTWF/tree/bd36496a64fda137cda5a2d6a97dd9343c97eb46),
 pinned to revision `bd36496a64fda137cda5a2d6a97dd9343c97eb46`. Install and run with uv:
 
@@ -39,7 +44,7 @@ kernel timings and their setup times are reported separately. drifft's plan is
 reused across selections; fastDTWF's groups depend on selection and `tv_sd`.
 Input generation and conversion between JAX and PyTorch are outside kernel
 measurements. fastDTWF reuses a precomputed probability vector, while drifft
-recomputes the selection probabilities inside `expected_next_values` on each
+recomputes the selection probabilities inside transition evaluation on each
 timed transition call. This asymmetry is conservative for drifft's timings.
 Repeated timings use the same input, not successive generations.
 

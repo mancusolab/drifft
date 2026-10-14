@@ -21,6 +21,7 @@ import numpy as np
 from scipy.stats import binom
 
 import drifft as wf
+from drifft._operator import _expect_banded
 
 LOGGER = logging.getLogger(__name__)
 
@@ -97,21 +98,25 @@ def run(args: argparse.Namespace) -> None:
                         binom.pmf(np.arange(M + 1)[None, :], M, p[:, None]) @ vhost
                     )
                     fft, fft_times = timed_kernel(
-                        lambda s, v, plan=plan: wf.expected_next_values(plan, s, v),
+                        lambda s, v, plan=plan: wf.Transition(
+                            plan, wf.Underdominance(s)
+                        ).expect(v),
                         (scalar, v),
                         args.repeats,
                     )
                     band, band_times = timed_kernel(
-                        lambda s, v, M=M, tail_tol=tail_tol: wf.apply_p_banded(
+                        lambda s, v, M=M, tail_tol=tail_tol: _expect_banded(
                             M, s, v, tail_tol=tail_tol
                         ),
                         (scalar, v),
                         args.repeats,
                     )
                     _, transpose_times = timed_kernel(
-                        lambda s, v, plan=plan: wf.build_segregating_operator(
-                            plan, s
-                        ).T.mv(v),
+                        lambda s, v, plan=plan: (
+                            wf.Transition(plan, wf.Underdominance(s))
+                            .as_lineax(segregating=True)
+                            .T.mv(v)
+                        ),
                         (scalar, v[1:-1]),
                         args.repeats,
                     )
@@ -150,15 +155,15 @@ def run(args: argparse.Namespace) -> None:
                         measurement["solves"] = {}
                         for solver in ["gmres", "bicgstab"]:
                             start = time.perf_counter()
-                            result = wf.expected_visits(
-                                plan, scalar, solver=solver, max_steps=args.max_steps
-                            )
+                            result = wf.Transition(
+                                plan, wf.Underdominance(scalar)
+                            ).expected_visits(solver=solver, max_steps=args.max_steps)
                             jax.block_until_ready(result)
                             first_seconds = time.perf_counter() - start
                             start = time.perf_counter()
-                            result = wf.expected_visits(
-                                plan, scalar, solver=solver, max_steps=args.max_steps
-                            )
+                            result = wf.Transition(
+                                plan, wf.Underdominance(scalar)
+                            ).expected_visits(solver=solver, max_steps=args.max_steps)
                             jax.block_until_ready(result)
                             elapsed = time.perf_counter() - start
                             solve = {
