@@ -60,8 +60,15 @@ def test_measure_process_preserves_records_already_in_pipe(monkeypatch):
     assert measured["process_to_first_result_seconds"] > 0
 
 
-@pytest.mark.parametrize("backend", ["drifft", "fastdtwf"])
-def test_isolated_worker_times_first_result_and_matches_reference(backend):
+@pytest.mark.parametrize("backend", ["drifft", "fastdtwf", "previous"])
+def test_isolated_worker_times_first_result_and_matches_reference(backend, tmp_path):
+    import shutil
+
+    extra = []
+    if backend == "previous":
+        # An isolated source copy tests routing without a historical Git checkout.
+        shutil.copytree(SCRIPT.parent.parent / "src" / "drifft", tmp_path / "drifft")
+        extra = ["--baseline-source", str(tmp_path)]
     if backend == "fastdtwf" and importlib.util.find_spec("fastDTWF") is None:
         pytest.skip("Install the optional fastdtwf dependency group")
     process = subprocess.run(
@@ -76,6 +83,7 @@ def test_isolated_worker_times_first_result_and_matches_reference(backend):
             "0.1",
             "--warm-repeats",
             "2",
+            *extra,
         ],
         text=True,
         capture_output=True,
@@ -91,9 +99,11 @@ def test_isolated_worker_times_first_result_and_matches_reference(backend):
     assert len(result["warm_seconds"]) == 2
     assert all(duration > 0 for duration in result["warm_seconds"])
     assert result["loaded_backends"] == {
-        "jax": backend == "drifft",
+        "jax": backend != "fastdtwf",
         "torch": backend == "fastdtwf",
     }
+    if backend == "previous":
+        assert Path(result["source_path"]).is_relative_to(tmp_path)
     frequency = np.arange(17) / 16
     probabilities = (frequency - 0.1 * frequency * (1 - frequency)) / (
         1 - 0.2 * frequency * (1 - frequency)

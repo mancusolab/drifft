@@ -1,0 +1,1454 @@
+{
+  "schema_version": 1,
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "device": "cpu",
+  "input": "uniform",
+  "config": {
+    "gene_copies": 28948,
+    "selections": [
+      0.0,
+      0.0001
+    ],
+    "tv_sds": [
+      0.1,
+      0.01
+    ],
+    "row_eps": 1e-08,
+    "tail_tol": 1e-12,
+    "cold_repeats": 3,
+    "warm_repeats": 10,
+    "threads": null,
+    "baseline_source": ".cache/bernstein-baseline/src",
+    "output": "benchmarks/bernstein_startup_cpu.json",
+    "quiet": false,
+    "worker": null
+  },
+  "thread_environment": {
+    "OMP_NUM_THREADS": null,
+    "MKL_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "XLA_FLAGS": null
+  },
+  "runs": [
+    {
+      "backend": "drifft",
+      "selection_strength": 0.0,
+      "tv_sd": null,
+      "cold_median_seconds": 0.8047042910475284,
+      "warm_median_seconds": 0.02759099949616939,
+      "estimated_total_seconds": {
+        "1": 0.8047042910475284,
+        "10": 1.0530232865130529,
+        "100": 3.536213241168298
+      },
+      "samples": [
+        {
+          "imports_seconds": 0.38192824996076524,
+          "setup_seconds": 0.20057395799085498,
+          "first_call_seconds": 0.17519245808944106,
+          "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+          "drifft_backend": "chebyshev_nufft",
+          "plan_bytes": 10360,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.026583459228277206,
+            0.02613029209896922,
+            0.026038916083052754,
+            0.02616037498228252,
+            0.0260474169626832,
+            0.02601649984717369,
+            0.026107250014320016,
+            0.026301792124286294,
+            0.12046962487511337,
+            0.05806987499818206
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.180208891630556e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.46458356574388e-05,
+            3.180208891630556e-05,
+            3.454231429384262e-05,
+            3.180208891630655e-05,
+            5.464583565746051e-05
+          ],
+          "process_to_first_result_seconds": 0.8047042910475284,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.42093233298510313,
+          "setup_seconds": 0.19765412504784763,
+          "first_call_seconds": 0.19068020791746676,
+          "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+          "drifft_backend": "chebyshev_nufft",
+          "plan_bytes": 10360,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.027194834081456065,
+            0.026262500090524554,
+            0.027903875103220344,
+            0.027431082911789417,
+            0.0280305000487715,
+            0.02867904119193554,
+            0.025922375032678246,
+            0.02678804099559784,
+            0.02878279215656221,
+            0.02775091608054936
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.180208891630556e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.46458356574388e-05,
+            3.180208891630556e-05,
+            3.454231429384262e-05,
+            3.180208891630655e-05,
+            5.464583565746051e-05
+          ],
+          "process_to_first_result_seconds": 0.8577702920883894,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.38306937483139336,
+          "setup_seconds": 0.19707820820622146,
+          "first_call_seconds": 0.17721470794640481,
+          "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+          "drifft_backend": "chebyshev_nufft",
+          "plan_bytes": 10360,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.028803416062146425,
+            0.028726666932925582,
+            0.028512292075902224,
+            0.02679500007070601,
+            0.027540999930351973,
+            0.028470957884564996,
+            0.026836750097572803,
+            0.028453374980017543,
+            0.027182166930288076,
+            0.028545500012114644
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.180208891630556e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.46458356574388e-05,
+            3.180208891630556e-05,
+            3.454231429384262e-05,
+            3.180208891630655e-05,
+            5.464583565746051e-05
+          ],
+          "process_to_first_result_seconds": 0.801098583964631,
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "backend": "previous",
+      "selection_strength": 0.0,
+      "tv_sd": null,
+      "cold_median_seconds": 3.789672833867371,
+      "warm_median_seconds": 0.013112707994878292,
+      "estimated_total_seconds": {
+        "1": 3.789672833867371,
+        "10": 3.9076872058212757,
+        "100": 5.087830925360322
+      },
+      "samples": [
+        {
+          "imports_seconds": 0.8400231669656932,
+          "setup_seconds": 2.6103659998625517,
+          "first_call_seconds": 0.4574959580786526,
+          "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+          "drifft_backend": "local_log_odds_fft",
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.012909791897982359,
+            0.0132748750038445,
+            0.013346457853913307,
+            0.012237457791343331,
+            0.01265924982726574,
+            0.013563957996666431,
+            0.013946125051006675,
+            0.013471625046804547,
+            0.012950540985912085,
+            0.012717500096186996
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.1802088916301254e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.4645835657437795e-05,
+            3.1802088916304825e-05,
+            3.454231429384236e-05,
+            3.1802088916301254e-05,
+            5.4645835657447106e-05
+          ],
+          "process_to_first_result_seconds": 3.9538443330675364,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.9006063749548048,
+          "setup_seconds": 2.3531616248656064,
+          "first_call_seconds": 0.4904522921424359,
+          "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+          "drifft_backend": "local_log_odds_fft",
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.013166333083063364,
+            0.014714208897203207,
+            0.013681374955922365,
+            0.013686208054423332,
+            0.012830292107537389,
+            0.011935082962736487,
+            0.01283054193481803,
+            0.013427667086943984,
+            0.012490375200286508,
+            0.014444457832723856
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.1802088916301254e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.4645835657437795e-05,
+            3.1802088916304825e-05,
+            3.454231429384236e-05,
+            3.1802088916301254e-05,
+            5.4645835657447106e-05
+          ],
+          "process_to_first_result_seconds": 3.789672833867371,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.8463910839054734,
+          "setup_seconds": 2.4151260000653565,
+          "first_call_seconds": 0.474241083022207,
+          "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+          "drifft_backend": "local_log_odds_fft",
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.013021790888160467,
+            0.012754583032801747,
+            0.012192999944090843,
+            0.01261075004003942,
+            0.012750667054206133,
+            0.012989290989935398,
+            0.01237833290360868,
+            0.01295004109852016,
+            0.013634500093758106,
+            0.01361212506890297
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.1802088916301254e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.4645835657437795e-05,
+            3.1802088916304825e-05,
+            3.454231429384236e-05,
+            3.1802088916301254e-05,
+            5.4645835657447106e-05
+          ],
+          "process_to_first_result_seconds": 3.7803461658768356,
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "backend": "fastdtwf",
+      "selection_strength": 0.0,
+      "tv_sd": 0.1,
+      "cold_median_seconds": 2.4320011669769883,
+      "warm_median_seconds": 0.17827268759720027,
+      "estimated_total_seconds": {
+        "1": 2.4320011669769883,
+        "10": 4.036455355351791,
+        "100": 20.080997239099815
+      },
+      "samples": [
+        {
+          "imports_seconds": 2.4799261658918113,
+          "setup_seconds": 0.022523750085383654,
+          "first_call_seconds": 0.188670750008896,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.18456983286887407,
+            0.17842945898883045,
+            0.17720416700467467,
+            0.18845954188145697,
+            0.17716212500818074,
+            0.17955695884302258,
+            0.17803912493400276,
+            0.17673266702331603,
+            0.17615095782093704,
+            0.17690841597504914
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454196898714382e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 2.736383916111663,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.095274291932583,
+          "setup_seconds": 0.002200332935899496,
+          "first_call_seconds": 0.2787286250386387,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.182800916954875,
+            0.20185037492774427,
+            0.18374824989587069,
+            0.1758946671616286,
+            0.17775133321993053,
+            0.17638225015252829,
+            0.1742545000743121,
+            0.1744237500242889,
+            0.1866084998473525,
+            0.17879404197447002
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454196898714382e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 2.4320011669769883,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.1859759588260204,
+          "setup_seconds": 0.0017562501598149538,
+          "first_call_seconds": 0.19185766601003706,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.18461908400058746,
+            0.18673816602677107,
+            0.18684604205191135,
+            0.18362320796586573,
+            0.2001668750308454,
+            0.18699224991723895,
+            0.18003716692328453,
+            0.19002283294685185,
+            0.19630674994550645,
+            0.18016779189929366
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454196898714382e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 2.4251939579844475,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        }
+      ]
+    },
+    {
+      "backend": "fastdtwf",
+      "selection_strength": 0.0,
+      "tv_sd": 0.01,
+      "cold_median_seconds": 3.2489186669699848,
+      "warm_median_seconds": 1.118867291486822,
+      "estimated_total_seconds": {
+        "1": 3.2489186669699848,
+        "10": 13.318724290351383,
+        "100": 114.01678052416537
+      },
+      "samples": [
+        {
+          "imports_seconds": 2.0988215408287942,
+          "setup_seconds": 0.0017238750588148832,
+          "first_call_seconds": 1.1025623339228332,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.074174040928483,
+            1.0714803340379149,
+            1.077478416962549,
+            1.0744344578124583,
+            1.0771358339115977,
+            1.163212165934965,
+            1.0752701670862734,
+            1.0726375840604305,
+            1.0702054591383785,
+            1.068505291827023
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454231429425307e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 3.2489186669699848,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 1.9649983749259263,
+          "setup_seconds": 0.0019541250076144934,
+          "first_call_seconds": 1.2031507501378655,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.1126946250442415,
+            1.1176104159094393,
+            1.116940583102405,
+            1.1256881249137223,
+            1.1184089579619467,
+            1.229661582969129,
+            1.1135745830833912,
+            1.1193256250116974,
+            1.1257502911612391,
+            1.131255374988541
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454231429425307e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 3.2155921668745577,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.043220666004345,
+          "setup_seconds": 0.002026375150308013,
+          "first_call_seconds": 1.1995355838444084,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.203428375069052,
+            1.1905645828228444,
+            1.1376379171852022,
+            1.1941925000865012,
+            1.2337665411178023,
+            1.2054505830164999,
+            1.1808261659462005,
+            1.2066895000170916,
+            1.2127195841167122,
+            1.3949896248523146
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454231429425307e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 3.2875003330409527,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        }
+      ]
+    },
+    {
+      "backend": "drifft",
+      "selection_strength": 0.0001,
+      "tv_sd": null,
+      "cold_median_seconds": 0.8606059169396758,
+      "warm_median_seconds": 0.029243103927001357,
+      "estimated_total_seconds": {
+        "1": 0.8606059169396758,
+        "10": 1.123793852282688,
+        "100": 3.75567320571281
+      },
+      "samples": [
+        {
+          "imports_seconds": 0.6642483749892563,
+          "setup_seconds": 0.36816545901820064,
+          "first_call_seconds": 0.23488562484271824,
+          "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+          "drifft_backend": "chebyshev_nufft",
+          "plan_bytes": 10360,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.030107083963230252,
+            0.036890832940116525,
+            0.032961291959509254,
+            0.03274158388376236,
+            0.03669316694140434,
+            0.029930915916338563,
+            0.030278583988547325,
+            0.03024720912799239,
+            0.02987966686487198,
+            0.02941729105077684
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999999,
+          "minimum": 3.1805789468133984e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549719539e-05,
+            3.1805789468133984e-05,
+            3.4540587357079496e-05,
+            3.1805789468156875e-05,
+            5.464901549725828e-05
+          ],
+          "process_to_first_result_seconds": 1.3331477919127792,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.4183140001259744,
+          "setup_seconds": 0.19651108281686902,
+          "first_call_seconds": 0.1983489589765668,
+          "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+          "drifft_backend": "chebyshev_nufft",
+          "plan_bytes": 10360,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.02671720809303224,
+            0.0272124579641968,
+            0.027446167077869177,
+            0.028195624938234687,
+            0.02859604195691645,
+            0.02744920807890594,
+            0.028045125072821975,
+            0.028694916982203722,
+            0.0285090000834316,
+            0.027469374937936664
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999999,
+          "minimum": 3.1805789468133984e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549719539e-05,
+            3.1805789468133984e-05,
+            3.4540587357079496e-05,
+            3.1805789468156875e-05,
+            5.464901549725828e-05
+          ],
+          "process_to_first_result_seconds": 0.8606059169396758,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.38075025007128716,
+          "setup_seconds": 0.19732529087923467,
+          "first_call_seconds": 0.18064087512902915,
+          "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+          "drifft_backend": "chebyshev_nufft",
+          "plan_bytes": 10360,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.029858249938115478,
+            0.02958620898425579,
+            0.029322708025574684,
+            0.02935158321633935,
+            0.02916712500154972,
+            0.028907458065077662,
+            0.029125374974682927,
+            0.028812832897529006,
+            0.029061916982755065,
+            0.029319082852452993
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999999,
+          "minimum": 3.1805789468133984e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549719539e-05,
+            3.1805789468133984e-05,
+            3.4540587357079496e-05,
+            3.1805789468156875e-05,
+            5.464901549725828e-05
+          ],
+          "process_to_first_result_seconds": 0.8042958751320839,
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "backend": "previous",
+      "selection_strength": 0.0001,
+      "tv_sd": null,
+      "cold_median_seconds": 3.8516533749643713,
+      "warm_median_seconds": 0.01371102046687156,
+      "estimated_total_seconds": {
+        "1": 3.8516533749643713,
+        "10": 3.9750525591662154,
+        "100": 5.209044401184656
+      },
+      "samples": [
+        {
+          "imports_seconds": 0.9396178328897804,
+          "setup_seconds": 2.3873022091574967,
+          "first_call_seconds": 0.4769255828578025,
+          "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+          "drifft_backend": "local_log_odds_fft",
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.012854208005592227,
+            0.013708165846765041,
+            0.013148792088031769,
+            0.01472300011664629,
+            0.013247582828626037,
+            0.014703917084261775,
+            0.013965750113129616,
+            0.01298437500372529,
+            0.014307624893262982,
+            0.01289920904673636
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.180578946813313e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549719397e-05,
+            3.180578946813313e-05,
+            3.4540587357079326e-05,
+            3.18057894681516e-05,
+            5.46490154972192e-05
+          ],
+          "process_to_first_result_seconds": 3.8516533749643713,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 1.032198625151068,
+          "setup_seconds": 2.5683299168013036,
+          "first_call_seconds": 0.4910811660811305,
+          "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+          "drifft_backend": "local_log_odds_fft",
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.014842958888038993,
+            0.015287375077605247,
+            0.013726708013564348,
+            0.013695332920178771,
+            0.013578791171312332,
+            0.0128329589497298,
+            0.0148480418138206,
+            0.013379500014707446,
+            0.013361459132283926,
+            0.015278375009074807
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.180578946813313e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549719397e-05,
+            3.180578946813313e-05,
+            3.4540587357079326e-05,
+            3.18057894681516e-05,
+            5.46490154972192e-05
+          ],
+          "process_to_first_result_seconds": 4.135007334174588,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.8311423747800291,
+          "setup_seconds": 2.341697041178122,
+          "first_call_seconds": 0.48902904195711017,
+          "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+          "drifft_backend": "local_log_odds_fft",
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.016655166167765856,
+            0.01390433288179338,
+            0.014148999936878681,
+            0.014978124992921948,
+            0.013267375063151121,
+            0.013934667222201824,
+            0.013298125006258488,
+            0.01459391601383686,
+            0.01640779199078679,
+            0.015021999832242727
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.180578946813313e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549719397e-05,
+            3.180578946813313e-05,
+            3.4540587357079326e-05,
+            3.18057894681516e-05,
+            5.46490154972192e-05
+          ],
+          "process_to_first_result_seconds": 3.7052663329523057,
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "backend": "fastdtwf",
+      "selection_strength": 0.0001,
+      "tv_sd": 0.1,
+      "cold_median_seconds": 2.4560796248260885,
+      "warm_median_seconds": 0.1928661874262616,
+      "estimated_total_seconds": {
+        "1": 2.4560796248260885,
+        "10": 4.191875311662443,
+        "100": 21.549832180025987
+      },
+      "samples": [
+        {
+          "imports_seconds": 2.2723195001017302,
+          "setup_seconds": 0.002259708009660244,
+          "first_call_seconds": 0.20785499992780387,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.19204075005836785,
+            0.204391332808882,
+            0.19522087485529482,
+            0.19017766695469618,
+            0.20259245787747204,
+            0.18824183382093906,
+            0.1870110419113189,
+            0.20358595880679786,
+            0.21387974987737834,
+            0.19243558403104544
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 1.0,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.45402420160825e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 2.5309969999361783,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.2102320839185268,
+          "setup_seconds": 0.0021838750690221786,
+          "first_call_seconds": 0.19726275000721216,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.2005687919445336,
+            0.18229483300819993,
+            0.178977542091161,
+            0.18248487496748567,
+            0.1808847920037806,
+            0.1859695001039654,
+            0.18026687507517636,
+            0.18610500008799136,
+            0.17935320897959173,
+            0.1952664169948548
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 1.0,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.45402420160825e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 2.4560796248260885,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.0829797089099884,
+          "setup_seconds": 0.001863375073298812,
+          "first_call_seconds": 0.19943966600112617,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.18592120916582644,
+            0.19135787500999868,
+            0.18907962506636977,
+            0.2916754169855267,
+            0.1923766250256449,
+            0.18430087505839765,
+            0.1977194999344647,
+            0.1933557498268783,
+            0.1995470840483904,
+            0.1948888748884201
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 1.0,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.45402420160825e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 2.329223250038922,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        }
+      ]
+    },
+    {
+      "backend": "fastdtwf",
+      "selection_strength": 0.0001,
+      "tv_sd": 0.01,
+      "cold_median_seconds": 3.4775213340763003,
+      "warm_median_seconds": 1.2029079165076837,
+      "estimated_total_seconds": {
+        "1": 3.4775213340763003,
+        "10": 14.303692582645454,
+        "100": 122.56540506833699
+      },
+      "samples": [
+        {
+          "imports_seconds": 2.184576249914244,
+          "setup_seconds": 0.00217104097828269,
+          "first_call_seconds": 1.2453479589894414,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.4178507088217884,
+            1.2309867080766708,
+            1.223792291013524,
+            1.1894543750677258,
+            1.2317111669108272,
+            1.1972972920630127,
+            1.2056979581248015,
+            1.2001178748905659,
+            1.1890500839799643,
+            1.188404625048861
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.454058735756542e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 3.4775213340763003,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.0740521671250463,
+          "setup_seconds": 0.0018403329886496067,
+          "first_call_seconds": 1.2430412920657545,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.2264097079169005,
+            1.1676729579921812,
+            1.1482702498324215,
+            1.2097570421174169,
+            1.1450774590484798,
+            1.1328386671375483,
+            1.1910739589948207,
+            1.1996090000029653,
+            1.1702248330693692,
+            1.1761225841473788
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.454058735756542e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 3.3758590419311076,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.1831711251288652,
+          "setup_seconds": 0.0035222498700022697,
+          "first_call_seconds": 1.2816905409563333,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.1970006248448044,
+            1.473210624884814,
+            1.2677861670963466,
+            1.2825209579896182,
+            1.324590291827917,
+            1.2342852919828147,
+            1.3103342079557478,
+            1.2406784580089152,
+            1.228911125101149,
+            1.24097991688177
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.454058735756542e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 3.52111954218708,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        }
+      ]
+    }
+  ]
+}

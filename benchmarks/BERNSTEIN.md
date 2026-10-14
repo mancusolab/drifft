@@ -117,6 +117,56 @@ small negative interpolated entries elsewhere are reported and never clipped.
 Sampling nodes are fixed, nontrainable geometry. Hold the plan fixed when taking
 gradients of selection parameters.
 
+## Cold startup and practical reuse at pre-expansion size
+
+Measured at constant diploid effective size **14,474** (**28,948 gene copies**),
+using the same pre-expansion scenario as the earlier fastDTWF report. Each case
+uses three fresh interpreters and ten synchronized warm calls per interpreter.
+Workers run sequentially, reversing order on alternating trials. Cold time is
+launch to first result, including imports, device initialization, plan setup,
+and compilation. JAX persistent compilation caching is disabled. OS filesystem
+and dependency disk caches are not cleared; this is fresh-process latency, not
+a first-install measurement. Warm time is the median of per-process medians.
+
+| Selection | Implementation | Cold first result | Warm call | Estimated 10 calls | Estimated 100 calls |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 0 | Chebyshev/NUFFT | 0.805 s | 27.59 ms | 1.053 s | 3.536 s |
+| 0 | Previous FFT | 3.790 s | 13.11 ms | 3.908 s | 5.088 s |
+| 0 | fastDTWF (`tv_sd=0.1`) | 2.432 s | 178.27 ms | 4.036 s | 20.081 s |
+| 0 | fastDTWF (`tv_sd=0.01`) | 3.249 s | 1118.87 ms | 13.319 s | 114.017 s |
+| 0.0001 | Chebyshev/NUFFT | 0.861 s | 29.24 ms | 1.124 s | 3.756 s |
+| 0.0001 | Previous FFT | 3.852 s | 13.71 ms | 3.975 s | 5.209 s |
+| 0.0001 | fastDTWF (`tv_sd=0.1`) | 2.456 s | 192.87 ms | 4.192 s | 21.550 s |
+| 0.0001 | fastDTWF (`tv_sd=0.01`) | 3.478 s | 1202.91 ms | 14.304 s | 122.565 s |
+
+The new backend saves about **3 seconds at startup**. Its plan preparation takes
+about 0.20 seconds versus 2.39–2.42 seconds for the previous implementation.
+Warm calls are about twice as slow. The first whole-call counts where the previous
+backend becomes faster in estimated total runtime are **208 calls for neutral
+selection and 194 calls for selection strength `1e-4`**.
+This favors the replacement for short-lived jobs; the previous backend remains
+faster for sufficiently long reuse of an existing plan. The new backend is
+faster cold and warm than fastDTWF at both tested tolerance settings.
+
+Totals use `cold + (calls - 1) * warm`; they are **estimates**, not timed evolving
+population trajectories. Every warm call propagates the same uniform input.
+Population size and selection remain fixed; no exponential expansion is modeled.
+This does not measure gradients, solves, or changing-size histories. Tolerance
+settings (`tail_tol=1e-12`, fastDTWF `row_eps=1e-8`) do not establish identical
+approximation error; see the accuracy comparison elsewhere in this report.
+
+The previous source was checked byte-for-byte against revision `b13114f`.
+The current source is `bd024c7`; benchmark-only changes add source routing.
+Package version metadata describes the shared installed environment; each
+drifft worker separately records its actual imported source path. Raw samples:
+[bernstein_startup_cpu.json](bernstein_startup_cpu.json).
+
+```sh
+uv run --group fastdtwf python benchmarks/compare_startup.py \
+  --baseline-source .cache/bernstein-baseline/src --warm-repeats 10 \
+  --output benchmarks/bernstein_startup_cpu.json
+```
+
 ## Reproduction
 
 ```sh
