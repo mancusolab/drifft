@@ -27,7 +27,6 @@ Run this Python example with `uv run python` to advance an allele-count
 distribution by one generation:
 
 ```python
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import drifft
@@ -41,9 +40,8 @@ transition = drifft.Transition(
 )
 
 # Start with one mutant copy and reuse the compiled operation across generations.
-advance = eqx.filter_jit(drifft.Transition.advance)
 distribution = jnp.zeros(2001).at[1].set(1.0)
-next_distribution = advance(transition, distribution)
+next_distribution = transition.advance(distribution)
 ```
 
 `next_distribution[i]` is the probability of `i` mutant copies in the next

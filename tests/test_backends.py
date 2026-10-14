@@ -44,12 +44,8 @@ def test_backend_dense_adjoint_and_selection_derivatives(name):
     transition = make_transition(strength)
     q = np.asarray(transition.probabilities)
     matrix = binom.pmf(np.arange(33)[None, :], 32, q[:, None])
-    np.testing.assert_allclose(
-        eqx.filter_jit(transition.expect)(values), matrix @ values, atol=1e-11
-    )
-    np.testing.assert_allclose(
-        eqx.filter_jit(transition.advance)(mass), matrix.T @ mass, atol=1e-11
-    )
+    np.testing.assert_allclose(transition.expect(values), matrix @ values, atol=1e-11)
+    np.testing.assert_allclose(transition.advance(mass), matrix.T @ mass, atol=1e-11)
     np.testing.assert_allclose(
         values @ transition.advance(mass), mass @ transition.expect(values), atol=1e-12
     )

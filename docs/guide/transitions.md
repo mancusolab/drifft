@@ -5,8 +5,14 @@ The [quickstart](quickstart.md) constructs a backend and binds it to a transitio
 Build the backend once and reuse it across transitions. `Transition` binds the backend
 without rebuilding it. Selection parameters are dynamic array leaves, while
 shape/configuration metadata are static. For another selection strength, construct
-`Transition(backend, Underdominance(new_strength))` and pass it to the same compiled
-function. Scalar strengths are normalized to float64 automatically.
+`Transition(backend, Underdominance(new_strength))` and call its methods directly.
+Scalar strengths are normalized to float64 automatically.
+
+`expect`, `advance`, their segregating variants, and `expected_visits` compile
+automatically. Call them directly on the transition. JAX compiles on the first
+call for each shape/static configuration and reuses the executable when array
+values change. For a whole simulation or inference objective, an outer
+`eqx.filter_jit` can still combine multiple method calls into one workflow.
 
 | API | Contract |
 | --- | --- |

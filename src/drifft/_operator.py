@@ -72,8 +72,9 @@ class Transition(eqx.Module):
     Probabilities must be finite and in `[0, 1]`. No runtime callbacks enforce
     these value preconditions. Approximation errors are those of the backend; no
     outputs are clipped or renormalized. Methods are pure and return new arrays.
-    `expect` and `advance` are undecorated for use inside an outer `eqx.filter_jit`.
-    `expected_visits` supplies its own JIT boundary.
+    Numerical methods compile automatically with `eqx.filter_jit`. Array leaves
+    remain dynamic across calls; changing shapes or static configuration can
+    trigger recompilation. Methods also compose inside an outer compiled workflow.
     """
 
     backend: AbstractTransitionBackend
@@ -156,6 +157,7 @@ class Transition(eqx.Module):
             )
         return probabilities
 
+    @eqx.filter_jit
     def expect(self, values: jax.Array) -> jax.Array:
         r"""Compute $Pv$: destination values to expectations at each source state.
 
@@ -167,6 +169,7 @@ class Transition(eqx.Module):
             self.probabilities, jnp.asarray(values, dtype=jnp.float64)
         )
 
+    @eqx.filter_jit
     def advance(self, distribution: jax.Array) -> jax.Array:
         r"""Compute $P^T\mu$: source mass to next-generation destination mass.
 
@@ -180,6 +183,7 @@ class Transition(eqx.Module):
         spec = jax.ShapeDtypeStruct((self.backend.gene_copies + 1,), jnp.float64)
         return jax.linear_transpose(self.expect, spec)(distribution)[0]
 
+    @eqx.filter_jit
     def expect_segregating(self, values: jax.Array) -> jax.Array:
         """Expect interior-state values, treating both destination endpoints as zero.
 
@@ -196,6 +200,7 @@ class Transition(eqx.Module):
             )
         return self.expect(jnp.pad(values, (1, 1)))[1:-1]
 
+    @eqx.filter_jit
     def advance_segregating(self, distribution: jax.Array) -> jax.Array:
         """Advance interior mass, removing trajectories that reach either endpoint.
 

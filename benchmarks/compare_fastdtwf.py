@@ -66,7 +66,6 @@ def inspect_loaded_backends() -> dict[str, bool]:
 
 def run_drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
     """Measure drifft, exporting exact seeded inputs for the fastDTWF worker."""
-    import equinox as eqx
     import jax
     import jax.numpy as jnp
 
@@ -92,7 +91,6 @@ def run_drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
             "random": random_mass / random_mass.sum(),
         }
         jax.block_until_ready(inputs)
-        advance = eqx.filter_jit(drifft.Transition.advance)
         for selection in args.selections:
             scalar = jnp.asarray(selection, dtype=jnp.float64)
             transition = drifft.Transition(backend, drifft.Underdominance(scalar))
@@ -104,7 +102,7 @@ def run_drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
             drifft_transitions = {}
             for name, mass in inputs.items():
                 value, timing = measure_call(
-                    partial(advance, transition, mass),
+                    partial(transition.advance, mass),
                     args.repeats,
                     synchronize=True,
                 )

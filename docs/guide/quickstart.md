@@ -4,7 +4,6 @@ Advance an allele-count distribution by one generation with a fixed population
 size and underdominant selection. Run this example with `uv run python`:
 
 ```python
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import drifft
@@ -18,14 +17,13 @@ transition = drifft.Transition(
 )
 
 # Start with one mutant copy and reuse the compiled operation across generations.
-advance = eqx.filter_jit(drifft.Transition.advance)
 distribution = jnp.zeros(2001).at[1].set(1.0)
-next_distribution = advance(transition, distribution)
+next_distribution = transition.advance(distribution)
 ```
 
 `next_distribution[i]` is the probability of `i` mutant copies next generation.
 Indices zero and `gene_copies` represent loss and fixation. To simulate another
-generation, pass `next_distribution` to the same `advance` function.
+generation, pass `next_distribution` to `transition.advance`.
 
 `transition.expect(values)` computes expected destination values at each source
 state. `advance` is its algebraic transpose; neither operation clips or

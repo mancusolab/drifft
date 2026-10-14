@@ -1,10 +1,10 @@
 """Public keyword signatures and result containers."""
 
 # Functional Core: public API and JAX transformation contracts.
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 from scipy.stats import binom
 
 import drifft
@@ -19,14 +19,14 @@ def test_transition_api_keywords_under_jit():
     assert backend.gene_copies == 512
     values = jnp.linspace(-1.0, 1.0, 513)
     model = drifft.Transition(backend, selection=drifft.Underdominance(strength=0.1))
-    actual = eqx.filter_jit(model.expect)(values=values)
+    actual = model.expect(values=values)
     frequency = np.arange(513) / 512
     probabilities = (frequency - 0.1 * frequency * (1 - frequency)) / (
         1 - 0.2 * frequency * (1 - frequency)
     )
     transition = binom.pmf(np.arange(513)[None, :], 512, probabilities[:, None])
     np.testing.assert_allclose(actual, transition @ values, atol=1e-12)
-    segregating = eqx.filter_jit(model.expect_segregating)(values=values[1:-1])
+    segregating = model.expect_segregating(values=values[1:-1])
     np.testing.assert_allclose(
         segregating, transition[1:-1, 1:-1] @ values[1:-1], atol=1e-12
     )
@@ -51,3 +51,26 @@ def test_expected_visits_result_fields_survive_pytree_roundtrip():
     leaves, structure = jax.tree.flatten(rebuilt)
     restored = jax.tree.unflatten(structure, leaves)
     np.testing.assert_array_equal(restored.visits, result.visits)
+
+
+@pytest.mark.parametrize("backend_type", [drifft.FFT, drifft.NUFFT])
+@pytest.mark.parametrize(
+    "method_name", ["expect", "advance", "expect_segregating", "advance_segregating"]
+)
+def test_direct_methods_compile_once_for_dynamic_inputs(backend_type, method_name):
+    """Cache direct method calls while keeping vector values dynamic."""
+    traces = []
+
+    def selection(frequencies):
+        """Record Python tracing while returning a valid nonlinear selection map."""
+        traces.append(1)
+        return frequencies**2
+
+    transition = drifft.Transition(backend_type(32), selection)
+    method = getattr(transition, method_name)
+    size = 31 if method_name.endswith("segregating") else 33
+    vector = jnp.linspace(0.1, 0.9, size)
+    first = method(vector).block_until_ready()
+    second = method(2 * vector).block_until_ready()
+    assert len(traces) == 1
+    np.testing.assert_allclose(second, 2 * first, atol=1e-12)

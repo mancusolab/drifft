@@ -24,12 +24,8 @@ def test_selection_model_and_both_transition_directions():
     matrix = binom.pmf(np.arange(17)[None, :], 16, p[:, None])
     values = jnp.linspace(-1, 1, 17)
     mass = jnp.arange(1, 18, dtype=jnp.float64) / 153
-    np.testing.assert_allclose(
-        eqx.filter_jit(transition.expect)(values), matrix @ values, atol=1e-12
-    )
-    np.testing.assert_allclose(
-        eqx.filter_jit(transition.advance)(mass), matrix.T @ mass, atol=1e-12
-    )
+    np.testing.assert_allclose(transition.expect(values), matrix @ values, atol=1e-12)
+    np.testing.assert_allclose(transition.advance(mass), matrix.T @ mass, atol=1e-12)
     np.testing.assert_allclose(
         transition.expect_segregating(values[1:-1]),
         matrix[1:-1, 1:-1] @ values[1:-1],

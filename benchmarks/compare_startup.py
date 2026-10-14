@@ -32,7 +32,6 @@ def run_worker(args: argparse.Namespace) -> None:
     selection = args.selections[0]
     metadata: dict[str, Any] = {}
     if args.worker in {"nufft", "fft"}:
-        import equinox as eqx
         import jax
         import jax.numpy as jnp
 
@@ -55,11 +54,10 @@ def run_worker(args: argparse.Namespace) -> None:
             backend, selection=drifft.Underdominance(selection)
         )
         jax.block_until_ready((transition, jax_mass))
-        advance = eqx.filter_jit(drifft.Transition.advance)
 
         def call():
             """Advance once and wait for device completion before stopping the timer."""
-            return advance(transition, jax_mass).block_until_ready()
+            return transition.advance(jax_mass).block_until_ready()
 
         packages = (
             "drifft",
