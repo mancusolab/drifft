@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 
-def worker(args):
+def run_worker(args):
     """Time the shared Transition API using one concrete backend."""
     import equinox as eqx
     import jax
@@ -26,8 +26,8 @@ def worker(args):
     runs = []
     for size in args.sizes:
         start = time.perf_counter()
-        plan = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(size)
-        jax.block_until_ready(plan)
+        backend = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(size)
+        jax.block_until_ready(backend)
         planning = time.perf_counter() - start
         values = jnp.asarray(np.random.default_rng(17).normal(size=size + 1))
         mass = jnp.ones(size + 1) / (size + 1)
@@ -42,12 +42,12 @@ def worker(args):
             ]
         )
         for strength in args.selections:
-            model = drifft.Transition(plan, drifft.Underdominance(strength))
+            model = drifft.Transition(backend, drifft.Underdominance(strength))
             result = {
                 "M": size,
                 "s": strength,
                 "plan_seconds": planning,
-                "plan_bytes": sum(x.nbytes for x in jax.tree.leaves(plan)),
+                "plan_bytes": sum(x.nbytes for x in jax.tree.leaves(backend)),
             }
             for name, vector in (("expect", values), ("advance", mass)):
                 method = getattr(drifft.Transition, name)
@@ -120,7 +120,7 @@ def main():
     ):
         parser.error("sizes >= 2, repeats >= 1 and selections in [0,1] are required")
     if args.worker:
-        print(json.dumps(worker(args)))
+        print(json.dumps(run_worker(args)))
         return
     report = {
         "config": vars(args) | {"output": str(args.output)},

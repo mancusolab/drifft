@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .nufft import NUFFT
 
 
-def _stencil(size: int, radius: int, probabilities: jax.Array):
+def _build_stencil(size: int, radius: int, probabilities: jax.Array):
     """Generate normalized mode-relative weights for one fixed-size node batch."""
     low = jnp.minimum(probabilities, 1 - probabilities)
     safe = jnp.where(low == 0, 0.5, low)[:, None]
@@ -43,7 +43,7 @@ def _stencil(size: int, radius: int, probabilities: jax.Array):
     return indices, weights
 
 
-def _raw_sample(nodes, values, *, size, radius, batch_size, transpose):
+def _sample_batches(nodes, values, *, size, radius, batch_size, transpose):
     """Matched gather/scatter maps with one live batch of regenerated weights."""
     padding = (-nodes.size) % batch_size
     batches = jnp.pad(nodes, (0, padding), constant_values=0.5).reshape(-1, batch_size)
@@ -51,8 +51,9 @@ def _raw_sample(nodes, values, *, size, radius, batch_size, transpose):
         mass = jnp.pad(values, (0, padding)).reshape(-1, batch_size)
 
         def scatter(accumulator, batch):
+            """Scatter one node batch into the shared destination accumulator."""
             probabilities, weights_out = batch
-            indices, weights = _stencil(size, radius, probabilities)
+            indices, weights = _build_stencil(size, radius, probabilities)
             updates = weights * weights_out[:, None]
             return accumulator.at[indices.reshape(-1)].add(updates.reshape(-1)), None
 
@@ -63,16 +64,18 @@ def _raw_sample(nodes, values, *, size, radius, batch_size, transpose):
         )[0]
 
     def gather(probabilities):
-        indices, weights = _stencil(size, radius, probabilities)
+        """Evaluate one node batch from its regenerated binomial stencil."""
+        indices, weights = _build_stencil(size, radius, probabilities)
         return jnp.sum(weights * values[indices], axis=-1)
 
     return jax.lax.map(gather, batches).reshape(-1)[: nodes.size]
 
 
-class _Sample(hijax.HiPrim):
+class _BernsteinSampling(hijax.HiPrim):
     """Linear sampling with an explicit streaming adjoint and fixed geometry."""
 
     def __init__(self, nodes, values, *, size, radius, batch_size, transposed):
+        """Declare input/output avals and static sampling geometry for Hijax."""
         self.in_avals = (nodes, values)
         self.out_aval = jax.core.ShapedArray(
             (size + 1,) if transposed else nodes.shape, values.dtype
@@ -83,8 +86,9 @@ class _Sample(hijax.HiPrim):
         super().__init__()
 
     def expand(self, *args):
+        """Lower sampling to batched gathers or streaming scatters."""
         nodes, values = args
-        return _raw_sample(
+        return _sample_batches(
             nodes,
             values,
             size=self.params["size"],
@@ -94,6 +98,7 @@ class _Sample(hijax.HiPrim):
         )
 
     def jvp(self, primals, tangents):
+        """Differentiate values while rejecting trainable sampling geometry."""
         nodes, values = primals
         dnodes, dvalues = tangents
         if not isinstance(dnodes, hijax.Zero):
@@ -104,6 +109,7 @@ class _Sample(hijax.HiPrim):
     vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
 
     def transpose(self, out_ct, *maybe_accums):
+        """Accumulate the opposite sampling map into the values cotangent."""
         mass = out_ct
         nodes, values = maybe_accums
         if isinstance(nodes, hijax.GradAccum):
@@ -118,32 +124,35 @@ class _Sample(hijax.HiPrim):
             )
 
     def batch_dim_rule(self, axis_data, dims):
+        """Place the mapped axis first; Hijax supplies the mapped expansion."""
         return 0
 
 
 def _sample(nodes, values, **config):
-    """Bind prepared geometry and a vector to the sampling primitive."""
-    return _Sample(jax.typeof(nodes), jax.typeof(values), **config)(nodes, values)
+    """Bind array avals so JAX retains sampling rules through nested transforms."""
+    return _BernsteinSampling(jax.typeof(nodes), jax.typeof(values), **config)(
+        nodes, values
+    )
 
 
-def sample_bernstein(plan: "NUFFT", values: jax.Array) -> jax.Array:
+def sample_bernstein(backend: "NUFFT", values: jax.Array) -> jax.Array:
     """Sample fixed binomial nodes, with a matched streaming scatter transpose.
 
-    The plan's nodes are nontrainable geometry; differentiating them is rejected.
+    The backend's nodes are nontrainable geometry; differentiating them is rejected.
     Input values support JIT, batching and differentiation in both directions.
     Neither direction retains a node-by-stencil matrix.
     """
     return _sample(
-        plan.nodes,
-        jnp.asarray(values, dtype=plan.nodes.dtype),
-        size=plan.gene_copies,
-        radius=plan.radius,
-        batch_size=plan.batch_size,
+        backend.nodes,
+        jnp.asarray(values, dtype=backend.nodes.dtype),
+        size=backend.gene_copies,
+        radius=backend.radius,
+        batch_size=backend.batch_size,
         transposed=False,
     )
 
 
-def cosine_coefficients(samples: jax.Array) -> jax.Array:
+def compute_cosine_coefficients(samples: jax.Array) -> jax.Array:
     """DCT-I through an even real-FFT extension, with both endpoint modes halved."""
     degree = samples.size - 1
     extended = jnp.concatenate((samples, samples[-2:0:-1]))
@@ -151,7 +160,7 @@ def cosine_coefficients(samples: jax.Array) -> jax.Array:
     return coefficients.at[0].multiply(0.5).at[-1].multiply(0.5)
 
 
-def _derivative_coefficients(coefficients: jax.Array) -> jax.Array:
+def _differentiate_coefficients(coefficients: jax.Array) -> jax.Array:
     """Differentiate with respect to q, where the Chebyshev coordinate is 1-2q."""
     degree = coefficients.size - 1
     if degree == 0:
@@ -165,7 +174,7 @@ def _derivative_coefficients(coefficients: jax.Array) -> jax.Array:
     return -2 * derivative.at[0].multiply(0.5)
 
 
-def _raw_evaluate(coefficients, probabilities, tolerance, endpoints):
+def _evaluate_nufft(coefficients, probabilities, tolerance, endpoints):
     """NUFFT primal with exact endpoint values and a polynomial derivative rule."""
     if coefficients.size == 1:
         result = jnp.broadcast_to(coefficients[0], probabilities.shape)
@@ -182,10 +191,11 @@ def _raw_evaluate(coefficients, probabilities, tolerance, endpoints):
     )
 
 
-class _TransposeEvaluate(hijax.HiPrim):
+class _CosineTranspose(hijax.HiPrim):
     """Cosine adjoint whose probability derivatives avoid singular angles."""
 
     def __init__(self, probabilities, mass, *, count, tolerance):
+        """Declare the coefficient and endpoint cotangent shapes."""
         self.in_avals = (probabilities, mass)
         self.out_aval = (
             jax.core.ShapedArray((count,), mass.dtype),
@@ -195,11 +205,12 @@ class _TransposeEvaluate(hijax.HiPrim):
         super().__init__()
 
     def expand(self, *args):
+        """Transpose the linear NUFFT value map at fixed probabilities."""
         probabilities, mass = args
         coefficients = jnp.zeros(cast(int, self.params["count"]), dtype=mass.dtype)
         endpoints = jnp.zeros(2, dtype=mass.dtype)
         return jax.linear_transpose(
-            lambda a, e: _raw_evaluate(
+            lambda a, e: _evaluate_nufft(
                 a, probabilities, cast(float, self.params["tolerance"]), e
             ),
             coefficients,
@@ -207,6 +218,7 @@ class _TransposeEvaluate(hijax.HiPrim):
         )(mass)
 
     def jvp(self, primals, tangents):
+        """Differentiate mass and probabilities using coefficient recurrences."""
         probabilities, mass = primals
         dprobabilities, dmass = map(hijax.instantiate_zeros, tangents)
         count, tolerance = (
@@ -222,7 +234,7 @@ class _TransposeEvaluate(hijax.HiPrim):
             dcoefficients = (
                 dcoefficients
                 + jax.linear_transpose(
-                    _derivative_coefficients, jnp.zeros(count, dtype=mass.dtype)
+                    _differentiate_coefficients, jnp.zeros(count, dtype=mass.dtype)
                 )(derivative_mass)[0]
             )
         return primal, (dcoefficients, dendpoints)
@@ -231,6 +243,7 @@ class _TransposeEvaluate(hijax.HiPrim):
     vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
 
     def transpose(self, out_ct, *maybe_accums):
+        """Accumulate cosine evaluation as the adjoint of coefficient scattering."""
         cotangents = out_ct
         probabilities, mass = maybe_accums
         if isinstance(probabilities, hijax.GradAccum):
@@ -247,12 +260,13 @@ class _TransposeEvaluate(hijax.HiPrim):
             )
 
     def batch_dim_rule(self, axis_data, dims):
+        """Place the mapped axis first in both cotangent outputs."""
         return (0, 0)
 
 
 def _transpose_evaluate(probabilities, mass, count, tolerance):
     """Bind the endpoint-safe adjoint, retaining its rules in higher derivatives."""
-    return _TransposeEvaluate(
+    return _CosineTranspose(
         jax.typeof(probabilities), jax.typeof(mass), count=count, tolerance=tolerance
     )(probabilities, mass)
 
@@ -263,7 +277,7 @@ def _transpose_cosine(probabilities, mass, count, tolerance):
     return coefficients + endpoints[0] + endpoints[1] * (-1.0) ** jnp.arange(count)
 
 
-class _Evaluate(hijax.HiPrim):
+class _CosineEvaluation(hijax.HiPrim):
     """Cosine evaluation with polynomial JVPs and explicit linear transposition.
 
     Transposing the raw angular implementation and then differentiating would
@@ -271,14 +285,16 @@ class _Evaluate(hijax.HiPrim):
     """
 
     def __init__(self, coefficients, probabilities, endpoints, *, tolerance):
+        """Declare evaluation avals and the static FINUFFT tolerance."""
         self.in_avals = (coefficients, probabilities, endpoints)
         self.out_aval = jax.core.ShapedArray(probabilities.shape, coefficients.dtype)
         self.params = dict(tolerance=tolerance)
         super().__init__()
 
     def expand(self, *args):
+        """Lower the primal to FINUFFT with exact endpoint substitutions."""
         coefficients, probabilities, endpoints = args
-        return _raw_evaluate(
+        return _evaluate_nufft(
             coefficients,
             probabilities,
             cast(float, self.params["tolerance"]),
@@ -286,13 +302,14 @@ class _Evaluate(hijax.HiPrim):
         )
 
     def jvp(self, primals, tangents):
+        """Use polynomial derivatives instead of differentiating singular angles."""
         coefficients, probabilities, endpoints = primals
         dcoefficients, dprobabilities, dendpoints = map(
             hijax.instantiate_zeros, tangents
         )
         primal = self(coefficients, probabilities, endpoints)
         derivative = evaluate_cosine(
-            _derivative_coefficients(coefficients),
+            _differentiate_coefficients(coefficients),
             probabilities,
             cast(float, self.params["tolerance"]),
         )
@@ -305,6 +322,7 @@ class _Evaluate(hijax.HiPrim):
     vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
 
     def transpose(self, out_ct, *maybe_accums):
+        """Accumulate coefficient and endpoint cotangents at fixed probabilities."""
         mass = out_ct
         coefficients, probabilities, endpoints = maybe_accums
         if isinstance(probabilities, hijax.GradAccum):
@@ -323,12 +341,13 @@ class _Evaluate(hijax.HiPrim):
             endpoints.accum(de)
 
     def batch_dim_rule(self, axis_data, dims):
+        """Place the mapped axis first; Hijax handles the mapped expansion."""
         return 0
 
 
 def _evaluate(coefficients, probabilities, tolerance, endpoints):
     """Bind cosine evaluation with finite first and higher endpoint derivatives."""
-    return _Evaluate(
+    return _CosineEvaluation(
         jax.typeof(coefficients),
         jax.typeof(probabilities),
         jax.typeof(endpoints),
@@ -343,20 +362,3 @@ def evaluate_cosine(
     signs = (-1.0) ** jnp.arange(coefficients.size)
     endpoints = jnp.stack((coefficients.sum(), coefficients @ signs))
     return _evaluate(coefficients, probabilities, tolerance, endpoints)
-
-
-def expect_probabilities(
-    plan: "NUFFT", probabilities: jax.Array, values: jax.Array
-) -> jax.Array:
-    """Apply the fixed approximate matrix with exact absorbing endpoint rows."""
-    if values.shape != (plan.gene_copies + 1,) or probabilities.ndim != 1:
-        raise ValueError(
-            "Expected values.shape == (M+1,) and one-dimensional probabilities"
-        )
-    coefficients = cosine_coefficients(sample_bernstein(plan, values))
-    return _evaluate(
-        coefficients,
-        probabilities,
-        plan.nufft_tol,
-        values[jnp.array([0, plan.gene_copies])],
-    )

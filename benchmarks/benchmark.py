@@ -25,7 +25,7 @@ import drifft
 LOGGER = logging.getLogger(__name__)
 
 
-def timed_kernel(fn: Callable, args: tuple, repeats: int):
+def measure_kernel(fn: Callable, args: tuple, repeats: int):
     """Compile separately, warm up once, then time synchronized execution."""
     start = time.perf_counter()
     dynamic, static = eqx.partition(args, eqx.is_array)
@@ -70,13 +70,13 @@ def run(args: argparse.Namespace) -> None:
         values = jnp.asarray(rng.normal(size=size + 1))
         mass = jnp.ones(source + 1) / (source + 1)
         start = time.perf_counter()
-        plan = drifft.NUFFT(
+        backend = drifft.NUFFT(
             size,
             accuracy=args.accuracy,
             batch_size=args.batch_size,
             derivative_accuracy=args.derivative_accuracy,
         )
-        jax.block_until_ready(plan)
+        jax.block_until_ready(backend)
         planning = time.perf_counter() - start
         rows = np.unique(
             np.r_[
@@ -85,25 +85,26 @@ def run(args: argparse.Namespace) -> None:
         )
         for strength in args.selections:
             transition = drifft.Transition(
-                plan, drifft.Underdominance(strength), source_gene_copies=source
+                backend, drifft.Underdominance(strength), source_gene_copies=source
             )
-            actual, expect_times = timed_kernel(
+            actual, expect_times = measure_kernel(
                 drifft.Transition.expect, (transition, values), args.repeats
             )
-            propagated, advance_times = timed_kernel(
+            propagated, advance_times = measure_kernel(
                 drifft.Transition.advance, (transition, mass), args.repeats
             )
 
-            def selection_jvp(s, x, plan=plan, source=source):
+            def selection_jvp(s, x, backend=backend, source=source):
+                """Differentiate expectations with respect to the scalar selection strength."""
                 return jax.jvp(
                     lambda t: drifft.Transition(
-                        plan, drifft.Underdominance(t), source_gene_copies=source
+                        backend, drifft.Underdominance(t), source_gene_copies=source
                     ).expect(x),
                     (s,),
                     (jnp.ones_like(s),),
                 )[1]
 
-            tangent, jvp_times = timed_kernel(
+            tangent, jvp_times = measure_kernel(
                 selection_jvp, (jnp.asarray(strength), values), args.repeats
             )
             probabilities = np.asarray(transition.probabilities)[rows]
@@ -129,13 +130,13 @@ def run(args: argparse.Namespace) -> None:
                 "source_gene_copies": source,
                 "s": strength,
                 "plan_seconds": planning,
-                "plan_bytes": sum(a.nbytes for a in jax.tree.leaves(plan)),
-                "degree": plan.degree,
-                "stencil_width": plan.stencil_width,
-                "batch_size": plan.batch_size,
-                "spectral_bound": plan.spectral_bound,
-                "sampling_bound": plan.sampling_bound,
-                "nufft_tol": plan.nufft_tol,
+                "plan_bytes": sum(a.nbytes for a in jax.tree.leaves(backend)),
+                "degree": backend.degree,
+                "stencil_width": backend.stencil_width,
+                "batch_size": backend.batch_size,
+                "spectral_bound": backend.spectral_bound,
+                "sampling_bound": backend.sampling_bound,
+                "nufft_tol": backend.nufft_tol,
                 "expect": expect_times,
                 "advance": advance_times,
                 "selection_jvp": jvp_times,
@@ -150,7 +151,7 @@ def run(args: argparse.Namespace) -> None:
                 "minimum_mass": float(propagated.min()),
             }
             if size == source and size <= args.solve_max_m:
-                result, times = timed_kernel(
+                result, times = measure_kernel(
                     drifft.Transition.expected_visits, (transition,), args.repeats
                 )
                 measurement["solve"] = times | {

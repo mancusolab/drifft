@@ -20,5 +20,21 @@ class AbstractTransitionBackend(eqx.Module):
 
     @abstractmethod
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
-        """Map destination values to expectations at arbitrary source probabilities."""
+        r"""Map destination values to expectations at arbitrary source probabilities.
+
+        **Arguments:**
+
+        - `probabilities`: A vector of finite probabilities in `[0, 1]`.
+        - `values`: A float64 destination vector of length `gene_copies + 1`.
+
+        **Returns:**
+
+        A vector shaped like `probabilities`, linear in `values` and compatible
+        with JAX transposition, differentiation, and batching.
+
+        **Raises:**
+
+        Implementations reject incompatible shapes with `ValueError`. Numerical
+        probability ranges remain caller preconditions inside traced execution.
+        """
         ...

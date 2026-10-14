@@ -17,6 +17,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "benchmarks" / "compare_startup.p
 
 
 def test_measure_process_preserves_records_already_in_pipe(monkeypatch):
+    """Retain both timing records when a worker finishes before the first read."""
     measure_process = runpy.run_path(str(SCRIPT))["measure_process"]
     first = {
         "event": "first_result_ready",
@@ -29,6 +30,7 @@ def test_measure_process_preserves_records_already_in_pipe(monkeypatch):
     real_popen = subprocess.Popen
 
     def completed_worker(command, **kwargs):
+        """Make both subprocess records available before the parent reads."""
         process = real_popen(
             [
                 sys.executable,
@@ -62,6 +64,7 @@ def test_measure_process_preserves_records_already_in_pipe(monkeypatch):
 
 @pytest.mark.parametrize("backend", ["nufft", "fastdtwf", "fft"])
 def test_isolated_worker_times_first_result_and_matches_reference(backend, tmp_path):
+    """Verify backend isolation, completed timings, and dense one-step accuracy."""
     if backend == "fastdtwf" and importlib.util.find_spec("fastDTWF") is None:
         pytest.skip("Install the optional fastdtwf dependency group")
     process = subprocess.run(
@@ -112,6 +115,7 @@ def test_isolated_worker_times_first_result_and_matches_reference(backend, tmp_p
     reason="Requires optional fastdtwf group",
 )
 def test_parent_reports_process_startup_and_amortized_estimates():
+    """Include interpreter startup in cold timing and amortize subsequent calls."""
     process = subprocess.run(
         [
             sys.executable,
@@ -147,6 +151,7 @@ def test_parent_reports_process_startup_and_amortized_estimates():
 
 
 def test_invalid_repetitions_fail_before_loading_backend():
+    """Reject zero repetitions with an argparse error rather than a worker failure."""
     process = subprocess.run(
         [sys.executable, str(SCRIPT), "--cold-repeats", "0"],
         text=True,

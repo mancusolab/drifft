@@ -12,50 +12,58 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 
 
-def test_spectral_plan_degree_and_storage():
-    plan = drifft.NUFFT(10000, accuracy=1e-10)
-    assert 1 <= plan.degree < 10000
-    assert plan.spectral_bound <= plan.spectral_tol
-    assert all(a.ndim <= 1 for a in jax.tree.leaves(plan))
+def test_spectral_backend_degree_and_storage():
+    """Increase degree with accuracy while retaining only vector geometry."""
+    backend = drifft.NUFFT(10000, accuracy=1e-10)
+    assert 1 <= backend.degree < 10000
+    assert backend.spectral_bound <= backend.spectral_tol
+    assert all(a.ndim <= 1 for a in jax.tree.leaves(backend))
     tighter = drifft.NUFFT(10000, accuracy=1e-12)
     derivative = drifft.NUFFT(10000, derivative_accuracy=True)
-    assert tighter.degree >= plan.degree
-    assert derivative.degree >= plan.degree
+    assert tighter.degree >= backend.degree
+    assert derivative.degree >= backend.degree
 
 
 @pytest.mark.parametrize("degree", [1, 2, 3, 16])
 def test_cosine_coefficients(degree):
-    from drifft.backends._spectral import cosine_coefficients
+    """Recover independent cosine modes with the DCT endpoint convention."""
+    from drifft.backends._spectral import compute_cosine_coefficients
 
     theta = np.pi * np.arange(degree + 1) / degree
     coefficients = np.random.default_rng(degree).normal(size=degree + 1)
     values = np.cos(theta[:, None] * np.arange(degree + 1)) @ coefficients
     np.testing.assert_allclose(
-        jax.jit(cosine_coefficients)(jnp.asarray(values)), coefficients, atol=2e-14
+        jax.jit(compute_cosine_coefficients)(jnp.asarray(values)),
+        coefficients,
+        atol=2e-14,
     )
 
 
 @pytest.mark.parametrize("size", [2, 16, 256, 4096])
 def test_binomial_samples(size):
+    """Match retained-stencil samples against exact binomial expectations."""
     from drifft.backends._spectral import sample_bernstein
 
-    plan = drifft.NUFFT(size)
+    backend = drifft.NUFFT(size)
     values = jnp.asarray(np.random.default_rng(size).normal(size=size + 1))
-    actual = jax.jit(lambda x: sample_bernstein(plan, x))(values)
+    actual = jax.jit(lambda x: sample_bernstein(backend, x))(values)
     exact = (
-        binom.pmf(np.arange(size + 1)[None, :], size, np.asarray(plan.nodes)[:, None])
+        binom.pmf(
+            np.arange(size + 1)[None, :], size, np.asarray(backend.nodes)[:, None]
+        )
         @ values
     )
     np.testing.assert_allclose(actual, exact, atol=2e-12, rtol=0)
     np.testing.assert_allclose(
-        sample_bernstein(plan, jnp.ones(size + 1)), 1, atol=1e-14
+        sample_bernstein(backend, jnp.ones(size + 1)), 1, atol=1e-14
     )
     np.testing.assert_array_equal(
-        actual[jnp.array([0, plan.degree])], values[jnp.array([0, size])]
+        actual[jnp.array([0, backend.degree])], values[jnp.array([0, size])]
     )
 
 
 def test_endpoint_derivatives_and_nufft_modes():
+    """Keep first and second polynomial derivatives finite at both endpoints."""
     from drifft.backends._spectral import evaluate_cosine
 
     q = jnp.array([0.0, 1e-15, 0.1, 0.5, 0.9, 1 - 1e-15, 1.0])
@@ -73,12 +81,14 @@ def test_endpoint_derivatives_and_nufft_modes():
 
 
 def test_full_endpoint_probability_derivative():
-    plan = drifft.NUFFT(32, derivative_accuracy=True)
+    """Match full transition probability derivatives at loss and fixation."""
+    backend = drifft.NUFFT(32, derivative_accuracy=True)
     values = jnp.asarray(np.random.default_rng(2).normal(size=33))
     q = jnp.array([0.0, 1e-12, 0.2, 0.5, 1 - 1e-12, 1.0])
 
     def fun(q):
-        return drifft.Transition.from_probabilities(plan, q).expect(values)
+        """Evaluate the full transition at explicitly supplied probabilities."""
+        return drifft.Transition.from_probabilities(backend, q).expect(values)
 
     tangent = jax.jit(lambda q: jax.jvp(fun, (q,), (jnp.ones_like(q),))[1])(q)
     exact = (
@@ -90,13 +100,15 @@ def test_full_endpoint_probability_derivative():
 
 
 def test_transpose_endpoint_gradients_match_bernstein_identity():
-    plan = drifft.NUFFT(16, derivative_accuracy=True)
+    """Preserve endpoint derivative identities through the algebraic transpose."""
+    backend = drifft.NUFFT(16, derivative_accuracy=True)
     values = jnp.asarray(np.random.default_rng(19).normal(size=17))
     q = jnp.array([0.0, 1e-12, 0.2, 0.7, 1 - 1e-12, 1.0])
     mass = jnp.array([0.1, -0.2, 0.3, 0.4, -0.5, 0.6])
 
     def loss(q):
-        return drifft.Transition.from_probabilities(plan, q).advance(mass) @ values
+        """Contract propagated mass with values to check transpose differentiation."""
+        return drifft.Transition.from_probabilities(backend, q).advance(mass) @ values
 
     actual = jax.jit(jax.grad(loss))(q)
     exact = mass * (
@@ -109,11 +121,13 @@ def test_transpose_endpoint_gradients_match_bernstein_identity():
 
 @pytest.mark.parametrize("strength", [0.0, 1e-4, 0.2])
 def test_expected_visits_implicit_derivative(strength):
-    plan = drifft.NUFFT(16, derivative_accuracy=True)
+    """Compare implicit occupation gradients with a dense differentiated solve."""
+    backend = drifft.NUFFT(16, derivative_accuracy=True)
 
     def total(s):
+        """Compute total expected visits for the implicit derivative comparison."""
         return (
-            drifft.Transition(plan, drifft.Underdominance(s))
+            drifft.Transition(backend, drifft.Underdominance(s))
             .expected_visits(rtol=1e-12, atol=1e-13)
             .visits.sum()
         )
@@ -143,6 +157,7 @@ def test_expected_visits_implicit_derivative(strength):
 
 
 def test_nufft_centered_mode_conventions_and_imaginary_residual():
+    """Validate FINUFFT mode ordering and cancellation of imaginary residuals."""
     from jax_finufft import nufft2
 
     theta = jnp.array([0.0, 0.17, 1.0, 2.3, jnp.pi])

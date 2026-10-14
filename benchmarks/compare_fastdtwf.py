@@ -28,12 +28,13 @@ from scipy.stats import binom
 LOGGER = logging.getLogger(__name__)
 
 
-def timed_call(
+def measure_call(
     call: Callable[[], Any], repeats: int, *, synchronize: bool = False
 ) -> tuple[Any, dict[str, float]]:
     """Report the first call separately from repeated, completed executions."""
 
     def evaluate():
+        """Execute the timed callable and synchronize JAX results when requested."""
         value = call()
         if synchronize:
             import jax
@@ -56,14 +57,14 @@ def timed_call(
     }
 
 
-def loaded_backends() -> dict[str, bool]:
+def inspect_loaded_backends() -> dict[str, bool]:
     """Expose actual imports so isolation can be checked in the report."""
     return {
         name: name in sys.modules for name in ("drifft", "jax", "torch", "fastDTWF")
     }
 
 
-def drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
+def run_drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
     """Measure drifft, exporting exact seeded inputs for the fastDTWF worker."""
     import equinox as eqx
     import jax
@@ -76,10 +77,10 @@ def drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
     records = []
     for gene_copies in args.sizes:
         start = time.perf_counter()
-        plan = drifft.NUFFT(gene_copies, tail_tol=args.tail_tol)
-        jax.block_until_ready(plan)
+        backend = drifft.NUFFT(gene_copies, tail_tol=args.tail_tol)
+        jax.block_until_ready(backend)
         planning_seconds = time.perf_counter() - start
-        plan_bytes = sum(leaf.nbytes for leaf in jax.tree.leaves(plan))
+        plan_bytes = sum(leaf.nbytes for leaf in jax.tree.leaves(backend))
         random_mass = jax.random.uniform(
             jax.random.fold_in(jax.random.key(args.seed), gene_copies),
             (gene_copies + 1,),
@@ -94,7 +95,7 @@ def drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
         advance = eqx.filter_jit(drifft.Transition.advance)
         for selection in args.selections:
             scalar = jnp.asarray(selection, dtype=jnp.float64)
-            transition = drifft.Transition(plan, drifft.Underdominance(scalar))
+            transition = drifft.Transition(backend, drifft.Underdominance(scalar))
             probabilities = transition.probabilities
             # Copies are outside both timed kernels. fastDTWF reuses these
             # probabilities; drifft recomputes them inside Transition.advance,
@@ -102,7 +103,7 @@ def drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
             host_probabilities = np.asarray(probabilities)
             drifft_transitions = {}
             for name, mass in inputs.items():
-                value, timing = timed_call(
+                value, timing = measure_call(
                     partial(advance, transition, mass),
                     args.repeats,
                     synchronize=True,
@@ -110,7 +111,7 @@ def drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
                 drifft_transitions[name] = (np.asarray(value).tolist(), timing)
             drifft_solve = None
             if gene_copies <= args.solve_max_m:
-                result, timing = timed_call(
+                result, timing = measure_call(
                     partial(transition.expected_visits, max_steps=args.max_steps),
                     args.repeats,
                     synchronize=True,
@@ -139,10 +140,10 @@ def drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
                 }
             )
         jax.clear_caches()
-    return {"records": records, "loaded_backends": loaded_backends()}
+    return {"records": records, "loaded_backends": inspect_loaded_backends()}
 
 
-def fastdtwf_worker(args: argparse.Namespace, payload: dict[str, Any]) -> None:
+def run_fastdtwf_worker(args: argparse.Namespace, payload: dict[str, Any]) -> None:
     """Measure identical no-mutation models on CPU, then persist their diagnostics."""
     start = time.perf_counter()
     try:
@@ -163,7 +164,7 @@ def fastdtwf_worker(args: argparse.Namespace, payload: dict[str, Any]) -> None:
         "drifft_backend": "chebyshev_nufft",
         "worker_backends": {
             "drifft": payload["loaded_backends"],
-            "fastdtwf": loaded_backends(),
+            "fastdtwf": inspect_loaded_backends(),
         },
         "device": "cpu",
         "platform": platform.platform(),
@@ -232,7 +233,7 @@ def fastdtwf_worker(args: argparse.Namespace, payload: dict[str, Any]) -> None:
             )
             torch_counts = torch.arange(gene_copies + 1, dtype=torch.float64)
             # The public mat_multiply API accepts precomputed log binomial
-            # coefficients. Prepare them outside timed calls, like drifft's plan.
+            # coefficients. Prepare them outside timed calls, like drifft's backend.
             bcoefs = (
                 torch.lgamma(torch.tensor(gene_copies + 1.0, dtype=torch.float64))
                 - torch.lgamma(torch_counts + 1)
@@ -252,7 +253,7 @@ def fastdtwf_worker(args: argparse.Namespace, payload: dict[str, Any]) -> None:
             }
             with torch.no_grad():
                 for name, mass in inputs.items():
-                    other, timing = timed_call(
+                    other, timing = measure_call(
                         partial(
                             fastdtwf.mat_multiply,
                             torch_inputs[name],
@@ -298,7 +299,7 @@ def fastdtwf_worker(args: argparse.Namespace, payload: dict[str, Any]) -> None:
                     measurement["fastdtwf_sfs_setup_seconds"] = (
                         time.perf_counter() - start
                     )
-                    other, timing = timed_call(
+                    other, timing = measure_call(
                         partial(
                             fastdtwf.equilibrium_solve,
                             sfs_sets,
@@ -345,7 +346,7 @@ def fastdtwf_worker(args: argparse.Namespace, payload: dict[str, Any]) -> None:
                 selection,
                 tv_sd,
             )
-    report["worker_backends"]["fastdtwf"] = loaded_backends()
+    report["worker_backends"]["fastdtwf"] = inspect_loaded_backends()
     output = json.dumps(report, indent=2) + "\n"
     if args.output:
         args.output.write_text(output, encoding="utf-8")
@@ -438,9 +439,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             payload = json.load(sys.stdin)
             worker_args = argparse.Namespace(**payload["config"])
             if args.worker == "drifft":
-                sys.stdout.write(json.dumps(drifft_worker(worker_args)) + "\n")
+                sys.stdout.write(json.dumps(run_drifft_worker(worker_args)) + "\n")
             else:
-                fastdtwf_worker(worker_args, payload["drifft"])
+                run_fastdtwf_worker(worker_args, payload["drifft"])
         else:
             run(args)
     except (ImportError, OSError, RuntimeError, ValueError) as error:

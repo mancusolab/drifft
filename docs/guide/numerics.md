@@ -19,7 +19,7 @@ The nominal budget is split equally between spectral interpolation, sampling,
 NUFFT evaluation and roundoff. The fixed degree uses the value bound
 `4*M/L * exp(-L**2/(2*M))`; at `L=M` interpolation is exact in exact arithmetic.
 Per-node tail error is divided by twice a conservative Lobatto Lebesgue constant
-`1 + (2/pi)*log(L+1)`. Plan fields expose both the spectral bound and the
+`1 + (2/pi)*log(L+1)`. Backend fields expose both the spectral bound and the
 amplified sampling bound. NUFFT tolerance and the roundoff allocation are
 **not rigorous error certificates**; both require empirical validation.
 

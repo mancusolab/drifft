@@ -1,3 +1,5 @@
+"""Dense-reference checks of transition direction, linearity, and batching."""
+
 # Functional Core: full transition and transformation contracts.
 import jax
 import jax.numpy as jnp
@@ -10,10 +12,11 @@ jax.config.update("jax_enable_x64", True)
 
 @pytest.mark.parametrize("M", [16, 64, 256, 1024])
 def test_full_and_transient(M):
+    """Match dense forward and transpose maps, including endpoint removal."""
     import drifft as wf
 
-    plan = wf.NUFFT(M)
-    apply = jax.jit(lambda s, v: wf.Transition(plan, wf.Underdominance(s)).expect(v))
+    backend = wf.NUFFT(M)
+    apply = jax.jit(lambda s, v: wf.Transition(backend, wf.Underdominance(s)).expect(v))
     rng = np.random.default_rng(42)
     vectors = [
         np.ones(M + 1),
@@ -33,7 +36,7 @@ def test_full_and_transient(M):
             assert np.max(np.abs(actual - exact @ v)) / max(1, np.max(np.abs(v))) < 1e-9
             np.testing.assert_array_equal(actual[[0, -1]], v[[0, -1]])
         transient = wf.Transition(
-            plan, wf.Underdominance(jnp.asarray(s))
+            backend, wf.Underdominance(jnp.asarray(s))
         ).expect_segregating(jnp.ones(M - 1))
         np.testing.assert_allclose(
             transient, exact[1:-1, 1:-1].sum(axis=1), atol=1e-9, rtol=0
@@ -41,15 +44,17 @@ def test_full_and_transient(M):
 
 
 def test_dynamic_selection_linearity_vmap_and_transpose():
+    """Preserve linearity and adjoint identities through JIT and batching."""
     import drifft as wf
 
     M = 1024
-    plan = wf.NUFFT(M)
+    backend = wf.NUFFT(M)
     traces = []
 
     def apply(s, v):
+        """Apply a transition with dynamic selection under the tested transform."""
         traces.append(None)
-        return wf.Transition(plan, wf.Underdominance(s)).expect_segregating(v)
+        return wf.Transition(backend, wf.Underdominance(s)).expect_segregating(v)
 
     compiled = jax.jit(apply)
     u, v = np.random.default_rng(1).normal(size=(2, M - 1))
@@ -60,13 +65,13 @@ def test_dynamic_selection_linearity_vmap_and_transpose():
     np.testing.assert_allclose(
         compiled(s, 2 * u - 3 * v), 2 * compiled(s, u) - 3 * compiled(s, v), atol=2e-13
     )
-    qt = wf.Transition(plan, wf.Underdominance(s)).as_lineax(segregating=True).T
+    qt = wf.Transition(backend, wf.Underdominance(s)).as_lineax(segregating=True).T
     np.testing.assert_allclose(
         u @ compiled(s, v), qt.mv(jnp.asarray(u)) @ v, atol=1e-12
     )
     mapped = jax.jit(
         jax.vmap(
-            lambda s: wf.Transition(plan, wf.Underdominance(s)).expect_segregating(
+            lambda s: wf.Transition(backend, wf.Underdominance(s)).expect_segregating(
                 jnp.asarray(v)
             )
         )
@@ -76,12 +81,13 @@ def test_dynamic_selection_linearity_vmap_and_transpose():
 
 
 def test_sampled_kernel_coefficients_and_negative_mass():
+    """Bound row error and negative mass against exact binomial probabilities."""
     import drifft as wf
 
     M = 4096
-    plan = wf.NUFFT(M)
+    backend = wf.NUFFT(M)
     p = jnp.array([0.0, 1e-8, 0.01, 0.25, 0.5, 0.9, 1 - 1e-8, 1.0])
-    transition = wf.Transition.from_probabilities(plan, p)
+    transition = wf.Transition.from_probabilities(backend, p)
     actual = np.asarray(jax.jit(jax.vmap(transition.advance))(jnp.eye(len(p))))
     exact = binom.pmf(np.arange(M + 1)[None, :], M, np.asarray(p)[:, None])
     error = np.sum(np.abs(actual - exact), axis=1).max()

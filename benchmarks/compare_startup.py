@@ -24,7 +24,7 @@ from typing import Any, cast
 LOGGER = logging.getLogger(__name__)
 
 
-def worker(args: argparse.Namespace) -> None:
+def run_worker(args: argparse.Namespace) -> None:
     """Flush a first-result marker, then measure warm calls in this fresh process."""
     start = time.perf_counter()
     call: Callable[[], Any]
@@ -47,15 +47,18 @@ def worker(args: argparse.Namespace) -> None:
         jax.config.update("jax_platform_name", "cpu")
         jax.config.update("jax_enable_x64", True)
         jax.config.update("jax_enable_compilation_cache", False)
-        plan = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(
+        backend = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(
             gene_copies, tail_tol=args.tail_tol
         )
         jax_mass = jnp.full(gene_copies + 1, 1.0 / (gene_copies + 1), dtype=jnp.float64)
-        transition = drifft.Transition(plan, selection=drifft.Underdominance(selection))
+        transition = drifft.Transition(
+            backend, selection=drifft.Underdominance(selection)
+        )
         jax.block_until_ready((transition, jax_mass))
         advance = eqx.filter_jit(drifft.Transition.advance)
 
         def call():
+            """Advance once and wait for device completion before stopping the timer."""
             return advance(transition, jax_mass).block_until_ready()
 
         packages = (
@@ -126,7 +129,7 @@ def worker(args: argparse.Namespace) -> None:
         value = call()
         warm.append(time.perf_counter() - start)
     if args.worker in {"nufft", "fft"}:
-        metadata["plan_bytes"] = sum(leaf.nbytes for leaf in jax.tree.leaves(plan))
+        metadata["plan_bytes"] = sum(leaf.nbytes for leaf in jax.tree.leaves(backend))
         metadata["persistent_compilation_cache"] = False
     else:
         metadata["group_count"] = int(groups.max()) + 1
@@ -328,7 +331,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         level=logging.WARNING if args.quiet else logging.INFO, format="%(message)s"
     )
     try:
-        worker(args) if args.worker else run(args)
+        run_worker(args) if args.worker else run(args)
     except (ImportError, OSError, RuntimeError, ValueError) as error:
         LOGGER.error(
             "error: %s (benchmark dependencies: uv sync --group fastdtwf)", error

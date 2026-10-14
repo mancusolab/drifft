@@ -18,20 +18,23 @@ jax.config.update("jax_enable_x64", True)
 
 @pytest.mark.parametrize("size,batch_size", [(16, 3), (512, 17)])
 def test_sampling_signed_adjoint_and_transforms(size, batch_size):
-    plan = NUFFT(size, batch_size=batch_size)
+    """Validate signed sampling, streaming adjoints, and JAX transformations."""
+    backend = NUFFT(size, batch_size=batch_size)
     rng = np.random.default_rng(size)
     values = jnp.asarray(rng.normal(size=(2, size + 1)))
-    mass = jnp.asarray(rng.normal(size=plan.degree + 1))
+    mass = jnp.asarray(rng.normal(size=backend.degree + 1))
 
     def sample(v):
-        return sample_bernstein(plan, v)
+        """Apply fixed sampling geometry to the supplied destination vector."""
+        return sample_bernstein(backend, v)
 
     def transpose(m):
+        """Scatter sampled mass through the exact adjoint of the sampling map."""
         return jax.linear_transpose(sample, values[0])(m)[0]
 
     actual = jax.jit(transpose)(mass)
     matrix = binom.pmf(
-        np.arange(size + 1)[None, :], size, np.asarray(plan.nodes)[:, None]
+        np.arange(size + 1)[None, :], size, np.asarray(backend.nodes)[:, None]
     )
     np.testing.assert_allclose(actual, matrix.T @ mass, atol=3e-12, rtol=0)
     np.testing.assert_allclose(mass @ sample(values[0]), actual @ values[0], atol=1e-12)
@@ -60,13 +63,14 @@ def test_sampling_signed_adjoint_and_transforms(size, batch_size):
 
 @pytest.mark.parametrize("size,batch_size", [(512, 7), (2048, 19)])
 def test_sampling_transpose_initializes_full_accumulator_only_once(size, batch_size):
-    plan = NUFFT(size, batch_size=batch_size)
+    """Prevent an M-sized zero fill inside every transpose scan iteration."""
+    backend = NUFFT(size, batch_size=batch_size)
     transpose = jax.jit(
         lambda mass: jax.linear_transpose(
-            lambda v: sample_bernstein(plan, v), jnp.zeros(size + 1)
+            lambda v: sample_bernstein(backend, v), jnp.zeros(size + 1)
         )(mass)[0]
     )
-    hlo = transpose.lower(jnp.ones(plan.degree + 1)).as_text()
+    hlo = transpose.lower(jnp.ones(backend.degree + 1)).as_text()
     # A full-vector broadcast in the loop body would reintroduce one M-sized
     # zero fill per node batch. Only the outer accumulator needs such a fill.
     full_vector_fills = re.findall(
@@ -76,11 +80,13 @@ def test_sampling_transpose_initializes_full_accumulator_only_once(size, batch_s
 
 
 def test_sampling_rejects_trainable_geometry():
-    plan = NUFFT(16)
+    """Reject derivatives with respect to fixed sampling nodes."""
+    backend = NUFFT(16)
 
     def sample_nodes(nodes):
-        updated = eqx.tree_at(lambda p: p.nodes, plan, nodes)
+        """Expose sampling nodes as inputs to check rejection of geometry gradients."""
+        updated = eqx.tree_at(lambda p: p.nodes, backend, nodes)
         return sample_bernstein(updated, jnp.arange(17.0)).sum()
 
     with pytest.raises(ValueError, match="fixed.*nodes"):
-        jax.grad(sample_nodes)(plan.nodes)
+        jax.grad(sample_nodes)(backend.nodes)

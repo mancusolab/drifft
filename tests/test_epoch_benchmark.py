@@ -19,6 +19,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "benchmarks" / "compare_epochs.py
 )
 @pytest.mark.parametrize("source", [16, 12])
 def test_epoch_worker_matches_dense_chain(backend, source):
+    """Compare successive generations and size changes with a dense chain."""
     if backend not in {"nufft", "fft"} and importlib.util.find_spec("fastDTWF") is None:
         pytest.skip("Requires optional fastdtwf dependency group")
     generations = [1, 7, 60] if source == 16 else [1]
@@ -56,6 +57,7 @@ def test_epoch_worker_matches_dense_chain(backend, source):
 
 
 def test_rectangular_epoch_rejects_multiple_generations():
+    """Require one generation when source and destination sizes differ."""
     result = subprocess.run(
         [
             sys.executable,

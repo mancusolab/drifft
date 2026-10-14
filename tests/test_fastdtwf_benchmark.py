@@ -16,6 +16,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "benchmarks" / "compare_fastdtwf.
     "arguments", [["--tv-sds", "0"], ["--row-eps", "nan"], ["--threads", "0"]]
 )
 def test_invalid_fastdtwf_arguments(arguments):
+    """Reject malformed benchmark options before loading optional dependencies."""
     result = subprocess.run(
         [sys.executable, str(SCRIPT), *arguments],
         text=True,
@@ -34,6 +35,7 @@ def test_invalid_fastdtwf_arguments(arguments):
 )
 @pytest.mark.parametrize("gene_copies,tv_sd", [(16, 0.01), (1024, 0.1)])
 def test_fastdtwf_matches_transition_and_expected_visits(gene_copies, tv_sd):
+    """Compare isolated upstream results with independent transition references."""
     result = subprocess.run(
         [
             sys.executable,

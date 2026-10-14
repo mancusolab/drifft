@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from jax.typing import DTypeLike
 
 from ._base import AbstractTransitionBackend
-from ._spectral import expect_probabilities
+from ._spectral import _evaluate, compute_cosine_coefficients, sample_bernstein
 
 
 @final
@@ -55,7 +55,7 @@ class NUFFT(AbstractTransitionBackend):
         batch_size: int = 32,
         derivative_accuracy: bool = False,
         dtype: DTypeLike = jnp.float64,
-    ):
+    ) -> None:
         r"""Prepare a fixed-degree Bernstein/Chebyshev/NUFFT transition.
 
         **Arguments:**
@@ -101,7 +101,7 @@ class NUFFT(AbstractTransitionBackend):
         ):
             raise ValueError("float64 and jax_enable_x64=True are required")
         budget = accuracy / 4
-        degree = _degree(gene_copies, budget)
+        degree = _choose_degree(gene_copies, budget)
         if derivative_accuracy:
             degree = min(gene_copies, math.ceil(1.5 * degree))
         # Lambda_L <= 1 + (2/pi) log(L+1) is deliberately loose at small L.
@@ -119,9 +119,13 @@ class NUFFT(AbstractTransitionBackend):
         # Bernstein: P(|J-Mp| >= t) <= 2 exp(-t²/(2(var+t/3))).
         # t=sqrt(2 var A)+2A/3 suffices. var<=M/4; mode differs
         # from Mp by <=1. The extra 1 covers centering and integer rounding.
-        a = math.log(2) - math.log(tail_tol)
+        log_tail_bound = math.log(2) - math.log(tail_tol)
         radius = min(
-            gene_copies, math.ceil(math.sqrt(gene_copies * a / 2) + 2 * a / 3) + 1
+            gene_copies,
+            math.ceil(
+                math.sqrt(gene_copies * log_tail_bound / 2) + 2 * log_tail_bound / 3
+            )
+            + 1,
         )
         index = jnp.arange(degree + 1, dtype=jnp.float64)
         # Reflection avoids cancellation in tiny lower-tail nodes.
@@ -161,11 +165,38 @@ class NUFFT(AbstractTransitionBackend):
         return 2 * self.radius + 1
 
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
-        """Apply this backend to destination values at the supplied probabilities."""
-        return expect_probabilities(self, probabilities, values)
+        r"""Evaluate expectations using fixed binomial sampling and cosine modes.
+
+        **Arguments:**
+
+        - `probabilities`: Finite one-dimensional source probabilities in `[0, 1]`.
+        - `values`: Destination vector of length `gene_copies + 1`.
+
+        **Returns:**
+
+        Float64 expectations with the same shape as `probabilities`. The map is
+        linear in `values`; its transpose advances mass without renormalization.
+
+        **Raises:**
+
+        `ValueError` for incompatible shapes, including during JIT tracing.
+        Valid probability ranges are caller preconditions. Accuracy settings
+        bound approximation components, not the complete floating-point error.
+        """
+        if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:
+            raise ValueError(
+                "Expected values.shape == (M+1,) and one-dimensional probabilities"
+            )
+        coefficients = compute_cosine_coefficients(sample_bernstein(self, values))
+        return _evaluate(
+            coefficients,
+            probabilities,
+            self.nufft_tol,
+            values[jnp.array([0, self.gene_copies])],
+        )
 
 
-def _degree(size: int, tolerance: float) -> int:
+def _choose_degree(size: int, tolerance: float) -> int:
     """Binary-search the log of the supplied Lobatto interpolation error bound."""
     lo, hi = 1, size
     while lo < hi:

@@ -21,7 +21,7 @@ from ._base import AbstractTransitionBackend
 
 
 @final
-class Block(eqx.Module):
+class _FFTBlock(eqx.Module):
     """One local factorization with inclusive input and output intervals.
 
     `b` scales input columns; `a` includes the modal probability and scales
@@ -55,9 +55,9 @@ def _stirling_correction(n: int) -> float:
     )
 
 
-def make_block(
+def _build_block(
     M: int, j0: int, lo: int, hi: int, rlo: int, rhi: int, *, balance: bool = True
-) -> Block:
+) -> _FFTBlock:
     """Construct exact DTD factors with recurrence and stable modal normalization."""
     if not (0 < j0 < M and 0 <= lo <= hi <= M and rlo <= rhi):
         raise ValueError("Invalid block intervals or reference count")
@@ -91,7 +91,7 @@ def make_block(
         raise ValueError(
             "Nonfinite local factors; use narrower blocks or a larger cutoff"
         )
-    return Block(
+    return _FFTBlock(
         jnp.asarray(b),
         jnp.asarray(a),
         jnp.asarray(np.fft.rfft(kernel, nfft)),
@@ -102,12 +102,12 @@ def make_block(
 
 
 @final
-class Bucket(eqx.Module):
+class _FFTBucket(eqx.Module):
     """Blocks sharing an FFT length, padded only within the bucket.
 
     `indices` and `b` have shape (blocks, max input length); `a`,
     `conv_indices` and `output_indices` have shape (blocks, max node count).
-    Padded outputs have zero scale and scatter to the plan's sentinel node.
+    Padded outputs have zero scale and scatter to the backend's sentinel node.
     """
 
     indices: jax.Array
@@ -133,7 +133,7 @@ class FFT(AbstractTransitionBackend):
 
     **Returns:**
 
-    A reusable selection-independent plan. Arrays are dynamic PyTree leaves;
+    Reusable selection-independent geometry. Arrays are dynamic PyTree leaves;
     configuration and dimensions are static Equinox metadata. The static fields
     are retained for shape decisions and reproducible configuration reporting.
 
@@ -143,7 +143,7 @@ class FFT(AbstractTransitionBackend):
     The constructor additionally validates configuration and requires float64.
     """
 
-    buckets: tuple[Bucket, ...]
+    buckets: tuple[_FFTBucket, ...]
     edges: jax.Array
     eta0: jax.Array
     variance: jax.Array
@@ -170,7 +170,7 @@ class FFT(AbstractTransitionBackend):
         block_spacing: float = 1.0,
         balance: bool = True,
         dtype: DTypeLike = jnp.float64,
-    ):
+    ) -> None:
         r"""Plan local binomial FFTs over all success probabilities, independent of selection.
 
         **Arguments:**
@@ -220,7 +220,7 @@ class FFT(AbstractTransitionBackend):
         if np.dtype(dtype) != np.dtype("float64") or not jax.config.x64_enabled:
             raise ValueError("Enable jax_enable_x64 and use dtype=float64")
         cutoff = min_mode_count / gene_copies
-        groups: dict[int, list[tuple[int, Block, int]]] = {}
+        groups: dict[int, list[tuple[int, _FFTBlock, int]]] = {}
         offsets, rmins = [], []
         centers: list[int] = []
         if gene_copies > 2 * min_mode_count:
@@ -268,12 +268,12 @@ class FFT(AbstractTransitionBackend):
                 ),
             )
             max_tail = max(max_tail, tail)
-            block = make_block(gene_copies, j0, lo, hi, rlo, rhi, balance=balance)
+            block = _build_block(gene_copies, j0, lo, hi, rlo, rhi, balance=balance)
             groups.setdefault(block.nfft, []).append((lo, block, total))
             offsets.append(total)
             rmins.append(rlo)
             total += block.rows
-        buckets: list[Bucket] = []
+        buckets: list[_FFTBucket] = []
         for nfft, blocks in sorted(groups.items()):
             block_count = len(blocks)
             input_length = max(block.length for _, block, _ in blocks)
@@ -293,7 +293,7 @@ class FFT(AbstractTransitionBackend):
                 )
                 output_indices[k, : block.rows] = np.arange(offset, offset + block.rows)
             buckets.append(
-                Bucket(
+                _FFTBucket(
                     indices=jnp.asarray(indices),
                     b=jnp.asarray(input_scale),
                     a=jnp.asarray(output_scale),
@@ -343,7 +343,7 @@ class FFT(AbstractTransitionBackend):
             or self.edges.shape != (max(0, block_count - 1),)
         ):
             raise ValueError(
-                "Plan block metadata must have matching one-dimensional shapes"
+                "Backend block metadata must have matching one-dimensional shapes"
             )
         if (
             not 1 <= self.boundary_width <= self.gene_copies + 1
@@ -352,17 +352,108 @@ class FFT(AbstractTransitionBackend):
             raise ValueError("boundary_width must match the boundary coefficient array")
 
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
-        """Apply this backend to destination values at the supplied probabilities."""
-        return _expect_probabilities(
-            self, probabilities, jnp.asarray(values, dtype=jnp.float64)
+        r"""Evaluate binomial expectations for an arbitrary probability map.
+
+        **Arguments:**
+
+        - `probabilities`: One-dimensional success probabilities in `[0, 1]`.
+        - `values`: Finite real input vector of shape `(M+1,)`, cast to float64.
+
+        **Returns:**
+
+        A float64 vector shaped like `probabilities`. This is the extension point for other
+        selection models. The map is linear in `values`; outputs are never clipped or
+        renormalized. Wrap in `jax.jit` at the surrounding workflow boundary.
+
+        **Raises:**
+
+        `ValueError` for incompatible shapes, checked when tracing.
+
+        **Failure Modes:**
+
+        Finite inputs and valid probability ranges are caller preconditions. Tail
+        tolerance excludes interpolation/roundoff error. Polynomial interpolation
+        may yield small negative coefficients, and seams need not be differentiable.
+        Results can differ at roundoff level across devices.
+        """
+        values = jnp.asarray(values, dtype=jnp.float64)
+        if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:
+            raise ValueError(
+                "Expected values.shape == (M+1,) and one-dimensional probabilities"
+            )
+        probabilities = jnp.asarray(probabilities, dtype=jnp.float64)
+        cutoff = min(self.min_mode_count / self.gene_copies, 0.5)
+        is_boundary = (probabilities <= cutoff) | (probabilities >= 1 - cutoff)
+        boundary_columns = jnp.arange(self.boundary_width)
+        boundary_values = jnp.stack(
+            (values[boundary_columns], values[self.gene_copies - boundary_columns])
         )
 
+        # Batched map bounds per-batch forward temporary memory independently of M.
+        # Transposition can retain O(M*boundary_width) residuals. Entire interior
+        # batches skip the direct work; every branch remains linear in values.
+        # Gather BEFORE the scan: automatic transposition then accumulates only
+        # 2*boundary_width entries per batch rather than an M-length cotangent.
+        def expect_boundary_batch(prob):
+            """Skip the direct sum when the batch contains only interior rows."""
+            boundary = (prob <= cutoff) | (prob >= 1 - cutoff)
+            return jax.lax.cond(
+                jnp.any(boundary),
+                lambda: _expect_boundary(self, prob, boundary_values),
+                lambda: jnp.zeros_like(prob),
+            )
 
-def _apply_block(block: Block, v: jax.Array) -> jax.Array:
-    """Apply one block to its input window, returning its log-odds nodes."""
-    transformed = jnp.fft.rfft(block.b * v, n=block.nfft)
-    conv = jnp.fft.irfft(transformed * block.kernel_fft, n=block.nfft)
-    return block.a * conv[block.length - 1 : block.length - 1 + block.rows]
+        batch_size = 64
+        pad = (-probabilities.size) % batch_size
+        padded = jnp.pad(probabilities, (0, pad), constant_values=0.5).reshape(
+            -1, batch_size
+        )
+        direct = jax.lax.map(expect_boundary_batch, padded).reshape(-1)[
+            : probabilities.size
+        ]
+        if not self.buckets:
+            return direct
+        # One extra sentinel receives zero-scaled padding from every FFT bucket.
+        nodes = jnp.zeros(self.total_nodes + 1, dtype=values.dtype)
+        for bucket in self.buckets:
+            scaled_values = bucket.b * values[bucket.indices]
+            convolved = jnp.fft.irfft(
+                jnp.fft.rfft(scaled_values, n=bucket.nfft, axis=-1) * bucket.kernel_fft,
+                n=bucket.nfft,
+                axis=-1,
+            )
+            node_values = bucket.a * jnp.take_along_axis(
+                convolved, bucket.conv_indices, axis=-1
+            )
+            nodes = nodes.at[bucket.output_indices].add(node_values)
+        # Only unused interpolation coordinates are clipped: actual boundary rows
+        # still come from the direct sum, and no output or coefficient is clipped.
+        safe_probabilities = jnp.clip(probabilities, cutoff, 1 - cutoff)
+        eta = jnp.log(safe_probabilities) - jnp.log1p(-safe_probabilities)
+        block = jnp.searchsorted(self.edges, eta, side="right")
+        r = (eta - self.eta0[block]) * self.variance[block]
+        start = jnp.floor(r).astype(jnp.int32) - self.interp_order // 2 + 1
+        t = r - start
+        k = jnp.arange(self.interp_order)
+        differences = k[:, None] - k[None, :]
+        denominators = jnp.prod(
+            jnp.where(jnp.eye(self.interp_order, dtype=bool), 1, differences), axis=-1
+        )
+        # Lagrange basis product, with its own node omitted by the diagonal mask.
+        # Weights depend on probabilities and geometry only, preserving linearity.
+        factors = t[:, None, None] - jnp.asarray(k)[None, None, :]
+        factors = jnp.where(
+            jnp.eye(self.interp_order, dtype=bool)[None, :, :], 1.0, factors
+        )
+        weights = jnp.prod(factors, axis=-1) / jnp.asarray(denominators)
+        indices = (
+            self.offsets[block, None]
+            + start[:, None]
+            - self.rmin[block, None]
+            + jnp.asarray(k)
+        )
+        interpolated = jnp.sum(weights * nodes[indices], axis=-1)
+        return jnp.where(is_boundary, direct, interpolated)
 
 
 @partial(jax.custom_jvp, nondiff_argnums=(0,))
@@ -381,6 +472,7 @@ def _binomial_weights(size, counts, logchoose, probabilities):
 
 @_binomial_weights.defjvp
 def _binomial_weights_jvp(size, primals, tangents):
+    """Apply the lower-degree binomial identity, including at endpoints."""
     counts, logchoose, probabilities = primals
     _, dlogchoose, dprobabilities = tangents
     weights = _binomial_weights(size, counts, logchoose, probabilities)
@@ -400,111 +492,17 @@ def _binomial_weights_jvp(size, primals, tangents):
     return weights, weights * dlogchoose + derivative * dprobabilities[:, None]
 
 
-def _boundary(plan: FFT, p: jax.Array, boundary_values: jax.Array) -> jax.Array:
+def _expect_boundary(
+    backend: FFT, p: jax.Array, boundary_values: jax.Array
+) -> jax.Array:
     """Sum reflected boundary PMFs over pre-gathered lower/upper input windows."""
     # At .5 choose one reflection branch rather than averaging opposite slopes.
     low = jnp.where(p > 0.5, 1 - p, p)
     weights = _binomial_weights(
-        plan.gene_copies,
-        jnp.arange(plan.boundary_width),
-        plan.boundary_logchoose,
+        backend.gene_copies,
+        jnp.arange(backend.boundary_width),
+        backend.boundary_logchoose,
         low,
     )
     values = boundary_values[(p > 0.5).astype(jnp.int32)]
     return jnp.sum(weights * values, axis=-1)
-
-
-def _expect_probabilities(plan: FFT, p: jax.Array, v: jax.Array) -> jax.Array:
-    r"""Evaluate binomial expectations for an arbitrary probability map.
-
-    **Arguments:**
-
-    - `plan`: Selection-independent float64 plan.
-    - `p`: One-dimensional success probabilities in `[0, 1]`.
-    - `v`: Finite real input vector of shape `(M+1,)`, cast to float64.
-
-    **Returns:**
-
-    A float64 vector shaped like `p`. This is the extension point for other
-    selection models. The map is linear in `v`; outputs are never clipped or
-    renormalized. Wrap in `jax.jit` at the surrounding workflow boundary.
-
-    **Raises:**
-
-    `ValueError` for incompatible shapes, checked when tracing.
-
-    **Failure Modes:**
-
-    Finite inputs and valid probability ranges are caller preconditions. Tail
-    tolerance excludes interpolation/roundoff error. Polynomial interpolation
-    may yield small negative coefficients, and seams need not be differentiable.
-    Results can differ at roundoff level across devices.
-    """
-    if v.shape != (plan.gene_copies + 1,) or p.ndim != 1:
-        raise ValueError("Expected v.shape == (M+1,) and one-dimensional p")
-    v, p = jnp.asarray(v, dtype=jnp.float64), jnp.asarray(p, dtype=jnp.float64)
-    cutoff = min(plan.min_mode_count / plan.gene_copies, 0.5)
-    is_boundary = (p <= cutoff) | (p >= 1 - cutoff)
-    boundary_columns = jnp.arange(plan.boundary_width)
-    boundary_values = jnp.stack(
-        (v[boundary_columns], v[plan.gene_copies - boundary_columns])
-    )
-
-    # Batched map bounds per-batch forward temporary memory independently of M.
-    # Transposition can retain O(M*boundary_width) residuals. Entire interior
-    # batches skip the direct work; every branch remains linear in v.
-    # Gather BEFORE the scan: automatic transposition then accumulates only
-    # 2*boundary_width entries per batch rather than an M-length cotangent.
-    def direct_batch(prob):
-        boundary = (prob <= cutoff) | (prob >= 1 - cutoff)
-        return jax.lax.cond(
-            jnp.any(boundary),
-            lambda: _boundary(plan, prob, boundary_values),
-            lambda: jnp.zeros_like(prob),
-        )
-
-    batch_size = 64
-    pad = (-p.size) % batch_size
-    padded = jnp.pad(p, (0, pad), constant_values=0.5).reshape(-1, batch_size)
-    direct = jax.lax.map(direct_batch, padded).reshape(-1)[: p.size]
-    if not plan.buckets:
-        return direct
-    # One extra sentinel receives zero-scaled padding from every FFT bucket.
-    nodes = jnp.zeros(plan.total_nodes + 1, dtype=v.dtype)
-    for bucket in plan.buckets:
-        u = bucket.b * v[bucket.indices]
-        conv = jnp.fft.irfft(
-            jnp.fft.rfft(u, n=bucket.nfft, axis=-1) * bucket.kernel_fft,
-            n=bucket.nfft,
-            axis=-1,
-        )
-        values = bucket.a * jnp.take_along_axis(conv, bucket.conv_indices, axis=-1)
-        nodes = nodes.at[bucket.output_indices].add(values)
-    # Only unused interpolation coordinates are clipped: actual boundary rows
-    # still come from the direct sum, and no output or coefficient is clipped.
-    safe_p = jnp.clip(p, cutoff, 1 - cutoff)
-    eta = jnp.log(safe_p) - jnp.log1p(-safe_p)
-    block = jnp.searchsorted(plan.edges, eta, side="right")
-    r = (eta - plan.eta0[block]) * plan.variance[block]
-    start = jnp.floor(r).astype(jnp.int32) - plan.interp_order // 2 + 1
-    t = r - start
-    k = jnp.arange(plan.interp_order)
-    differences = k[:, None] - k[None, :]
-    denominators = jnp.prod(
-        jnp.where(jnp.eye(plan.interp_order, dtype=bool), 1, differences), axis=-1
-    )
-    # Lagrange basis product, with its own node omitted by the diagonal mask.
-    # Weights depend on probabilities and geometry only, preserving linearity.
-    factors = t[:, None, None] - jnp.asarray(k)[None, None, :]
-    factors = jnp.where(
-        jnp.eye(plan.interp_order, dtype=bool)[None, :, :], 1.0, factors
-    )
-    weights = jnp.prod(factors, axis=-1) / jnp.asarray(denominators)
-    indices = (
-        plan.offsets[block, None]
-        + start[:, None]
-        - plan.rmin[block, None]
-        + jnp.asarray(k)
-    )
-    interpolated = jnp.sum(weights * nodes[indices], axis=-1)
-    return jnp.where(is_boundary, direct, interpolated)

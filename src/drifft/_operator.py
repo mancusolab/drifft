@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 
-from ._solve import ExpectedVisitsResult, _expected_visits
+from ._solve import ExpectedVisitsResult, _solve_expected_visits
 from .backends import AbstractTransitionBackend
 
 
@@ -88,7 +88,8 @@ class Transition(eqx.Module):
         *,
         source_gene_copies: int | None = None,
         probabilities: jax.Array | None = None,
-    ):
+    ) -> None:
+        """Bind destination geometry and either a selection model or explicit rows."""
         self.backend = backend
         self.selection = selection
         self._probabilities = (
@@ -249,7 +250,7 @@ class Transition(eqx.Module):
         """
         if self.source_gene_copies != self.backend.gene_copies:
             raise ValueError("expected_visits requires a square transition")
-        return _expected_visits(
+        return _solve_expected_visits(
             self.as_lineax(segregating=True),
             self.backend.gene_copies,
             solver=solver,

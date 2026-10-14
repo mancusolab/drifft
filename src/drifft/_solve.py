@@ -39,7 +39,7 @@ class ExpectedVisitsResult(NamedTuple):
     converged: jax.Array
 
 
-def _expected_visits(
+def _solve_expected_visits(
     operator: lx.FunctionLinearOperator,
     gene_copies: int,
     *,
@@ -57,7 +57,7 @@ def _expected_visits(
     - `gene_copies`: Population size in haploid copies, fixed during the solve.
     - `solver`: `"gmres"` or `"bicgstab"`; no symmetric-matrix solver is valid.
     - `rtol`, `atol`: Finite nonnegative solver tolerances, at least one positive.
-      These are separate from the plan's approximation tolerance.
+      These are separate from the backend's approximation tolerance.
     - `max_steps`: Positive integer iteration limit (outer steps for GMRES).
     - `restart`: Positive integer GMRES subspace size; ignored by BiCGStab.
 

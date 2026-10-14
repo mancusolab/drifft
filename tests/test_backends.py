@@ -16,6 +16,7 @@ jax.config.update("jax_enable_x64", True)
 
 
 def test_abstract_backend_and_removed_api():
+    """Enforce the abstract interface and absence of removed public factories."""
     with pytest.raises(TypeError):
         drifft.AbstractTransitionBackend(32)  # ty: ignore[call-non-callable] -- abstract construction must fail
     assert issubclass(drifft.AbstractTransitionBackend, eqx.Module)
@@ -26,6 +27,7 @@ def test_abstract_backend_and_removed_api():
 
 @pytest.mark.parametrize("name", ["FFT", "NUFFT"])
 def test_backend_dense_adjoint_and_selection_derivatives(name):
+    """Check both backend contracts against dense transitions and finite differences."""
     backend = getattr(drifft, name)(32)
     assert isinstance(backend, drifft.AbstractTransitionBackend)
     mass = jnp.arange(1.0, 26.0)
@@ -33,12 +35,13 @@ def test_backend_dense_adjoint_and_selection_derivatives(name):
     values = jnp.sin(jnp.arange(33.0))
     strength = jnp.asarray(0.1)
 
-    def model(s):
+    def make_transition(strength):
+        """Bind the tested scalar strength to rectangular transition geometry."""
         return drifft.Transition(
-            backend, drifft.Underdominance(s), source_gene_copies=24
+            backend, drifft.Underdominance(strength), source_gene_copies=24
         )
 
-    transition = model(strength)
+    transition = make_transition(strength)
     q = np.asarray(transition.probabilities)
     matrix = binom.pmf(np.arange(33)[None, :], 32, q[:, None])
     np.testing.assert_allclose(
@@ -51,18 +54,23 @@ def test_backend_dense_adjoint_and_selection_derivatives(name):
         values @ transition.advance(mass), mass @ transition.expect(values), atol=1e-12
     )
 
-    def f(s):
-        return values @ model(s).advance(mass)
+    def propagation_reward(strength):
+        """Return a scalar propagation objective for forward and reverse AD."""
+        return values @ make_transition(strength).advance(mass)
 
-    _, tangent = jax.jvp(f, (strength,), (jnp.ones(()),))
-    np.testing.assert_allclose(jax.jit(jax.grad(f))(strength), tangent, atol=1e-10)
+    _, tangent = jax.jvp(propagation_reward, (strength,), (jnp.ones(()),))
+    np.testing.assert_allclose(
+        jax.jit(jax.grad(propagation_reward))(strength), tangent, atol=1e-10
+    )
     h = 1e-5
     np.testing.assert_allclose(
-        tangent, (f(strength + h) - f(strength - h)) / (2 * h), atol=1e-8
+        tangent,
+        (propagation_reward(strength + h) - propagation_reward(strength - h)) / (2 * h),
+        atol=1e-8,
     )
     np.testing.assert_allclose(
-        jax.jit(jax.vmap(f))(jnp.array([0.1, 0.2])),
-        jnp.stack([f(0.1), f(0.2)]),
+        jax.jit(jax.vmap(propagation_reward))(jnp.array([0.1, 0.2])),
+        jnp.stack([propagation_reward(0.1), propagation_reward(0.2)]),
         atol=1e-11,
     )
 
@@ -84,11 +92,13 @@ def test_large_backend_and_repeated_selection_gradient(name):
     reward = jnp.sin(jnp.arange(33.0) / 7)
 
     def objective(strength):
+        """Advance through a short epoch before applying the scalar reward."""
         transition = drifft.Transition(backend, drifft.Underdominance(strength))
         final = jax.lax.fori_loop(0, 4, lambda _, p: transition.advance(p), mass)
         return final @ reward
 
     def dense_objective(strength):
+        """Compute the same epoch reward using an independent dense transition."""
         x = np.arange(33) / 32
         q = (x - strength * x * (1 - x)) / (1 - 2 * strength * x * (1 - x))
         matrix = binom.pmf(np.arange(33)[None, :], 32, q[:, None])

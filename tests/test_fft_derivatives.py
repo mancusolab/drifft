@@ -15,15 +15,18 @@ jax.config.update("jax_enable_x64", True)
 
 @pytest.mark.parametrize("size", [16, 1024])
 def test_fft_probability_derivatives_and_transpose(size):
+    """Match binomial first and second derivatives, including reflection endpoints."""
     backend = FFT(size)
     q = jnp.array([0.0, 1e-12, 0.03, 0.5, 0.97, 1 - 1e-12, 1.0])
     values = jnp.asarray(np.random.default_rng(size).normal(size=size + 1))
     mass = jnp.array([-0.2, 0.3, -0.7, 0.9, 0.4, -0.5, 0.8])
 
     def expect(p):
+        """Evaluate expectations for the differentiated probability or parameter input."""
         return backend.expect(p, values)
 
     def first(p):
+        """Compute the directional probability derivative for all sampled rows."""
         return jax.jvp(expect, (p,), (jnp.ones_like(p),))[1]
 
     derivative = jax.jit(first)(q)
@@ -59,6 +62,7 @@ def test_fft_probability_derivatives_and_transpose(size):
         )
 
     def propagated(p):
+        """Apply the algebraic transpose at the supplied probabilities."""
         return jax.linear_transpose(lambda v: backend.expect(p, v), values)(mass)[0]
 
     gradient = jax.jit(jax.grad(lambda p: propagated(p) @ values))(q)
@@ -80,6 +84,7 @@ def test_fft_probability_derivatives_and_transpose(size):
 
 
 def test_fft_selection_gradients_match_binomial_chain_rule():
+    """Check forward and transpose selection derivatives against the chain rule."""
     size = 16
     backend = FFT(size)
     x = np.arange(size + 1) / size
@@ -107,9 +112,11 @@ def test_fft_selection_gradients_match_binomial_chain_rule():
     expected_second = np.asarray(mass) @ (second * dq**2 + first * d2q)
 
     def forward(s):
+        """Evaluate the forward scalar objective for the chain-rule reference."""
         return mass @ Transition(backend, Underdominance(s)).expect(values)
 
     def reverse(s):
+        """Evaluate the equivalent transpose objective for the chain-rule reference."""
         return Transition(backend, Underdominance(s)).advance(mass) @ values
 
     for objective in (forward, reverse):

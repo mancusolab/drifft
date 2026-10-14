@@ -14,8 +14,11 @@ jax.config.update("jax_enable_x64", True)
 
 
 def test_selection_model_and_both_transition_directions():
-    plan = drifft.NUFFT(16)
-    transition = drifft.Transition(plan, selection=drifft.Underdominance(strength=0.1))
+    """Match underdominance expectations and propagation to dense references."""
+    backend = drifft.NUFFT(16)
+    transition = drifft.Transition(
+        backend, selection=drifft.Underdominance(strength=0.1)
+    )
     x = np.arange(17) / 16
     p = (x - 0.1 * x * (1 - x)) / (1 - 0.2 * x * (1 - x))
     matrix = binom.pmf(np.arange(17)[None, :], 16, p[:, None])
@@ -46,9 +49,10 @@ def test_selection_model_and_both_transition_directions():
 
 
 def test_explicit_probabilities_preserve_rectangular_transitions():
-    plan = drifft.NUFFT(8)
+    """Allow sampled source rows with a different destination dimension."""
+    backend = drifft.NUFFT(8)
     p = jnp.array([0.0, 0.15, 0.7, 1.0])
-    transition = drifft.Transition.from_probabilities(plan, p)
+    transition = drifft.Transition.from_probabilities(backend, p)
     matrix = binom.pmf(np.arange(9)[None, :], 8, np.asarray(p)[:, None])
     values = jnp.arange(9, dtype=jnp.float64)
     mass = jnp.array([0.1, 0.2, 0.3, 0.4])
@@ -61,8 +65,11 @@ def test_explicit_probabilities_preserve_rectangular_transitions():
 
 
 def test_custom_selection_and_rectangular_source_size():
-    plan = drifft.NUFFT(8)
-    transition = drifft.Transition(plan, selection=lambda x: x**2, source_gene_copies=4)
+    """Apply arbitrary selection callables on the requested source grid."""
+    backend = drifft.NUFFT(8)
+    transition = drifft.Transition(
+        backend, selection=lambda x: x**2, source_gene_copies=4
+    )
     np.testing.assert_allclose(transition.probabilities, (np.arange(5) / 4) ** 2)
     np.testing.assert_allclose(
         transition.expect(jnp.arange(9, dtype=jnp.float64)),
@@ -72,29 +79,34 @@ def test_custom_selection_and_rectangular_source_size():
 
 
 def test_parameters_are_dynamic_and_not_stale_cached_probabilities():
-    plan = drifft.NUFFT(512)
-    transition = drifft.Transition(plan, selection=drifft.Underdominance(0.1))
+    """Reuse compiled calls while selection parameters change as dynamic leaves."""
+    backend = drifft.NUFFT(512)
+    transition = drifft.Transition(backend, selection=drifft.Underdominance(0.1))
     traces = []
 
     @eqx.filter_jit
     def expect(model, values):
+        """Evaluate expectations for the differentiated probability or parameter input."""
         traces.append(1)
         return model.expect(values)
 
     values = jnp.sin(jnp.arange(513))
     first = expect(transition, values)
-    changed = drifft.Transition(plan, selection=drifft.Underdominance(0.2))
+    changed = drifft.Transition(backend, selection=drifft.Underdominance(0.2))
     second = expect(changed, values)
     assert len(traces) == 1
     assert not np.allclose(first, second)
     assert changed.backend is transition.backend
     derivative = jax.grad(
-        lambda s: drifft.Transition(plan, drifft.Underdominance(s)).expect(values)[200]
+        lambda s: drifft.Transition(backend, drifft.Underdominance(s)).expect(values)[
+            200
+        ]
     )(0.1)
     h = 1e-5
 
     def evaluate(s):
-        return drifft.Transition(plan, drifft.Underdominance(s)).expect(values)[200]
+        """Evaluate the scalar objective used to check dynamic parameters."""
+        return drifft.Transition(backend, drifft.Underdominance(s)).expect(values)[200]
 
     np.testing.assert_allclose(
         derivative,
@@ -105,9 +117,10 @@ def test_parameters_are_dynamic_and_not_stale_cached_probabilities():
 
 
 def test_custom_probabilities_drive_expected_visits():
-    plan = drifft.NUFFT(16)
+    """Use caller-supplied probabilities in the occupation system."""
+    backend = drifft.NUFFT(16)
     p = jnp.arange(17, dtype=jnp.float64) / 16
-    transition = drifft.Transition.from_probabilities(plan, p)
+    transition = drifft.Transition.from_probabilities(backend, p)
     matrix = binom.pmf(np.arange(17)[None, :], 16, np.asarray(p)[:, None])
     rhs = np.zeros(15)
     rhs[0] = 1
@@ -118,34 +131,37 @@ def test_custom_probabilities_drive_expected_visits():
 
 
 def test_transition_rejects_ambiguous_or_invalid_configuration():
-    plan = drifft.NUFFT(16)
+    """Reject competing selection modes and inconsistent source dimensions."""
+    backend = drifft.NUFFT(16)
     with pytest.raises(ValueError):
-        drifft.Transition(plan)
+        drifft.Transition(backend)
     with pytest.raises(ValueError):
-        drifft.Transition.from_probabilities(plan, jnp.ones((2, 2)))
+        drifft.Transition.from_probabilities(backend, jnp.ones((2, 2)))
     with pytest.raises(ValueError):
-        drifft.Transition.from_probabilities(plan, jnp.array([]))
+        drifft.Transition.from_probabilities(backend, jnp.array([]))
     with pytest.raises(ValueError):
-        drifft.Transition(plan, drifft.Underdominance(0.1), source_gene_copies=0)
+        drifft.Transition(backend, drifft.Underdominance(0.1), source_gene_copies=0)
     with pytest.raises(ValueError):
         drifft.Underdominance(jnp.array([0.1, 0.2]))
 
 
 def test_custom_model_gradients_through_advance_and_batched_solves():
-    plan = drifft.NUFFT(16)
+    """Differentiate custom selection through propagation and batched visit solves."""
+    backend = drifft.NUFFT(16)
     mass = jnp.zeros(17).at[7].set(1.0)
 
     def mean_next_count(bias):
         # Construct the callable inside differentiation so its parameter stays
         # connected to the outer trace rather than a precomputed probability map.
-        model = drifft.Transition(plan, selection=lambda x: x + bias * x * (1 - x))
+        """Return the propagated mean count for a custom selection model."""
+        model = drifft.Transition(backend, selection=lambda x: x + bias * x * (1 - x))
         return model.advance(mass) @ jnp.arange(17, dtype=jnp.float64)
 
     derivative = jax.jit(jax.grad(mean_next_count))(jnp.asarray(0.02))
     np.testing.assert_allclose(derivative, 16 * (7 / 16) * (9 / 16), atol=1e-10)
     results = jax.vmap(
         lambda strength: drifft.Transition(
-            plan, drifft.Underdominance(strength)
+            backend, drifft.Underdominance(strength)
         ).expected_visits()
     )(jnp.array([0.0, 0.1]))
     assert bool(jnp.all(results.converged))
@@ -153,17 +169,18 @@ def test_custom_model_gradients_through_advance_and_batched_solves():
 
 
 def test_transition_shape_errors_are_explicit():
-    plan = drifft.NUFFT(16)
-    model = drifft.Transition(plan, drifft.Underdominance(0.0))
+    """Report vector shape mismatches before numerical application."""
+    backend = drifft.NUFFT(16)
+    model = drifft.Transition(backend, drifft.Underdominance(0.0))
     with pytest.raises(ValueError, match="distribution"):
         model.advance(jnp.ones(16))
     with pytest.raises(ValueError, match="interior"):
         model.advance_segregating(jnp.ones(16))
     with pytest.raises(ValueError, match="probability"):
-        drifft.Transition(plan, selection=lambda x: jnp.asarray(0.5)).expect(
+        drifft.Transition(backend, selection=lambda x: jnp.asarray(0.5)).expect(
             jnp.ones(17)
         )
     with pytest.raises(ValueError, match="exactly one"):
         drifft.Transition(
-            plan, drifft.Underdominance(0.0), probabilities=jnp.linspace(0, 1, 17)
+            backend, drifft.Underdominance(0.0), probabilities=jnp.linspace(0, 1, 17)
         )

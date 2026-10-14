@@ -13,11 +13,12 @@ jax.config.update("jax_enable_x64", True)
 
 
 def test_transition_api_keywords_under_jit():
-    plan = drifft.NUFFT(gene_copies=512)
-    assert isinstance(plan, drifft.NUFFT)
-    assert plan.gene_copies == 512
+    """Preserve keyword calls and segregating semantics under filtered JIT."""
+    backend = drifft.NUFFT(gene_copies=512)
+    assert isinstance(backend, drifft.NUFFT)
+    assert backend.gene_copies == 512
     values = jnp.linspace(-1.0, 1.0, 513)
-    model = drifft.Transition(plan, selection=drifft.Underdominance(strength=0.1))
+    model = drifft.Transition(backend, selection=drifft.Underdominance(strength=0.1))
     actual = eqx.filter_jit(model.expect)(values=values)
     frequency = np.arange(513) / 512
     probabilities = (frequency - 0.1 * frequency * (1 - frequency)) / (
@@ -32,9 +33,10 @@ def test_transition_api_keywords_under_jit():
 
 
 def test_expected_visits_result_fields_survive_pytree_roundtrip():
-    plan = drifft.NUFFT(gene_copies=16)
+    """Retain occupation values and diagnostics through PyTree flattening."""
+    backend = drifft.NUFFT(gene_copies=16)
     result = drifft.Transition(
-        plan, drifft.Underdominance(jnp.asarray(0.1))
+        backend, drifft.Underdominance(jnp.asarray(0.1))
     ).expected_visits()
     assert isinstance(result, drifft.ExpectedVisitsResult)
     assert bool(result.converged)

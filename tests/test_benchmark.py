@@ -24,6 +24,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "benchmarks" / "benchmark.py"
     ],
 )
 def test_invalid_benchmark_arguments(arguments):
+    """Reject invalid CLI configuration with actionable parser errors."""
     result = subprocess.run(
         [
             sys.executable,
@@ -47,6 +48,7 @@ def test_invalid_benchmark_arguments(arguments):
 
 
 def test_benchmark_help_and_json_output():
+    """Expose CLI help and a parseable report with numerical diagnostics."""
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--help"],
         text=True,

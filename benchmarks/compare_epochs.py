@@ -21,15 +21,15 @@ from typing import Any, cast
 BACKENDS = ("nufft", "fft", "reference", "fastdtwf", "condensed", "refreshed")
 
 
-def worker(args: argparse.Namespace) -> dict[str, Any]:
+def run_worker(args: argparse.Namespace) -> dict[str, Any]:
     """Initialize one backend, then evolve the same starting mass at each horizon."""
-    backend = args.worker
+    backend_name = args.worker
     size = args.gene_copies
     source = args.source_gene_copies or size
     strength = args.selections[0]
     metadata: dict[str, Any] = {}
     initialized = time.perf_counter()
-    if backend in {"nufft", "fft", "reference"}:
+    if backend_name in {"nufft", "fft", "reference"}:
         import equinox as eqx
         import jax
         import jax.numpy as jnp
@@ -43,16 +43,20 @@ def worker(args: argparse.Namespace) -> dict[str, Any]:
         initialization_seconds = time.perf_counter() - initialized
         started = time.perf_counter()
         options = {"tail_tol": 1e-12}
-        if backend == "reference":
+        if backend_name == "reference":
             options = {"accuracy": 1e-13, "tail_tol": 1e-15, "nufft_tol": 1e-15}
-        if backend == "reference":
-            plan = drifft.NUFFT(size, accuracy=1e-13, tail_tol=1e-15, nufft_tol=1e-15)
+        if backend_name == "reference":
+            backend = drifft.NUFFT(
+                size, accuracy=1e-13, tail_tol=1e-15, nufft_tol=1e-15
+            )
         else:
-            plan = (drifft.FFT if backend == "fft" else drifft.NUFFT)(
+            backend = (drifft.FFT if backend_name == "fft" else drifft.NUFFT)(
                 size, tail_tol=1e-12
             )
         transition = drifft.Transition(
-            plan, selection=drifft.Underdominance(strength), source_gene_copies=source
+            backend,
+            selection=drifft.Underdominance(strength),
+            source_gene_copies=source,
         )
         mass = jnp.full(source + 1, 1 / (source + 1), dtype=jnp.float64)
         if args.initial == "singleton":
@@ -63,6 +67,7 @@ def worker(args: argparse.Namespace) -> dict[str, Any]:
         dynamic, static = eqx.partition((transition, mass), eqx.is_array)
 
         def evolve(arrays, count):
+            """Advance a distribution through a fixed-size epoch inside one JIT call."""
             operator, initial = eqx.combine(arrays, static)
             if source != size:
                 return operator.advance(initial)
@@ -80,11 +85,12 @@ def worker(args: argparse.Namespace) -> dict[str, Any]:
         first_dispatch_seconds = time.perf_counter() - started
 
         def run(count):
+            """Execute one complete epoch and wait for its result before recording time."""
             return compiled(dynamic, jnp.asarray(count)).block_until_ready()
 
         metadata.update(
             source_path=drifft.__file__,
-            plan_bytes=sum(x.nbytes for x in jax.tree.leaves(plan)),
+            plan_bytes=sum(x.nbytes for x in jax.tree.leaves(backend)),
             plan_settings=options,
             persistent_compilation_cache=False,
         )
@@ -99,10 +105,11 @@ def worker(args: argparse.Namespace) -> dict[str, Any]:
             torch.set_num_threads(args.threads)
         selection = torch.tensor(strength, dtype=torch.float64)
         zero = torch.tensor(0.0, dtype=torch.float64)
-        condensed = backend != "fastdtwf"
-        refresh = 50 if backend == "refreshed" else float("inf")
+        condensed = backend_name != "fastdtwf"
+        refresh = 50 if backend_name == "refreshed" else float("inf")
 
         def integrate(value, destination, count):
+            """Run the selected upstream fastDTWF integration strategy."""
             return fast._integrate_likelihood_constant_size(
                 value,
                 destination,
@@ -133,11 +140,12 @@ def worker(args: argparse.Namespace) -> dict[str, Any]:
         compile_seconds = first_dispatch_seconds = 0.0
 
         def run(count):
+            """Execute one complete epoch and wait for its result before recording time."""
             return integrate(mass, size, count)
 
         metadata.update(
             use_condensed=condensed,
-            refresh_generations=50 if backend == "refreshed" else None,
+            refresh_generations=50 if backend_name == "refreshed" else None,
             torch_threads=torch.get_num_threads(),
             setup_included_in_epoch_seconds=True,
             source=json.loads(
@@ -168,12 +176,12 @@ def worker(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
         print(
-            f"{backend} s={strength:g} generations={count}: {elapsed:.3f}s",
+            f"{backend_name} s={strength:g} generations={count}: {elapsed:.3f}s",
             file=sys.stderr,
             flush=True,
         )
     return metadata | {
-        "backend": backend,
+        "backend": backend_name,
         "selection": strength,
         "initialization_seconds": initialization_seconds,
         "setup_seconds": setup_seconds,
@@ -304,7 +312,7 @@ def main() -> None:
     if args.output and not args.output.parent.is_dir():
         parser.error("output directory must exist")
     try:
-        report = worker(args) if args.worker else run(args)
+        report = run_worker(args) if args.worker else run(args)
         encoded = json.dumps(report, indent=2, allow_nan=False) + "\n"
         if args.output:
             args.output.write_text(encoded)
