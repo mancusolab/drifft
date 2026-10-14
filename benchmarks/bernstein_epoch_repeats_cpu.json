@@ -1,0 +1,193 @@
+{
+  "reason": "Check variable selected condensed timings; two additional fresh workers per mode, only 1000-generation horizon; original sweep retained separately",
+  "runs": [
+    {
+      "use_condensed": true,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "condensed",
+      "selection": 0.0001,
+      "initialization_seconds": 2.520007791928947,
+      "setup_seconds": 1.1084135621786118e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1000,
+          "seconds": 11.09203050006181,
+          "total_seconds": 11.092041584197432,
+          "mass": 0.9999999999999936,
+          "minimum": 2.9855254088979797e-05,
+          "lost": 0.01784541065096112,
+          "fixed": 0.01784541065093971
+        }
+      ],
+      "trial": 1,
+      "command": [
+        "/Users/nicholas/Projects/drifft/.venv/bin/python",
+        "benchmarks/compare_epochs.py",
+        "--worker",
+        "condensed",
+        "--selections",
+        "0.0001",
+        "--generations",
+        "1000"
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": 50,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "refreshed",
+      "selection": 0.0001,
+      "initialization_seconds": 2.7074190410785377,
+      "setup_seconds": 1.3750046491622925e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1000,
+          "seconds": 23.430305584101006,
+          "total_seconds": 23.430319334147498,
+          "mass": 0.9999999999999933,
+          "minimum": 2.9855503847777473e-05,
+          "lost": 0.017845450205423958,
+          "fixed": 0.017845450205414722
+        }
+      ],
+      "trial": 1,
+      "command": [
+        "/Users/nicholas/Projects/drifft/.venv/bin/python",
+        "benchmarks/compare_epochs.py",
+        "--worker",
+        "refreshed",
+        "--selections",
+        "0.0001",
+        "--generations",
+        "1000"
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": 50,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "refreshed",
+      "selection": 0.0001,
+      "initialization_seconds": 4.441773291910067,
+      "setup_seconds": 1.4290912076830864e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1000,
+          "seconds": 22.002002583816648,
+          "total_seconds": 22.002016874728724,
+          "mass": 0.9999999999999933,
+          "minimum": 2.9855503847777473e-05,
+          "lost": 0.017845450205423958,
+          "fixed": 0.017845450205414722
+        }
+      ],
+      "trial": 2,
+      "command": [
+        "/Users/nicholas/Projects/drifft/.venv/bin/python",
+        "benchmarks/compare_epochs.py",
+        "--worker",
+        "refreshed",
+        "--selections",
+        "0.0001",
+        "--generations",
+        "1000"
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "condensed",
+      "selection": 0.0001,
+      "initialization_seconds": 3.3388933341484517,
+      "setup_seconds": 1.354212872684002e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1000,
+          "seconds": 11.398138042073697,
+          "total_seconds": 11.398151584202424,
+          "mass": 0.9999999999999936,
+          "minimum": 2.9855254088979797e-05,
+          "lost": 0.01784541065096112,
+          "fixed": 0.01784541065093971
+        }
+      ],
+      "trial": 2,
+      "command": [
+        "/Users/nicholas/Projects/drifft/.venv/bin/python",
+        "benchmarks/compare_epochs.py",
+        "--worker",
+        "condensed",
+        "--selections",
+        "0.0001",
+        "--generations",
+        "1000"
+      ]
+    }
+  ]
+}

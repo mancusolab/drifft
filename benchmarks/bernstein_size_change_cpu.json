@@ -1,0 +1,504 @@
+{
+  "schema_version": 1,
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "config": {
+    "gene_copies": 57896,
+    "source_gene_copies": 28948,
+    "selections": [
+      0.0,
+      0.0001
+    ],
+    "generations": [
+      1
+    ],
+    "initial": "uniform",
+    "baseline_source": ".cache/bernstein-baseline/src",
+    "tv_sd": 0.1,
+    "row_eps": 1e-08,
+    "threads": null,
+    "output": "benchmarks/bernstein_size_change_cpu.json",
+    "worker": null
+  },
+  "timing_repeats": 1,
+  "reference": "Chebyshev/NUFFT accuracy=1e-13; cross-check previous backend independently",
+  "thread_environment": {
+    "OMP_NUM_THREADS": null,
+    "MKL_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "XLA_FLAGS": null
+  },
+  "runs": [
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+      "plan_bytes": 14736,
+      "plan_settings": {
+        "tail_tol": 1e-12
+      },
+      "persistent_compilation_cache": false,
+      "backend": "drifft",
+      "selection": 0.0,
+      "initialization_seconds": 1.0866069588810205,
+      "setup_seconds": 0.28279479197226465,
+      "compile_seconds": 0.22318425006233156,
+      "first_dispatch_seconds": 0.08531770901754498,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.06394591694697738,
+          "total_seconds": 0.6552426679991186,
+          "mass": 0.9999999999999997,
+          "minimum": 1.250548076201425e-05,
+          "lost": 3.994989230465664e-05,
+          "fixed": 3.9949892304672256e-05,
+          "reference_l1": 8.316676001845179e-15,
+          "reference_max_abs": 2.4069288229178198e-17,
+          "reference_segregating_l1": 8.292078165056914e-15,
+          "reference_segregating_relative_l1": 8.292740753256923e-15,
+          "mean_frequency": 0.5000000000000003
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+      "plan_bytes": 33365080,
+      "plan_settings": {
+        "tail_tol": 1e-12
+      },
+      "persistent_compilation_cache": false,
+      "backend": "previous",
+      "selection": 0.0,
+      "initialization_seconds": 1.1907446249388158,
+      "setup_seconds": 4.21520833298564,
+      "compile_seconds": 0.5789837499614805,
+      "first_dispatch_seconds": 0.026696084067225456,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.02189029101282358,
+          "total_seconds": 4.842778458027169,
+          "mass": 0.9999999999999243,
+          "minimum": 1.2505480762014132e-05,
+          "lost": 3.994989230465608e-05,
+          "fixed": 3.994989230466485e-05,
+          "reference_l1": 7.826814994997978e-14,
+          "reference_max_abs": 3.14757443199698e-17,
+          "reference_segregating_l1": 7.823664032434192e-14,
+          "reference_segregating_relative_l1": 7.824289191455312e-14,
+          "mean_frequency": 0.49999999999996186
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+      "plan_bytes": 16360,
+      "plan_settings": {
+        "accuracy": 1e-13,
+        "tail_tol": 1e-15,
+        "nufft_tol": 1e-15
+      },
+      "persistent_compilation_cache": false,
+      "backend": "reference",
+      "selection": 0.0,
+      "initialization_seconds": 0.5864670828450471,
+      "setup_seconds": 0.2069332911632955,
+      "compile_seconds": 0.20945395808666945,
+      "first_dispatch_seconds": 0.06947333295829594,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.06754399999044836,
+          "total_seconds": 0.5534045821987092,
+          "mass": 0.9999999999999997,
+          "minimum": 1.250548076201418e-05,
+          "lost": 3.9949892304656114e-05,
+          "fixed": 3.9949892304696325e-05,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.49999999999999994
+        }
+      ]
+    },
+    {
+      "use_condensed": false,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "fastdtwf",
+      "selection": 0.0,
+      "initialization_seconds": 2.8694846669677645,
+      "setup_seconds": 1.39591284096241e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.3444229159504175,
+          "total_seconds": 0.34443687507882714,
+          "mass": 1.0,
+          "minimum": 1.250548076195872e-05,
+          "lost": 3.994989230471267e-05,
+          "fixed": 3.994989230463176e-05,
+          "reference_l1": 3.3510730838413475e-06,
+          "reference_max_abs": 5.324247168663051e-09,
+          "reference_segregating_l1": 3.3510730837202286e-06,
+          "reference_segregating_relative_l1": 3.3513408551327073e-06,
+          "mean_frequency": 0.49999999999999967
+        }
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "condensed",
+      "selection": 0.0,
+      "initialization_seconds": 2.7966767090838403,
+      "setup_seconds": 1.2125121429562569e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.3471332921180874,
+          "total_seconds": 0.347145417239517,
+          "mass": 1.0,
+          "minimum": 1.250548076195872e-05,
+          "lost": 3.994989230471267e-05,
+          "fixed": 3.994989230463176e-05,
+          "reference_l1": 3.3510730838413475e-06,
+          "reference_max_abs": 5.324247168663051e-09,
+          "reference_segregating_l1": 3.3510730837202286e-06,
+          "reference_segregating_relative_l1": 3.3513408551327073e-06,
+          "mean_frequency": 0.49999999999999967
+        }
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": 50,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "refreshed",
+      "selection": 0.0,
+      "initialization_seconds": 2.7168265408836305,
+      "setup_seconds": 9.750016033649445e-06,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.34552587498910725,
+          "total_seconds": 0.3455356250051409,
+          "mass": 1.0,
+          "minimum": 1.250548076195872e-05,
+          "lost": 3.994989230471267e-05,
+          "fixed": 3.994989230463176e-05,
+          "reference_l1": 3.3510730838413475e-06,
+          "reference_max_abs": 5.324247168663051e-09,
+          "reference_segregating_l1": 3.3510730837202286e-06,
+          "reference_segregating_relative_l1": 3.3513408551327073e-06,
+          "mean_frequency": 0.49999999999999967
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+      "plan_bytes": 14736,
+      "plan_settings": {
+        "tail_tol": 1e-12
+      },
+      "persistent_compilation_cache": false,
+      "backend": "drifft",
+      "selection": 0.0001,
+      "initialization_seconds": 0.5514476250391454,
+      "setup_seconds": 0.20645120809786022,
+      "compile_seconds": 0.2456481249537319,
+      "first_dispatch_seconds": 0.06827508308924735,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.06766787497326732,
+          "total_seconds": 0.5880422911141068,
+          "mass": 0.9999999999999996,
+          "minimum": 1.250751409578952e-05,
+          "lost": 3.9951142846752985e-05,
+          "fixed": 3.995114284679029e-05,
+          "reference_l1": 8.328957979580366e-15,
+          "reference_max_abs": 2.4414877671657953e-17,
+          "reference_segregating_l1": 8.304421129164304e-15,
+          "reference_segregating_relative_l1": 8.305084724416666e-15,
+          "mean_frequency": 0.5000000000000006
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+      "plan_bytes": 33365080,
+      "plan_settings": {
+        "tail_tol": 1e-12
+      },
+      "persistent_compilation_cache": false,
+      "backend": "previous",
+      "selection": 0.0001,
+      "initialization_seconds": 1.0613514159340411,
+      "setup_seconds": 4.230888750171289,
+      "compile_seconds": 0.5924035420175642,
+      "first_dispatch_seconds": 0.029521499993279576,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.022613750072196126,
+          "total_seconds": 4.875427542254329,
+          "mass": 0.9999999999999241,
+          "minimum": 1.2507514095788886e-05,
+          "lost": 3.995114284675227e-05,
+          "fixed": 3.995114284676366e-05,
+          "reference_l1": 7.827192602285864e-14,
+          "reference_max_abs": 5.1045593533333156e-17,
+          "reference_segregating_l1": 7.822028411813044e-14,
+          "reference_segregating_relative_l1": 7.822653459704665e-14,
+          "mean_frequency": 0.4999999999999616
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+      "plan_bytes": 16360,
+      "plan_settings": {
+        "accuracy": 1e-13,
+        "tail_tol": 1e-15,
+        "nufft_tol": 1e-15
+      },
+      "persistent_compilation_cache": false,
+      "backend": "reference",
+      "selection": 0.0001,
+      "initialization_seconds": 0.576623999979347,
+      "setup_seconds": 0.1985440410207957,
+      "compile_seconds": 0.21347616706043482,
+      "first_dispatch_seconds": 0.07541087502613664,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.0686729580629617,
+          "total_seconds": 0.5561040411703289,
+          "mass": 0.9999999999999997,
+          "minimum": 1.2507514095789392e-05,
+          "lost": 3.995114284675286e-05,
+          "fixed": 3.9951142846814703e-05,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.5000000000000007
+        }
+      ]
+    },
+    {
+      "use_condensed": false,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "fastdtwf",
+      "selection": 0.0001,
+      "initialization_seconds": 2.883318291977048,
+      "setup_seconds": 1.4166813343763351e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.4389327911194414,
+          "total_seconds": 0.43894695793278515,
+          "mass": 1.0,
+          "minimum": 1.2507514095739617e-05,
+          "lost": 3.995114284680888e-05,
+          "fixed": 3.995114284672768e-05,
+          "reference_l1": 3.3742145516407446e-06,
+          "reference_max_abs": 5.32426253212632e-09,
+          "reference_segregating_l1": 3.3742145514977045e-06,
+          "reference_segregating_relative_l1": 3.374484180496764e-06,
+          "mean_frequency": 0.4999999999999997
+        }
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "condensed",
+      "selection": 0.0001,
+      "initialization_seconds": 2.6412424170412123,
+      "setup_seconds": 1.0292045772075653e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.34172162506729364,
+          "total_seconds": 0.3417319171130657,
+          "mass": 1.0,
+          "minimum": 1.2507514095739617e-05,
+          "lost": 3.995114284680888e-05,
+          "fixed": 3.995114284672768e-05,
+          "reference_l1": 3.3742145516407446e-06,
+          "reference_max_abs": 5.32426253212632e-09,
+          "reference_segregating_l1": 3.3742145514977045e-06,
+          "reference_segregating_relative_l1": 3.374484180496764e-06,
+          "mean_frequency": 0.4999999999999997
+        }
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": 50,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "refreshed",
+      "selection": 0.0001,
+      "initialization_seconds": 2.637860249960795,
+      "setup_seconds": 1.2459000572562218e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 1,
+          "seconds": 0.34408354107290506,
+          "total_seconds": 0.3440960000734776,
+          "mass": 1.0,
+          "minimum": 1.2507514095739617e-05,
+          "lost": 3.995114284680888e-05,
+          "fixed": 3.995114284672768e-05,
+          "reference_l1": 3.3742145516407446e-06,
+          "reference_max_abs": 5.32426253212632e-09,
+          "reference_segregating_l1": 3.3742145514977045e-06,
+          "reference_segregating_relative_l1": 3.374484180496764e-06,
+          "mean_frequency": 0.4999999999999997
+        }
+      ]
+    }
+  ]
+}

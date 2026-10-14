@@ -1,0 +1,1011 @@
+{
+  "schema_version": 1,
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "config": {
+    "gene_copies": 28948,
+    "source_gene_copies": null,
+    "selections": [
+      0.0,
+      0.0001
+    ],
+    "generations": [
+      100,
+      200,
+      500,
+      1000
+    ],
+    "initial": "uniform",
+    "baseline_source": ".cache/bernstein-baseline/src",
+    "tv_sd": 0.1,
+    "row_eps": 1e-08,
+    "threads": null,
+    "output": "benchmarks/bernstein_epochs_cpu.json",
+    "worker": null
+  },
+  "timing_repeats": 1,
+  "reference": "Chebyshev/NUFFT accuracy=1e-13; cross-check previous backend independently",
+  "thread_environment": {
+    "OMP_NUM_THREADS": null,
+    "MKL_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "XLA_FLAGS": null
+  },
+  "runs": [
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+      "plan_bytes": 10360,
+      "plan_settings": {
+        "tail_tol": 1e-12
+      },
+      "persistent_compilation_cache": false,
+      "backend": "drifft",
+      "selection": 0.0,
+      "initialization_seconds": 0.44411666691303253,
+      "setup_seconds": 0.1590564581565559,
+      "compile_seconds": 0.15576687478460371,
+      "first_dispatch_seconds": 0.0331712500192225,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 2.569396333070472,
+          "total_seconds": 2.917390916030854,
+          "mass": 0.9999999999999759,
+          "minimum": 2.825620104623337e-05,
+          "lost": 0.0017818000244734754,
+          "fixed": 0.0017818000244739605,
+          "reference_l1": 4.321159586834905e-14,
+          "reference_max_abs": 1.169420463242865e-15,
+          "reference_segregating_l1": 4.178218372414416e-14,
+          "reference_segregating_relative_l1": 4.1931611215926765e-14,
+          "mean_frequency": 0.4999999999999907
+        },
+        {
+          "generations": 200,
+          "seconds": 5.133214165922254,
+          "total_seconds": 5.481208748882636,
+          "mass": 0.9999999999999506,
+          "minimum": 2.811364070345055e-05,
+          "lost": 0.0035037845459029533,
+          "fixed": 0.0035037845459034056,
+          "reference_l1": 5.533974225591966e-14,
+          "reference_max_abs": 2.125903619809577e-15,
+          "reference_segregating_l1": 5.24345141145275e-14,
+          "reference_segregating_relative_l1": 5.2804545616298045e-14,
+          "mean_frequency": 0.4999999999999808
+        },
+        {
+          "generations": 500,
+          "seconds": 12.828995291143656,
+          "total_seconds": 13.176989874104038,
+          "mass": 0.9999999999998781,
+          "minimum": 2.7796302781707136e-05,
+          "lost": 0.008627720195166685,
+          "fixed": 0.00862772019516918,
+          "reference_l1": 8.557347200093511e-14,
+          "reference_max_abs": 6.654399253847032e-15,
+          "reference_segregating_l1": 7.584167330070522e-14,
+          "reference_segregating_relative_l1": 7.717333315061991e-14,
+          "mean_frequency": 0.49999999999995226
+        },
+        {
+          "generations": 1000,
+          "seconds": 25.737787416903302,
+          "total_seconds": 26.085781999863684,
+          "mass": 0.9999999999997591,
+          "minimum": 2.731109495491221e-05,
+          "lost": 0.01704580323441964,
+          "fixed": 0.017045803234429065,
+          "reference_l1": 1.268596806650122e-13,
+          "reference_max_abs": 1.63202784619898e-14,
+          "reference_segregating_l1": 1.0229599624518061e-13,
+          "reference_segregating_relative_l1": 1.059065196350938e-13,
+          "mean_frequency": 0.4999999999999063
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+      "plan_bytes": 18370656,
+      "plan_settings": {
+        "tail_tol": 1e-12
+      },
+      "persistent_compilation_cache": false,
+      "backend": "previous",
+      "selection": 0.0,
+      "initialization_seconds": 0.8374496251344681,
+      "setup_seconds": 2.294462624937296,
+      "compile_seconds": 0.5409914581105113,
+      "first_dispatch_seconds": 0.020730582997202873,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 0.669056124985218,
+          "total_seconds": 3.525240791030228,
+          "mass": 0.9999999999940467,
+          "minimum": 2.8256201046379314e-05,
+          "lost": 0.0017818000244762971,
+          "fixed": 0.0017818000244758134,
+          "reference_l1": 6.083679980411431e-12,
+          "reference_max_abs": 3.081736255072798e-15,
+          "reference_segregating_l1": 6.077575922180337e-12,
+          "reference_segregating_relative_l1": 6.099311428686307e-12,
+          "mean_frequency": 0.4999999999970226
+        },
+        {
+          "generations": 200,
+          "seconds": 1.3479832499288023,
+          "total_seconds": 4.204167915973812,
+          "mass": 0.9999999999881138,
+          "minimum": 2.8113640703752128e-05,
+          "lost": 0.003503784545919647,
+          "fixed": 0.003503784545918524,
+          "reference_l1": 1.2113753478369986e-11,
+          "reference_max_abs": 1.747300221177639e-14,
+          "reference_segregating_l1": 1.2079036023764393e-11,
+          "reference_segregating_relative_l1": 1.2164278042600526e-11,
+          "mean_frequency": 0.4999999999940555
+        },
+        {
+          "generations": 500,
+          "seconds": 3.4306314578279853,
+          "total_seconds": 6.286816123872995,
+          "mass": 0.9999999999704372,
+          "minimum": 2.7796302782090934e-05,
+          "lost": 0.008627720195251775,
+          "fixed": 0.008627720195248953,
+          "reference_l1": 2.9992103788169635e-11,
+          "reference_max_abs": 8.816732066652122e-14,
+          "reference_segregating_l1": 2.9817509074483e-11,
+          "reference_segregating_relative_l1": 3.034105738151365e-11,
+          "mean_frequency": 0.4999999999852155
+        },
+        {
+          "generations": 1000,
+          "seconds": 7.002842249814421,
+          "total_seconds": 9.859026915859431,
+          "mass": 0.9999999999413803,
+          "minimum": 2.7311094955094247e-05,
+          "lost": 0.017045803234602662,
+          "fixed": 0.017045803234595872,
+          "reference_l1": 5.915364362959184e-11,
+          "reference_max_abs": 1.9126367156729884e-13,
+          "reference_segregating_l1": 5.877925213955957e-11,
+          "reference_segregating_relative_l1": 6.085385791575077e-11,
+          "mean_frequency": 0.4999999999706838
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+      "plan_bytes": 11512,
+      "plan_settings": {
+        "accuracy": 1e-13,
+        "tail_tol": 1e-15,
+        "nufft_tol": 1e-15
+      },
+      "persistent_compilation_cache": false,
+      "backend": "reference",
+      "selection": 0.0,
+      "initialization_seconds": 0.44276137510314584,
+      "setup_seconds": 0.15976395877078176,
+      "compile_seconds": 0.16900724987499416,
+      "first_dispatch_seconds": 0.038016708102077246,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 3.376018207985908,
+          "total_seconds": 3.742806124733761,
+          "mass": 0.9999999999999727,
+          "minimum": 2.8256201046253903e-05,
+          "lost": 0.0017818000244732154,
+          "fixed": 0.001781800024472791,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.49999999999998923
+        },
+        {
+          "generations": 200,
+          "seconds": 6.731845458038151,
+          "total_seconds": 7.098633374786004,
+          "mass": 0.9999999999999423,
+          "minimum": 2.8113640703467392e-05,
+          "lost": 0.003503784545902174,
+          "fixed": 0.0035037845459012797,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.4999999999999765
+        },
+        {
+          "generations": 500,
+          "seconds": 16.71464170794934,
+          "total_seconds": 17.081429624697194,
+          "mass": 0.9999999999998525,
+          "minimum": 2.779630278170336e-05,
+          "lost": 0.008627720195163608,
+          "fixed": 0.008627720195162525,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.4999999999999401
+        },
+        {
+          "generations": 1000,
+          "seconds": 33.029024875024334,
+          "total_seconds": 33.39581279177219,
+          "mass": 0.9999999999997093,
+          "minimum": 2.731109495489575e-05,
+          "lost": 0.0170458032344114,
+          "fixed": 0.017045803234412744,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.4999999999998825
+        }
+      ]
+    },
+    {
+      "use_condensed": false,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "fastdtwf",
+      "selection": 0.0,
+      "initialization_seconds": 2.5269219579640776,
+      "setup_seconds": 1.1625001206994057e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 17.420403250027448,
+          "total_seconds": 17.420414875028655,
+          "mass": 0.9999999999999981,
+          "minimum": 2.8236681762422547e-05,
+          "lost": 0.0017813525441823018,
+          "fixed": 0.0017813525441823515,
+          "reference_l1": 6.197795544470196e-05,
+          "reference_max_abs": 4.47480290913585e-07,
+          "reference_segregating_l1": 6.10829948633488e-05,
+          "reference_segregating_relative_l1": 6.130144870897022e-05,
+          "mean_frequency": 0.49999999999999944
+        },
+        {
+          "generations": 200,
+          "seconds": 34.68980741593987,
+          "total_seconds": 34.689819040941074,
+          "mass": 0.9999999999999962,
+          "minimum": 2.808574508882926e-05,
+          "lost": 0.0035018129419777033,
+          "fixed": 0.003501812941976839,
+          "reference_l1": 7.180301483972846e-05,
+          "reference_max_abs": 1.9716039244706794e-06,
+          "reference_segregating_l1": 6.785980699081703e-05,
+          "reference_segregating_relative_l1": 6.83386951185076e-05,
+          "mean_frequency": 0.4999999999999988
+        },
+        {
+          "generations": 500,
+          "seconds": 86.75270945788361,
+          "total_seconds": 86.75272108288482,
+          "mass": 0.9999999999999907,
+          "minimum": 2.7766850863809654e-05,
+          "lost": 0.008620377791475791,
+          "fixed": 0.00862037779147168,
+          "reference_l1": 8.79671733165285e-05,
+          "reference_max_abs": 7.342403690845101e-06,
+          "reference_segregating_l1": 7.328236593786712e-05,
+          "reference_segregating_relative_l1": 7.456908839768534e-05,
+          "mean_frequency": 0.4999999999999971
+        },
+        {
+          "generations": 1000,
+          "seconds": 182.2753725000657,
+          "total_seconds": 182.27538412506692,
+          "mass": 0.999999999999981,
+          "minimum": 2.728322046309371e-05,
+          "lost": 0.017029694343110153,
+          "fixed": 0.017029694343101098,
+          "reference_l1": 0.00011069920949723704,
+          "reference_max_abs": 1.6108891311646806e-05,
+          "reference_segregating_l1": 7.848142688434485e-05,
+          "reference_segregating_relative_l1": 8.12514182607477e-05,
+          "mean_frequency": 0.49999999999999356
+        }
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "condensed",
+      "selection": 0.0,
+      "initialization_seconds": 2.390947249950841,
+      "setup_seconds": 9.415904060006142e-06,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 1.3734683750662953,
+          "total_seconds": 1.3734777909703553,
+          "mass": 0.9999999999999993,
+          "minimum": 2.8236694141519473e-05,
+          "lost": 0.0017813528005510457,
+          "fixed": 0.0017813528005514497,
+          "reference_l1": 6.189508568705533e-05,
+          "reference_max_abs": 4.472239221696428e-07,
+          "reference_segregating_l1": 6.100063784354437e-05,
+          "reference_segregating_relative_l1": 6.121879715207358e-05,
+          "mean_frequency": 0.49999999999998224
+        },
+        {
+          "generations": 200,
+          "seconds": 2.161354250041768,
+          "total_seconds": 2.161363665945828,
+          "mass": 0.9999999999999987,
+          "minimum": 2.808576546342796e-05,
+          "lost": 0.0035018142282512077,
+          "fixed": 0.0035018142282504778,
+          "reference_l1": 7.169687098252753e-05,
+          "reference_max_abs": 1.9703176509663044e-06,
+          "reference_segregating_l1": 6.775623568075928e-05,
+          "reference_segregating_relative_l1": 6.823439290347157e-05,
+          "mean_frequency": 0.49999999999996436
+        },
+        {
+          "generations": 500,
+          "seconds": 4.589540582848713,
+          "total_seconds": 4.589549998752773,
+          "mass": 0.9999999999999962,
+          "minimum": 2.776688351622892e-05,
+          "lost": 0.008620384270446944,
+          "fixed": 0.008620384270444243,
+          "reference_l1": 8.783758402328102e-05,
+          "reference_max_abs": 7.335924718281789e-06,
+          "reference_segregating_l1": 7.316573458833594e-05,
+          "reference_segregating_relative_l1": 7.445040918609295e-05,
+          "mean_frequency": 0.4999999999999105
+        },
+        {
+          "generations": 1000,
+          "seconds": 8.511434083105996,
+          "total_seconds": 8.511443499010056,
+          "mass": 0.9999999999999931,
+          "minimum": 2.7283248892402225e-05,
+          "lost": 0.017029710361703643,
+          "fixed": 0.017029710361698893,
+          "reference_l1": 0.00011055010297459804,
+          "reference_max_abs": 1.6092872713851375e-05,
+          "reference_segregating_l1": 7.83643575529911e-05,
+          "reference_segregating_relative_l1": 8.1130216983134e-05,
+          "mean_frequency": 0.49999999999982264
+        }
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": 50,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "refreshed",
+      "selection": 0.0,
+      "initialization_seconds": 1.9906116670463234,
+      "setup_seconds": 8.708098903298378e-06,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 1.7460736250504851,
+          "total_seconds": 1.7460823331493884,
+          "mass": 0.9999999999999991,
+          "minimum": 2.8236689352160768e-05,
+          "lost": 0.0017813527700722713,
+          "fixed": 0.0017813527700717398,
+          "reference_l1": 6.196082882383306e-05,
+          "reference_max_abs": 4.4725440105121417e-07,
+          "reference_segregating_l1": 6.106632002183774e-05,
+          "reference_segregating_relative_l1": 6.128471423247791e-05,
+          "mean_frequency": 0.49999999999999317
+        },
+        {
+          "generations": 200,
+          "seconds": 3.2582904589362442,
+          "total_seconds": 3.2582991670351475,
+          "mass": 0.9999999999999984,
+          "minimum": 2.8085746127259077e-05,
+          "lost": 0.0035018133432957533,
+          "fixed": 0.003501813343293853,
+          "reference_l1": 7.179845993801564e-05,
+          "reference_max_abs": 1.9712026074268467e-06,
+          "reference_segregating_l1": 6.785605472416809e-05,
+          "reference_segregating_relative_l1": 6.833491637203166e-05,
+          "mean_frequency": 0.49999999999999833
+        },
+        {
+          "generations": 500,
+          "seconds": 7.89795112493448,
+          "total_seconds": 7.897959833033383,
+          "mass": 0.9999999999999967,
+          "minimum": 2.7766850967943773e-05,
+          "lost": 0.008620378326805405,
+          "fixed": 0.008620378326801403,
+          "reference_l1": 8.796555023319283e-05,
+          "reference_max_abs": 7.341868361121842e-06,
+          "reference_segregating_l1": 7.328181351386869e-05,
+          "reference_segregating_relative_l1": 7.456852627399508e-05,
+          "mean_frequency": 0.5000000000000137
+        },
+        {
+          "generations": 1000,
+          "seconds": 15.722416582982987,
+          "total_seconds": 15.72242529108189,
+          "mass": 0.9999999999999946,
+          "minimum": 2.7283220136057792e-05,
+          "lost": 0.01702969480416814,
+          "fixed": 0.01702969480415782,
+          "reference_l1": 0.00011069810164630081,
+          "reference_max_abs": 1.6108430254922756e-05,
+          "reference_segregating_l1": 7.848124114811958e-05,
+          "reference_segregating_relative_l1": 8.125122596898742e-05,
+          "mean_frequency": 0.5000000000000395
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+      "plan_bytes": 10360,
+      "plan_settings": {
+        "tail_tol": 1e-12
+      },
+      "persistent_compilation_cache": false,
+      "backend": "drifft",
+      "selection": 0.0001,
+      "initialization_seconds": 0.7923930420074612,
+      "setup_seconds": 0.23706499999389052,
+      "compile_seconds": 0.16895570792257786,
+      "first_dispatch_seconds": 0.046509499894455075,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 2.7105012501124293,
+          "total_seconds": 3.1630314579233527,
+          "mass": 0.9999999999999718,
+          "minimum": 2.85409201608456e-05,
+          "lost": 0.0017907897848044164,
+          "fixed": 0.0017907897848069986,
+          "reference_l1": 4.1542158303814816e-14,
+          "reference_max_abs": 1.5226535310386424e-15,
+          "reference_segregating_l1": 3.9746285825309827e-14,
+          "reference_segregating_relative_l1": 3.98891519971531e-14,
+          "mean_frequency": 0.4999999999999887
+        },
+        {
+          "generations": 200,
+          "seconds": 5.61631099996157,
+          "total_seconds": 6.068841207772493,
+          "mass": 0.9999999999999429,
+          "minimum": 2.8673932224720956e-05,
+          "lost": 0.0035387952473900403,
+          "fixed": 0.0035387952473941555,
+          "reference_l1": 5.3851285139027566e-14,
+          "reference_max_abs": 2.775123880693897e-15,
+          "reference_segregating_l1": 5.025954018201759e-14,
+          "reference_segregating_relative_l1": 5.061779218686918e-14,
+          "mean_frequency": 0.499999999999977
+        },
+        {
+          "generations": 500,
+          "seconds": 14.13330424996093,
+          "total_seconds": 14.585834457771853,
+          "mass": 0.9999999999998584,
+          "minimum": 2.9151417068377897e-05,
+          "lost": 0.00883955063967791,
+          "fixed": 0.008839550639686639,
+          "reference_l1": 8.560586254083812e-14,
+          "reference_max_abs": 7.842684834891145e-15,
+          "reference_segregating_l1": 7.438220165126817e-14,
+          "reference_segregating_relative_l1": 7.572087873540427e-14,
+          "mean_frequency": 0.49999999999994305
+        },
+        {
+          "generations": 1000,
+          "seconds": 28.032508541131392,
+          "total_seconds": 28.485038748942316,
+          "mass": 0.9999999999997148,
+          "minimum": 2.9885435794772264e-05,
+          "lost": 0.01786219981168554,
+          "fixed": 0.017862199811702714,
+          "reference_l1": 1.2715561364799212e-13,
+          "reference_max_abs": 1.7454787615278633e-14,
+          "reference_segregating_l1": 1.0064903893506651e-13,
+          "reference_segregating_relative_l1": 1.0437787588505271e-13,
+          "mean_frequency": 0.4999999999998836
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/.cache/bernstein-baseline/src/drifft/__init__.py",
+      "plan_bytes": 18370656,
+      "plan_settings": {
+        "tail_tol": 1e-12
+      },
+      "persistent_compilation_cache": false,
+      "backend": "previous",
+      "selection": 0.0001,
+      "initialization_seconds": 0.9372265830170363,
+      "setup_seconds": 2.3048541250173002,
+      "compile_seconds": 0.5528525831177831,
+      "first_dispatch_seconds": 0.021787249948829412,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 0.6999715000856668,
+          "total_seconds": 3.5794654581695795,
+          "mass": 0.9999999999940425,
+          "minimum": 2.8540920161007036e-05,
+          "lost": 0.0017907897848073425,
+          "fixed": 0.001790789784807744,
+          "reference_l1": 6.088199775323034e-12,
+          "reference_max_abs": 3.1992637705702265e-15,
+          "reference_segregating_l1": 6.082732360607624e-12,
+          "reference_segregating_relative_l1": 6.104596458564516e-12,
+          "mean_frequency": 0.4999999999970205
+        },
+        {
+          "generations": 200,
+          "seconds": 1.4038361250422895,
+          "total_seconds": 4.283330083126202,
+          "mass": 0.9999999999881142,
+          "minimum": 2.8673932225044932e-05,
+          "lost": 0.0035387952474075003,
+          "fixed": 0.003538795247407168,
+          "reference_l1": 1.211918970872041e-11,
+          "reference_max_abs": 1.8276612862022645e-14,
+          "reference_segregating_l1": 1.2085125377503522e-11,
+          "reference_segregating_relative_l1": 1.2171268632688385e-11,
+          "mean_frequency": 0.4999999999940557
+        },
+        {
+          "generations": 500,
+          "seconds": 3.5387949580326676,
+          "total_seconds": 6.41828891611658,
+          "mass": 0.9999999999705008,
+          "minimum": 2.915141706880653e-05,
+          "lost": 0.008839550639767617,
+          "fixed": 0.008839550639764283,
+          "reference_l1": 2.9950837515273004e-11,
+          "reference_max_abs": 9.308873116786742e-14,
+          "reference_segregating_l1": 2.9772261611209e-11,
+          "reference_segregating_relative_l1": 3.0308081249200994e-11,
+          "mean_frequency": 0.49999999998524647
+        },
+        {
+          "generations": 1000,
+          "seconds": 7.160052375169471,
+          "total_seconds": 10.039546333253384,
+          "mass": 0.9999999999417171,
+          "minimum": 2.98854357949994e-05,
+          "lost": 0.017862199811880627,
+          "fixed": 0.017862199811871083,
+          "reference_l1": 5.885044639380044e-11,
+          "reference_max_abs": 2.041387892059987e-13,
+          "reference_segregating_l1": 5.846048402584781e-11,
+          "reference_segregating_relative_l1": 6.062632301702084e-11,
+          "mean_frequency": 0.49999999997085043
+        }
+      ]
+    },
+    {
+      "source_path": "/Users/nicholas/Projects/drifft/src/drifft/__init__.py",
+      "plan_bytes": 11512,
+      "plan_settings": {
+        "accuracy": 1e-13,
+        "tail_tol": 1e-15,
+        "nufft_tol": 1e-15
+      },
+      "persistent_compilation_cache": false,
+      "backend": "reference",
+      "selection": 0.0001,
+      "initialization_seconds": 0.43637770786881447,
+      "setup_seconds": 0.16346075013279915,
+      "compile_seconds": 0.16501341690309346,
+      "first_dispatch_seconds": 0.03896962502039969,
+      "versions": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "equinox": "0.13.8",
+        "lineax": "0.1.1",
+        "jax-finufft": "1.3.2.dev36+g8ae08bb11"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 3.4457442921120673,
+          "total_seconds": 3.8131880841683596,
+          "mass": 0.9999999999999697,
+          "minimum": 2.8540920160864002e-05,
+          "lost": 0.0017907897848041432,
+          "fixed": 0.001790789784805476,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.49999999999998745
+        },
+        {
+          "generations": 200,
+          "seconds": 6.786667542066425,
+          "total_seconds": 7.154111334122717,
+          "mass": 0.9999999999999403,
+          "minimum": 2.867393222473691e-05,
+          "lost": 0.0035387952473892237,
+          "fixed": 0.0035387952473913803,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.49999999999997535
+        },
+        {
+          "generations": 500,
+          "seconds": 16.843482833122835,
+          "total_seconds": 17.210926625179127,
+          "mass": 0.9999999999998515,
+          "minimum": 2.91514170683853e-05,
+          "lost": 0.008839550639674528,
+          "fixed": 0.008839550639678796,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.49999999999993966
+        },
+        {
+          "generations": 1000,
+          "seconds": 33.7184349168092,
+          "total_seconds": 34.08587870886549,
+          "mass": 0.9999999999997038,
+          "minimum": 2.988543579478077e-05,
+          "lost": 0.01786219981167649,
+          "fixed": 0.01786219981168526,
+          "reference_l1": 0.0,
+          "reference_max_abs": 0.0,
+          "reference_segregating_l1": 0.0,
+          "reference_segregating_relative_l1": 0.0,
+          "mean_frequency": 0.49999999999987954
+        }
+      ]
+    },
+    {
+      "use_condensed": false,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "fastdtwf",
+      "selection": 0.0001,
+      "initialization_seconds": 2.7911048750393093,
+      "setup_seconds": 1.1208001524209976e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 18.062350790947676,
+          "total_seconds": 18.0623619989492,
+          "mass": 0.999999999999998,
+          "minimum": 2.852123416861495e-05,
+          "lost": 0.0017903385203373145,
+          "fixed": 0.0017903385203377677,
+          "reference_l1": 6.210142744209377e-05,
+          "reference_max_abs": 4.512644677082036e-07,
+          "reference_segregating_l1": 6.119889850755688e-05,
+          "reference_segregating_relative_l1": 6.141887509579024e-05,
+          "mean_frequency": 0.49999999999999895
+        },
+        {
+          "generations": 200,
+          "seconds": 36.693766166921705,
+          "total_seconds": 36.69377737492323,
+          "mass": 0.9999999999999957,
+          "minimum": 2.8645669171285984e-05,
+          "lost": 0.003536803570229386,
+          "fixed": 0.00353680357022905,
+          "reference_l1": 7.212218740149187e-05,
+          "reference_max_abs": 1.991677162330348e-06,
+          "reference_segregating_l1": 6.813883307932398e-05,
+          "reference_segregating_relative_l1": 6.862452939629208e-05,
+          "mean_frequency": 0.49999999999999767
+        },
+        {
+          "generations": 500,
+          "seconds": 89.77553212502971,
+          "total_seconds": 89.77554333303124,
+          "mass": 0.9999999999999902,
+          "minimum": 2.9120896087647036e-05,
+          "lost": 0.008832055743146794,
+          "fixed": 0.008832055743143446,
+          "reference_l1": 8.899704900565999e-05,
+          "reference_max_abs": 7.494896535349682e-06,
+          "reference_segregating_l1": 7.400725594257606e-05,
+          "reference_segregating_relative_l1": 7.533918502494723e-05,
+          "mean_frequency": 0.49999999999999506
+        },
+        {
+          "generations": 1000,
+          "seconds": 181.92157433298416,
+          "total_seconds": 181.9215855409857,
+          "mass": 0.9999999999999793,
+          "minimum": 2.985551799038743e-05,
+          "lost": 0.017845454117214617,
+          "fixed": 0.017845454117205943,
+          "reference_l1": 0.00011331342804016502,
+          "reference_max_abs": 1.674569447931637e-05,
+          "reference_segregating_l1": 7.982203909897664e-05,
+          "reference_segregating_relative_l1": 8.27792791478114e-05,
+          "mean_frequency": 0.4999999999999891
+        }
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": null,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "condensed",
+      "selection": 0.0001,
+      "initialization_seconds": 2.76923062489368,
+      "setup_seconds": 1.3750046491622925e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 1.5363672501407564,
+          "total_seconds": 1.536381000187248,
+          "mass": 0.9999999999999993,
+          "minimum": 2.8521245358094207e-05,
+          "lost": 0.0017903387626279467,
+          "fixed": 0.0017903387626280705,
+          "reference_l1": 6.203226866878666e-05,
+          "reference_max_abs": 4.510221774053653e-07,
+          "reference_segregating_l1": 6.113022431518481e-05,
+          "reference_segregating_relative_l1": 6.134995405723455e-05,
+          "mean_frequency": 0.5000000000000051
+        },
+        {
+          "generations": 200,
+          "seconds": 2.2541033329907805,
+          "total_seconds": 2.254117083037272,
+          "mass": 0.9999999999999987,
+          "minimum": 2.8645680215429814e-05,
+          "lost": 0.0035368045583981183,
+          "fixed": 0.0035368045583962977,
+          "reference_l1": 7.206720974383584e-05,
+          "reference_max_abs": 1.9906889950826664e-06,
+          "reference_segregating_l1": 6.808583175764779e-05,
+          "reference_segregating_relative_l1": 6.85711502790833e-05,
+          "mean_frequency": 0.5000000000000104
+        },
+        {
+          "generations": 500,
+          "seconds": 5.27446037507616,
+          "total_seconds": 5.2744741251226515,
+          "mass": 0.9999999999999971,
+          "minimum": 2.912085572314881e-05,
+          "lost": 0.00883205523015695,
+          "fixed": 0.008832055230147613,
+          "reference_l1": 8.914818373296743e-05,
+          "reference_max_abs": 7.495409531182995e-06,
+          "reference_segregating_l1": 7.415736468420514e-05,
+          "reference_segregating_relative_l1": 7.549199531517378e-05,
+          "mean_frequency": 0.5000000000000255
+        },
+        {
+          "generations": 1000,
+          "seconds": 19.630934374872595,
+          "total_seconds": 19.630948124919087,
+          "mass": 0.9999999999999936,
+          "minimum": 2.9855254088979797e-05,
+          "lost": 0.01784541065096112,
+          "fixed": 0.01784541065093971,
+          "reference_l1": 0.00011416239425021503,
+          "reference_max_abs": 1.678916074554851e-05,
+          "reference_segregating_l1": 8.058407278929873e-05,
+          "reference_segregating_relative_l1": 8.356954459684348e-05,
+          "mean_frequency": 0.5000000000000502
+        }
+      ]
+    },
+    {
+      "use_condensed": true,
+      "refresh_generations": 50,
+      "torch_threads": 4,
+      "setup_included_in_epoch_seconds": true,
+      "source": {
+        "url": "https://github.com/jeffspence/fastDTWF",
+        "vcs_info": {
+          "vcs": "git",
+          "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+          "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+        }
+      },
+      "backend": "refreshed",
+      "selection": 0.0001,
+      "initialization_seconds": 5.513407165883109,
+      "setup_seconds": 1.4374963939189911e-05,
+      "compile_seconds": 0.0,
+      "first_dispatch_seconds": 0.0,
+      "versions": {
+        "fastdtwf": "0.0.6",
+        "torch": "2.14.1",
+        "numba": "0.68.0"
+      },
+      "epochs": [
+        {
+          "generations": 100,
+          "seconds": 3.2150580000597984,
+          "total_seconds": 3.2150723750237375,
+          "mass": 0.9999999999999992,
+          "minimum": 2.8521240828383203e-05,
+          "lost": 0.0017903387334825278,
+          "fixed": 0.0017903387334824326,
+          "reference_l1": 6.209107349843093e-05,
+          "reference_max_abs": 4.510513230433083e-07,
+          "reference_segregating_l1": 6.118897085377221e-05,
+          "reference_segregating_relative_l1": 6.140891175751675e-05,
+          "mean_frequency": 0.5000000000000052
+        },
+        {
+          "generations": 200,
+          "seconds": 5.955374917015433,
+          "total_seconds": 5.9553892919793725,
+          "mass": 0.9999999999999989,
+          "minimum": 2.8645667347857738e-05,
+          "lost": 0.0035368038398597102,
+          "fixed": 0.0035368038398581802,
+          "reference_l1": 7.21299579234491e-05,
+          "reference_max_abs": 1.991407533200127e-06,
+          "reference_segregating_l1": 6.814714286073557e-05,
+          "reference_segregating_relative_l1": 6.863289841015663e-05,
+          "mean_frequency": 0.5000000000000095
+        },
+        {
+          "generations": 500,
+          "seconds": 13.251738541992381,
+          "total_seconds": 13.25175291695632,
+          "mass": 0.9999999999999971,
+          "minimum": 2.912088871692e-05,
+          "lost": 0.008832055191261156,
+          "fixed": 0.008832055191256388,
+          "reference_l1": 8.902212738365899e-05,
+          "reference_max_abs": 7.4954484224083046e-06,
+          "reference_segregating_l1": 7.403123054787855e-05,
+          "reference_segregating_relative_l1": 7.53635911078614e-05,
+          "mean_frequency": 0.5000000000000238
+        },
+        {
+          "generations": 1000,
+          "seconds": 21.820503666996956,
+          "total_seconds": 21.820518041960895,
+          "mass": 0.9999999999999933,
+          "minimum": 2.9855503847777473e-05,
+          "lost": 0.017845450205423958,
+          "fixed": 0.017845450205414722,
+          "reference_l1": 0.00011335981155505705,
+          "reference_max_abs": 1.6749606270537176e-05,
+          "reference_segregating_l1": 7.986059903198913e-05,
+          "reference_segregating_relative_l1": 8.281926764591033e-05,
+          "mean_frequency": 0.5000000000000473
+        }
+      ]
+    }
+  ]
+}

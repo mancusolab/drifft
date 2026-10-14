@@ -8,6 +8,10 @@ support was dropped for this branch. CUDA was not available or tested.
 
 ## Outcome
 
+For actual successive generations, per-epoch setup, and fastDTWF condensed mode,
+see the [epoch benchmark](EPOCHS.md). The single-step timings below do not establish
+a speed advantage for complete multi-generation demographic calculations.
+
 The replacement preserves the `Transition` API and greatly reduces stored plan
 size and XLA-reported temporary memory. It is **slower in warm CPU applications
 than the previous backend** in this initial comparison. This is an experimental
