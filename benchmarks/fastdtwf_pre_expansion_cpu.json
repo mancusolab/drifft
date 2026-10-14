@@ -1,0 +1,453 @@
+{
+  "schema_version": 1,
+  "device": "cpu",
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "versions": {
+    "drifft": "0.1.0",
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "fastdtwf": "0.0.6",
+    "torch": "2.14.1",
+    "numba": "0.68.0",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1"
+  },
+  "fastdtwf_source": {
+    "url": "https://github.com/jeffspence/fastDTWF",
+    "vcs_info": {
+      "vcs": "git",
+      "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+      "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+    }
+  },
+  "fastdtwf_import_seconds": 2.199136749841273,
+  "torch_threads": 4,
+  "thread_environment": {
+    "OMP_NUM_THREADS": null,
+    "MKL_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "XLA_FLAGS": null
+  },
+  "config": {
+    "sizes": [
+      28948
+    ],
+    "selections": [
+      0.0,
+      1e-05,
+      0.0001
+    ],
+    "tv_sds": [
+      0.1,
+      0.01
+    ],
+    "row_eps": 1e-08,
+    "tail_tol": 1e-12,
+    "repeats": 10,
+    "dense_max_m": 0,
+    "solve_max_m": 0,
+    "max_steps": 2000,
+    "threads": null,
+    "seed": 17,
+    "output": "benchmarks/fastdtwf_pre_expansion_cpu.json",
+    "quiet": false
+  },
+  "runs": [
+    {
+      "gene_copies": 28948,
+      "selection_strength": 0.0,
+      "tv_sd": 0.1,
+      "row_eps": 1e-08,
+      "drifft_plan_seconds": 2.652106124907732,
+      "drifft_plan_bytes": 18370656,
+      "fastdtwf_setup_seconds": 0.022194166900590062,
+      "fastdtwf_group_count": 4654,
+      "transitions": [
+        {
+          "input": "singleton",
+          "between_methods_l1": 1.0334679545916351e-11,
+          "drifft": {
+            "first_call_seconds": 0.48252116702497005,
+            "median_seconds": 0.012460271012969315,
+            "min_seconds": 0.012143374886363745,
+            "mass": 0.9999999999999996,
+            "minimum": 0.0
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.228442250052467,
+            "median_seconds": 0.20797068753745407,
+            "min_seconds": 0.2071448750793934,
+            "mass": 1.0,
+            "minimum": 0.0
+          }
+        },
+        {
+          "input": "uniform",
+          "between_methods_l1": 4.372622700258759e-06,
+          "drifft": {
+            "first_call_seconds": 0.012285334058105946,
+            "median_seconds": 0.012661707936786115,
+            "min_seconds": 0.012163874926045537,
+            "mass": 0.9999999999999403,
+            "minimum": 3.1802088916301254e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.20858291699551046,
+            "median_seconds": 0.20701400004327297,
+            "min_seconds": 0.20654741721227765,
+            "mass": 1.0,
+            "minimum": 3.18020889163783e-05
+          }
+        },
+        {
+          "input": "random",
+          "between_methods_l1": 1.936895765432697e-05,
+          "drifft": {
+            "first_call_seconds": 0.012645541923120618,
+            "median_seconds": 0.012591687613166869,
+            "min_seconds": 0.012017708038911223,
+            "mass": 0.9999999999999403,
+            "minimum": 1.5808478971287394e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.20720658311620355,
+            "median_seconds": 0.20694175001699477,
+            "min_seconds": 0.20647570816799998,
+            "mass": 1.0,
+            "minimum": 1.58084789711339e-05
+          }
+        }
+      ]
+    },
+    {
+      "gene_copies": 28948,
+      "selection_strength": 0.0,
+      "tv_sd": 0.01,
+      "row_eps": 1e-08,
+      "drifft_plan_seconds": 2.652106124907732,
+      "drifft_plan_bytes": 18370656,
+      "fastdtwf_setup_seconds": 0.0013200831599533558,
+      "fastdtwf_group_count": 28949,
+      "transitions": [
+        {
+          "input": "singleton",
+          "between_methods_l1": 1.0334679545916351e-11,
+          "drifft": {
+            "first_call_seconds": 0.48252116702497005,
+            "median_seconds": 0.012460271012969315,
+            "min_seconds": 0.012143374886363745,
+            "mass": 0.9999999999999996,
+            "minimum": 0.0
+          },
+          "fastdtwf": {
+            "first_call_seconds": 1.2899865410290658,
+            "median_seconds": 1.28737987508066,
+            "min_seconds": 1.2863133340142667,
+            "mass": 1.0,
+            "minimum": 0.0
+          }
+        },
+        {
+          "input": "uniform",
+          "between_methods_l1": 9.83682902386089e-12,
+          "drifft": {
+            "first_call_seconds": 0.012285334058105946,
+            "median_seconds": 0.012661707936786115,
+            "min_seconds": 0.012163874926045537,
+            "mass": 0.9999999999999403,
+            "minimum": 3.1802088916301254e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 1.298898790962994,
+            "median_seconds": 1.3013123749988154,
+            "min_seconds": 1.2854142079595476,
+            "mass": 0.9999999999999999,
+            "minimum": 3.18020889163783e-05
+          }
+        },
+        {
+          "input": "random",
+          "between_methods_l1": 2.181480891449137e-11,
+          "drifft": {
+            "first_call_seconds": 0.012645541923120618,
+            "median_seconds": 0.012591687613166869,
+            "min_seconds": 0.012017708038911223,
+            "mass": 0.9999999999999403,
+            "minimum": 1.5808478971287394e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 1.3096554579678923,
+            "median_seconds": 1.3162886248901486,
+            "min_seconds": 1.2836058749817312,
+            "mass": 0.9999999999999999,
+            "minimum": 1.58084789711339e-05
+          }
+        }
+      ]
+    },
+    {
+      "gene_copies": 28948,
+      "selection_strength": 1e-05,
+      "tv_sd": 0.1,
+      "row_eps": 1e-08,
+      "drifft_plan_seconds": 2.652106124907732,
+      "drifft_plan_bytes": 18370656,
+      "fastdtwf_setup_seconds": 0.0010690419003367424,
+      "fastdtwf_group_count": 4654,
+      "transitions": [
+        {
+          "input": "singleton",
+          "between_methods_l1": 1.0334470425020345e-11,
+          "drifft": {
+            "first_call_seconds": 0.018275291891768575,
+            "median_seconds": 0.013017875025980175,
+            "min_seconds": 0.012747792061418295,
+            "mass": 1.0,
+            "minimum": 0.0
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.20769554190337658,
+            "median_seconds": 0.20739675010554492,
+            "min_seconds": 0.2067900828551501,
+            "mass": 1.0,
+            "minimum": 0.0
+          }
+        },
+        {
+          "input": "uniform",
+          "between_methods_l1": 4.372615897767531e-06,
+          "drifft": {
+            "first_call_seconds": 0.012280500028282404,
+            "median_seconds": 0.01310345798265189,
+            "min_seconds": 0.01261691702529788,
+            "mass": 0.9999999999999404,
+            "minimum": 3.180245894006877e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.21836495795287192,
+            "median_seconds": 0.20707156241405755,
+            "min_seconds": 0.2065490409731865,
+            "mass": 0.9999999999999999,
+            "minimum": 3.180245894015886e-05
+          }
+        },
+        {
+          "input": "random",
+          "between_methods_l1": 1.9368996073413737e-05,
+          "drifft": {
+            "first_call_seconds": 0.012342042056843638,
+            "median_seconds": 0.013034916366450489,
+            "min_seconds": 0.011943708872422576,
+            "mass": 0.9999999999999404,
+            "minimum": 1.580871110856063e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.20722583401948214,
+            "median_seconds": 0.20738774992059916,
+            "min_seconds": 0.20633233385160565,
+            "mass": 1.0,
+            "minimum": 1.5808711108403893e-05
+          }
+        }
+      ]
+    },
+    {
+      "gene_copies": 28948,
+      "selection_strength": 1e-05,
+      "tv_sd": 0.01,
+      "row_eps": 1e-08,
+      "drifft_plan_seconds": 2.652106124907732,
+      "drifft_plan_bytes": 18370656,
+      "fastdtwf_setup_seconds": 0.0012796248774975538,
+      "fastdtwf_group_count": 28949,
+      "transitions": [
+        {
+          "input": "singleton",
+          "between_methods_l1": 1.0334470425020345e-11,
+          "drifft": {
+            "first_call_seconds": 0.018275291891768575,
+            "median_seconds": 0.013017875025980175,
+            "min_seconds": 0.012747792061418295,
+            "mass": 1.0,
+            "minimum": 0.0
+          },
+          "fastdtwf": {
+            "first_call_seconds": 1.309744292171672,
+            "median_seconds": 1.4066504790680483,
+            "min_seconds": 1.3138794170226902,
+            "mass": 1.0,
+            "minimum": 0.0
+          }
+        },
+        {
+          "input": "uniform",
+          "between_methods_l1": 9.852555112098513e-12,
+          "drifft": {
+            "first_call_seconds": 0.012280500028282404,
+            "median_seconds": 0.01310345798265189,
+            "min_seconds": 0.01261691702529788,
+            "mass": 0.9999999999999404,
+            "minimum": 3.180245894006877e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 1.3120725001208484,
+            "median_seconds": 1.4630891039269045,
+            "min_seconds": 1.298024000134319,
+            "mass": 1.0,
+            "minimum": 3.180245894015886e-05
+          }
+        },
+        {
+          "input": "random",
+          "between_methods_l1": 2.181965647049598e-11,
+          "drifft": {
+            "first_call_seconds": 0.012342042056843638,
+            "median_seconds": 0.013034916366450489,
+            "min_seconds": 0.011943708872422576,
+            "mass": 0.9999999999999404,
+            "minimum": 1.580871110856063e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 1.2902278748806566,
+            "median_seconds": 1.4305949585977942,
+            "min_seconds": 1.2980454999487847,
+            "mass": 1.0,
+            "minimum": 1.5808711108403893e-05
+          }
+        }
+      ]
+    },
+    {
+      "gene_copies": 28948,
+      "selection_strength": 0.0001,
+      "tv_sd": 0.1,
+      "row_eps": 1e-08,
+      "drifft_plan_seconds": 2.652106124907732,
+      "drifft_plan_bytes": 18370656,
+      "fastdtwf_setup_seconds": 0.001379209104925394,
+      "fastdtwf_group_count": 4654,
+      "transitions": [
+        {
+          "input": "singleton",
+          "between_methods_l1": 1.0334239066306333e-11,
+          "drifft": {
+            "first_call_seconds": 0.028519208077341318,
+            "median_seconds": 0.013481229427270591,
+            "min_seconds": 0.012471041874960065,
+            "mass": 0.9999999999999998,
+            "minimum": 0.0
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.23149629076942801,
+            "median_seconds": 0.2165493540233001,
+            "min_seconds": 0.21051912498660386,
+            "mass": 1.0,
+            "minimum": 0.0
+          }
+        },
+        {
+          "input": "uniform",
+          "between_methods_l1": 4.372535906100229e-06,
+          "drifft": {
+            "first_call_seconds": 0.01257900008931756,
+            "median_seconds": 0.01354366634041071,
+            "min_seconds": 0.012569874990731478,
+            "mass": 0.9999999999999402,
+            "minimum": 3.180578946813313e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.21287512499839067,
+            "median_seconds": 0.21488456253428012,
+            "min_seconds": 0.2075320000294596,
+            "mass": 1.0,
+            "minimum": 3.1805789468206626e-05
+          }
+        },
+        {
+          "input": "random",
+          "between_methods_l1": 1.9369320326081107e-05,
+          "drifft": {
+            "first_call_seconds": 0.01324841589666903,
+            "median_seconds": 0.013102458557114005,
+            "min_seconds": 0.012326083844527602,
+            "mass": 0.9999999999999404,
+            "minimum": 1.5810800596799392e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.21016337512992322,
+            "median_seconds": 0.21086833358276635,
+            "min_seconds": 0.20670637488365173,
+            "mass": 1.0,
+            "minimum": 1.5810800596642372e-05
+          }
+        }
+      ]
+    },
+    {
+      "gene_copies": 28948,
+      "selection_strength": 0.0001,
+      "tv_sd": 0.01,
+      "row_eps": 1e-08,
+      "drifft_plan_seconds": 2.652106124907732,
+      "drifft_plan_bytes": 18370656,
+      "fastdtwf_setup_seconds": 0.001001209020614624,
+      "fastdtwf_group_count": 28949,
+      "transitions": [
+        {
+          "input": "singleton",
+          "between_methods_l1": 1.0334239066306333e-11,
+          "drifft": {
+            "first_call_seconds": 0.028519208077341318,
+            "median_seconds": 0.013481229427270591,
+            "min_seconds": 0.012471041874960065,
+            "mass": 0.9999999999999998,
+            "minimum": 0.0
+          },
+          "fastdtwf": {
+            "first_call_seconds": 1.3091932078823447,
+            "median_seconds": 1.353791145957075,
+            "min_seconds": 1.319128124974668,
+            "mass": 1.0,
+            "minimum": 0.0
+          }
+        },
+        {
+          "input": "uniform",
+          "between_methods_l1": 1.000466314746715e-11,
+          "drifft": {
+            "first_call_seconds": 0.01257900008931756,
+            "median_seconds": 0.01354366634041071,
+            "min_seconds": 0.012569874990731478,
+            "mass": 0.9999999999999402,
+            "minimum": 3.180578946813313e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 1.3182990830391645,
+            "median_seconds": 1.316960979020223,
+            "min_seconds": 1.2988971250597388,
+            "mass": 0.9999999999999998,
+            "minimum": 3.1805789468206626e-05
+          }
+        },
+        {
+          "input": "random",
+          "between_methods_l1": 2.1866910043214123e-11,
+          "drifft": {
+            "first_call_seconds": 0.01324841589666903,
+            "median_seconds": 0.013102458557114005,
+            "min_seconds": 0.012326083844527602,
+            "mass": 0.9999999999999404,
+            "minimum": 1.5810800596799392e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 1.417589332908392,
+            "median_seconds": 1.3368205419974402,
+            "min_seconds": 1.3133763750083745,
+            "mass": 0.9999999999999999,
+            "minimum": 1.5810800596642372e-05
+          }
+        }
+      ]
+    }
+  ]
+}

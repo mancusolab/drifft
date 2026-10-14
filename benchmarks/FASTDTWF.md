@@ -99,3 +99,52 @@ workloads. They do not establish a general speedup for fastDTWF's demographic
 likelihood, sampling, mutation, or large-population equilibrium workflows. Three
 repeats are a preliminary measurement, not an uncertainty estimate; use more
 repeats and fresh sweeps for performance claims on other machines.
+
+## Human population size immediately before recent expansion
+
+Measured at constant diploid effective size **14,474**, hence **28,948 gene
+copies**. This is the pre-expansion African population size in the
+[Tennessen-derived stdpopsim model](https://popsim-consortium.github.io/stdpopsim-docs/stable/catalog.html#sec_catalog_homsap_models_africa_1t12),
+not a universal effective size for all modern humans. Selection uses this
+package's symmetric underdominance model; these runs are not a fitted model of
+human purifying selection.
+
+```sh
+uv run --group fastdtwf python benchmarks/compare_fastdtwf.py \
+  --sizes 28948 --selections 0 0.00001 0.0001 --tv-sds 0.1 0.01 \
+  --repeats 10 --dense-max-m 0 --solve-max-m 0 \
+  --output benchmarks/fastdtwf_pre_expansion_cpu.json
+```
+
+[Raw results](fastdtwf_pre_expansion_cpu.json) record the same CPU/backend versions
+as the preceding sweep and ten warm repetitions. The table selects the seeded
+random starting distribution; singleton and uniform distributions are also in
+the report and gave similar timings.
+
+| Selection strength | fastDTWF `tv_sd` | drifft ms | fastDTWF ms | Warm speedup | Between-method L1 difference |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 0.1 | 12.59 | 206.94 | 16.4× | 1.94e-05 |
+| 0 | 0.01 | 12.59 | 1316.29 | 104.5× | 2.18e-11 |
+| 1e-05 | 0.1 | 13.03 | 207.39 | 15.9× | 1.94e-05 |
+| 1e-05 | 0.01 | 13.03 | 1430.59 | 109.8× | 2.18e-11 |
+| 0.0001 | 0.1 | 13.10 | 210.87 | 16.1× | 1.94e-05 |
+| 0.0001 | 0.01 | 13.10 | 1336.82 | 102.0× | 2.19e-11 |
+
+At `tv_sd=0.1`, fastDTWF groups the 28,949 states into 4,654 groups; at `0.01`,
+it retains all 28,949 states. The larger speedup at the tighter setting therefore
+compares against a configuration with no coarse-group compression. These settings
+are not matched error tolerances.
+
+The drifft plan occupied **18.37 MB** and took **2.65 seconds** to construct.
+Its first propagation call took **0.48 seconds**, including compilation; later
+selections reused the compiled kernel. fastDTWF's group/coefficient setup took
+about **1–22 ms**, with import/Numba compilation recorded separately. These costs
+mean the warm timing advantage is most useful when the plan is reused.
+
+The reported L1 differences are **between methods, not errors against an exact
+reference**. Full dense validation was disabled at this size. Singleton outputs
+agreed to approximately 1.03e-11 in L1 at both fastDTWF settings, and all outputs
+had total mass within 6e-14 of one. Neither agreement nor mass conservation proves
+full-distribution accuracy. This experiment measures one generation at constant
+size, with no mutation; it does not benchmark expected-visits solves or a
+multi-generation growth trajectory.
