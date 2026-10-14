@@ -148,3 +148,65 @@ had total mass within 6e-14 of one. Neither agreement nor mass conservation prov
 full-distribution accuracy. This experiment measures one generation at constant
 size, with no mutation; it does not benchmark expected-visits solves or a
 multi-generation growth trajectory.
+
+## Cold startup and warm reuse at the pre-expansion size
+
+[Isolated-process results](fastdtwf_pre_expansion_startup_cpu.json) measure
+28,948 gene copies, uniform input, and selection strengths 0 and 1e-4. Each
+configuration has three fresh Python processes, with five synchronized warm
+calls after the first result in each process. CPU and dependency versions remain
+recorded in the JSON. Run with:
+
+```sh
+uv run --group fastdtwf python benchmarks/compare_startup.py \
+  --output benchmarks/fastdtwf_pre_expansion_startup_cpu.json
+```
+
+The parent imports only the standard library. Each worker imports only its own
+backend: drifft/JAX or fastDTWF/PyTorch. Cold time is measured by the parent from
+process launch until a flushed marker signals the first completed result. It
+includes interpreter startup, imports, input preparation, planning/grouping,
+backend initialization, and first-call compilation/execution. Diagnostics and
+version lookup happen afterward. fastDTWF's eager Numba compilation is included
+in its import phase. JAX persistent compilation caching is disabled. Backend
+order reverses on alternating trials. Workers run sequentially.
+
+"Cold" means a fresh process, not a reboot or an empty operating-system file
+cache. Installation, uv environment resolution, process shutdown, and the
+parent's own startup are excluded. Thread policies remain backend defaults,
+with environment settings and PyTorch thread counts recorded. Warm medians are
+the median of each process's median; raw timings and cold phase breakdowns are
+retained. As in the earlier comparison, fastDTWF caches probabilities while
+drifft recomputes them inside the timed call.
+
+| Selection | Backend | Cold first result (s) | Warm call (ms) | Estimated 10 calls (s) | Estimated 100 calls (s) |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 0 | drifft | 4.106 | 13.36 | 4.226 | 5.428 |
+| 0 | fastDTWF, tv_sd=0.1 | 2.380 | 175.27 | 3.957 | 19.731 |
+| 0 | fastDTWF, tv_sd=0.01 | 3.076 | 1081.29 | 12.808 | 110.124 |
+| 0.0001 | drifft | 3.772 | 13.56 | 3.894 | 5.115 |
+| 0.0001 | fastDTWF, tv_sd=0.1 | 2.386 | 184.48 | 4.046 | 20.650 |
+| 0.0001 | fastDTWF, tv_sd=0.01 | 3.283 | 1171.83 | 13.830 | 119.295 |
+
+The 10/100-call columns are **estimates**, computed as median cold time plus
+`(calls - 1) * median warm time`; those full sequences were not timed. Repeated
+calls use the same uniform input and reuse the same plan/groups. They are not
+trajectories that evolve the distribution or change population size.
+
+Against `tv_sd=0.1`, drifft's estimated crossover is **12 calls under neutrality**
+and **10 calls at selection 1e-4**. Against `tv_sd=0.01`, it is **two calls** in
+both scenarios. These crossover counts are approximate, based on three cold
+trials on one machine. The tight fastDTWF setting again leaves all states
+ungrouped, and the two packages' approximation settings are not matched accuracy
+targets. No new exact-reference accuracy claim is made at this population size.
+
+For example, under neutrality drifft's median import, setup, and first-call phases
+were 0.821, 2.540, and 0.540 seconds; fastDTWF at `tv_sd=0.1` took 2.148, 0.002,
+and 0.180 seconds. Phase medians need not sum to the median cold total, which also
+includes process launch and marker delivery. The measured neutral cold ranges
+were 3.952–4.139 seconds for drifft and 2.191–2.742 seconds for fastDTWF at 0.1.
+
+The practical conclusion differs from the warm-only headline: **fastDTWF wins
+on a fresh single call; drifft wins with sufficient repeated use** for these
+constant-size propagation workloads. Neither conclusion establishes performance
+for changing-size demographies or equilibrium solves.

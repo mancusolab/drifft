@@ -183,6 +183,16 @@ uv run --group fastdtwf pytest -p no:capture tests/test_fastdtwf_benchmark.py
 This compares full distribution propagation and small-system expected visits
 against [fastDTWF](https://github.com/jeffspence/fastDTWF). It records first-call
 and warm timings, setup costs, approximation settings, and dense-reference errors.
+To include Python startup, imports, plan construction, and first-call compilation,
+run each backend in fresh processes at the pre-expansion human population size:
+
+```sh
+uv run --group fastdtwf python benchmarks/compare_startup.py \
+  --output benchmarks/fastdtwf_pre_expansion_startup_cpu.json
+```
+
+This uses uniform input, three cold trials per configuration, and five warm
+calls per trial. It also estimates totals for 1, 10, and 100 repeated calls.
 The dependency group is not needed to install or use drifft. See
 [comparison methodology and measured results](benchmarks/FASTDTWF.md).
 

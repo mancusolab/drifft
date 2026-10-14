@@ -1,0 +1,999 @@
+{
+  "schema_version": 1,
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "device": "cpu",
+  "input": "uniform",
+  "config": {
+    "gene_copies": 28948,
+    "selections": [
+      0.0,
+      0.0001
+    ],
+    "tv_sds": [
+      0.1,
+      0.01
+    ],
+    "row_eps": 1e-08,
+    "tail_tol": 1e-12,
+    "cold_repeats": 3,
+    "warm_repeats": 5,
+    "threads": null,
+    "output": "benchmarks/fastdtwf_pre_expansion_startup_cpu.json",
+    "quiet": false,
+    "worker": null
+  },
+  "thread_environment": {
+    "OMP_NUM_THREADS": null,
+    "MKL_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "XLA_FLAGS": null
+  },
+  "runs": [
+    {
+      "backend": "drifft",
+      "selection_strength": 0.0,
+      "tv_sd": null,
+      "cold_median_seconds": 4.105786832980812,
+      "warm_median_seconds": 0.013357457937672734,
+      "estimated_total_seconds": {
+        "1": 4.105786832980812,
+        "10": 4.226003954419866,
+        "100": 5.428175168810412
+      },
+      "samples": [
+        {
+          "imports_seconds": 1.1087527498602867,
+          "setup_seconds": 2.398471042048186,
+          "first_call_seconds": 0.5483172500971705,
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.014057167107239366,
+            0.013350917026400566,
+            0.014188291039317846,
+            0.012940875021740794,
+            0.013276999816298485
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.1802088916301254e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.4645835657437795e-05,
+            3.1802088916304825e-05,
+            3.454231429384236e-05,
+            3.1802088916301254e-05,
+            5.4645835657447106e-05
+          ],
+          "process_to_first_result_seconds": 4.105786832980812,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.790014541009441,
+          "setup_seconds": 2.7653109170496464,
+          "first_call_seconds": 0.5401020417921245,
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.015414207940921187,
+            0.012420374900102615,
+            0.014601750066503882,
+            0.013357457937672734,
+            0.012939666863530874
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.1802088916301254e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.4645835657437795e-05,
+            3.1802088916304825e-05,
+            3.454231429384236e-05,
+            3.1802088916301254e-05,
+            5.4645835657447106e-05
+          ],
+          "process_to_first_result_seconds": 4.139114124933258,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.8212834168225527,
+          "setup_seconds": 2.539619415998459,
+          "first_call_seconds": 0.5398290001321584,
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.01698037493042648,
+            0.013171332888305187,
+            0.01498800003901124,
+            0.013818874955177307,
+            0.014781083911657333
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.1802088916301254e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.4645835657437795e-05,
+            3.1802088916304825e-05,
+            3.454231429384236e-05,
+            3.1802088916301254e-05,
+            5.4645835657447106e-05
+          ],
+          "process_to_first_result_seconds": 3.951978333061561,
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "backend": "fastdtwf",
+      "selection_strength": 0.0,
+      "tv_sd": 0.1,
+      "cold_median_seconds": 2.379823834169656,
+      "warm_median_seconds": 0.17526729218661785,
+      "estimated_total_seconds": {
+        "1": 2.379823834169656,
+        "10": 3.9572294638492167,
+        "100": 19.731285760644823
+      },
+      "samples": [
+        {
+          "imports_seconds": 2.4808519170619547,
+          "setup_seconds": 0.02636649995110929,
+          "first_call_seconds": 0.18792562512680888,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.17244554101489484,
+            0.1718486249446869,
+            0.1726201248820871,
+            0.17223099991679192,
+            0.1722967498935759
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454196898714382e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 2.7417278750799596,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 1.969639124814421,
+          "setup_seconds": 0.0016536670736968517,
+          "first_call_seconds": 0.17714770790189505,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.17526729218661785,
+            0.17585883405990899,
+            0.17544295801781118,
+            0.17524450016207993,
+            0.17459645890630782
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454196898714382e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 2.1912361248396337,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.148228625068441,
+          "setup_seconds": 0.002014957834035158,
+          "first_call_seconds": 0.17952366708777845,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.18322362494654953,
+            0.20444937492720783,
+            0.2341232909820974,
+            0.1790732911322266,
+            0.18642179179005325
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454196898714382e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 2.379823834169656,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        }
+      ]
+    },
+    {
+      "backend": "fastdtwf",
+      "selection_strength": 0.0,
+      "tv_sd": 0.01,
+      "cold_median_seconds": 3.0759939590934664,
+      "warm_median_seconds": 1.081292332848534,
+      "estimated_total_seconds": {
+        "1": 3.0759939590934664,
+        "10": 12.807624954730272,
+        "100": 110.12393491109833
+      },
+      "samples": [
+        {
+          "imports_seconds": 1.9390630419366062,
+          "setup_seconds": 0.0020474581979215145,
+          "first_call_seconds": 1.0918608747888356,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.083114291075617,
+            1.0807930419687182,
+            1.080976832890883,
+            1.081292332848534,
+            1.0836039579007775
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454231429425307e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 3.0759939590934664,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 1.9375381250865757,
+          "setup_seconds": 0.0018019159324467182,
+          "first_call_seconds": 1.0857471250928938,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.0798720000311732,
+            1.2049614591524005,
+            1.0774256668519229,
+            1.076609707903117,
+            1.0782691249623895
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454231429425307e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 3.0680896658450365,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 1.9890999998897314,
+          "setup_seconds": 0.001975000137463212,
+          "first_call_seconds": 1.1058066659606993,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.0935812077950686,
+            1.112567082978785,
+            1.1059648329392076,
+            1.1065954170189798,
+            1.11089212493971
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.18020889163783e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464583565718402e-05,
+            3.18020889163783e-05,
+            3.454231429425307e-05,
+            3.180208891640683e-05,
+            5.464583565717433e-05
+          ],
+          "process_to_first_result_seconds": 3.140330458059907,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        }
+      ]
+    },
+    {
+      "backend": "drifft",
+      "selection_strength": 0.0001,
+      "tv_sd": null,
+      "cold_median_seconds": 3.772251207847148,
+      "warm_median_seconds": 0.013560083927586675,
+      "estimated_total_seconds": {
+        "1": 3.772251207847148,
+        "10": 3.8942919631954283,
+        "100": 5.114699516678229
+      },
+      "samples": [
+        {
+          "imports_seconds": 0.7984038749709725,
+          "setup_seconds": 2.3361760419793427,
+          "first_call_seconds": 0.5370615830179304,
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.013603250030428171,
+            0.01235258299857378,
+            0.013133083935827017,
+            0.012797333067283034,
+            0.012909957906231284
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.180578946813313e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549719397e-05,
+            3.180578946813313e-05,
+            3.4540587357079326e-05,
+            3.18057894681516e-05,
+            5.46490154972192e-05
+          ],
+          "process_to_first_result_seconds": 3.7153791249729693,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.8330452919472009,
+          "setup_seconds": 2.441734791966155,
+          "first_call_seconds": 0.5634829581249505,
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.012991333147510886,
+            0.015051583060994744,
+            0.013233875157311559,
+            0.013560083927586675,
+            0.013618916040286422
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.180578946813313e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549719397e-05,
+            3.180578946813313e-05,
+            3.4540587357079326e-05,
+            3.18057894681516e-05,
+            5.46490154972192e-05
+          ],
+          "process_to_first_result_seconds": 3.8843368750531226,
+          "stderr": ""
+        },
+        {
+          "imports_seconds": 0.828633083961904,
+          "setup_seconds": 2.364585124887526,
+          "first_call_seconds": 0.5325815000105649,
+          "plan_bytes": 18370656,
+          "persistent_compilation_cache": false,
+          "warm_seconds": [
+            0.013220250140875578,
+            0.01520062517374754,
+            0.013592874864116311,
+            0.013605333166196942,
+            0.014153334079310298
+          ],
+          "versions": {
+            "drifft": "0.1.0",
+            "jax": "0.11.2",
+            "jaxlib": "0.11.2",
+            "equinox": "0.13.8",
+            "lineax": "0.1.1",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": true,
+            "torch": false
+          },
+          "mass": 0.9999999999999403,
+          "minimum": 3.180578946813313e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549719397e-05,
+            3.180578946813313e-05,
+            3.4540587357079326e-05,
+            3.18057894681516e-05,
+            5.46490154972192e-05
+          ],
+          "process_to_first_result_seconds": 3.772251207847148,
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "backend": "fastdtwf",
+      "selection_strength": 0.0001,
+      "tv_sd": 0.1,
+      "cold_median_seconds": 2.3861297911498696,
+      "warm_median_seconds": 0.18448370904661715,
+      "estimated_total_seconds": {
+        "1": 2.3861297911498696,
+        "10": 4.046483172569424,
+        "100": 20.650016986764967
+      },
+      "samples": [
+        {
+          "imports_seconds": 2.154351083096117,
+          "setup_seconds": 0.0017813749145716429,
+          "first_call_seconds": 0.18092399998567998,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.17783250007778406,
+            0.18172520794905722,
+            0.20081612491048872,
+            0.18298666598275304,
+            0.1852652500383556
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 1.0,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.45402420160825e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 2.3861297911498696,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 1.9921793329995126,
+          "setup_seconds": 0.0017000839579850435,
+          "first_call_seconds": 0.19166545802727342,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.17791708395816386,
+            0.18448370904661715,
+            0.1856622921768576,
+            0.18565720808692276,
+            0.17996112490072846
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 1.0,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.45402420160825e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 2.2282748331781477,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.167486583115533,
+          "setup_seconds": 0.0016387919895350933,
+          "first_call_seconds": 0.19519174983724952,
+          "group_count": 4654,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            0.18846558313816786,
+            0.19041908415965736,
+            0.191320416983217,
+            0.18813866702839732,
+            0.18915975000709295
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 1.0,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.45402420160825e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 2.40926329116337,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        }
+      ]
+    },
+    {
+      "backend": "fastdtwf",
+      "selection_strength": 0.0001,
+      "tv_sd": 0.01,
+      "cold_median_seconds": 3.283406958915293,
+      "warm_median_seconds": 1.1718302089720964,
+      "estimated_total_seconds": {
+        "1": 3.283406958915293,
+        "10": 13.829878839664161,
+        "100": 119.29459764715284
+      },
+      "samples": [
+        {
+          "imports_seconds": 1.997651708079502,
+          "setup_seconds": 0.0018053750973194838,
+          "first_call_seconds": 1.1512226248160005,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.1390084999147803,
+            1.1479595839045942,
+            1.1589795830659568,
+            1.152292916085571,
+            1.1510714581236243
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.454058735756542e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 3.1952400421723723,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.0464711249805987,
+          "setup_seconds": 0.0016509999986737967,
+          "first_call_seconds": 1.1918388330377638,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.1716441670432687,
+            1.1718302089720964,
+            1.1543919171672314,
+            1.1876214579679072,
+            1.1725400839932263
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.454058735756542e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 3.283406958915293,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        },
+        {
+          "imports_seconds": 2.0563975002150983,
+          "setup_seconds": 0.0018127078656107187,
+          "first_call_seconds": 1.2253012091387063,
+          "group_count": 28949,
+          "torch_threads": 4,
+          "source": {
+            "url": "https://github.com/jeffspence/fastDTWF",
+            "vcs_info": {
+              "vcs": "git",
+              "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+              "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+            }
+          },
+          "warm_seconds": [
+            1.3157272920943797,
+            1.2060515831690282,
+            1.2067183330655098,
+            1.2123495831619948,
+            1.2071401248686016
+          ],
+          "versions": {
+            "fastdtwf": "0.0.6",
+            "torch": "2.14.1",
+            "numba": "0.68.0",
+            "numpy": "2.5.4",
+            "scipy": "1.18.1"
+          },
+          "loaded_backends": {
+            "jax": false,
+            "torch": true
+          },
+          "mass": 0.9999999999999998,
+          "minimum": 3.1805789468206626e-05,
+          "sample_indices": [
+            0,
+            1,
+            14474,
+            28947,
+            28948
+          ],
+          "sample_values": [
+            5.464901549694015e-05,
+            3.1805789468206626e-05,
+            3.454058735756542e-05,
+            3.1805789468255524e-05,
+            5.464901549693988e-05
+          ],
+          "process_to_first_result_seconds": 3.3266040419694036,
+          "stderr": "/Users/nicholas/Projects/drifft/.venv/lib/python3.12/site-packages/fastDTWF/fastDTWF.py:540: UserWarning: Sparse invariant checks are implicitly disabled. Memory errors (e.g. SEGFAULT) will occur when operating on a sparse tensor which violates the invariants, but checks incur performance overhead. To silence this warning, explicitly opt in or out. See `torch.sparse.check_sparse_tensor_invariants.__doc__` for guidance.  (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/Context.cpp:855.)\n  proj = torch.sparse_coo_tensor(indices, values, sizes)\n"
+        }
+      ]
+    }
+  ]
+}
