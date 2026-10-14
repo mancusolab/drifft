@@ -169,6 +169,23 @@ or file errors. A completed report can contain an unconverged solve; inspect its
 diagnostics. New reports carry `schema_version: 1`; the original measurements
 stored alongside this script predate that field.
 
+## Comparison with fastDTWF
+
+Install the optional, revision-pinned benchmark dependencies and run the CPU
+comparison separately from the signed-vector benchmark:
+
+```sh
+uv run --group fastdtwf python benchmarks/compare_fastdtwf.py \
+  --sizes 64 256 1024 4096 --repeats 3 --output benchmarks/fastdtwf_cpu.json
+uv run --group fastdtwf pytest -p no:capture tests/test_fastdtwf_benchmark.py
+```
+
+This compares full distribution propagation and small-system expected visits
+against [fastDTWF](https://github.com/jeffspence/fastDTWF). It records first-call
+and warm timings, setup costs, approximation settings, and dense-reference errors.
+The dependency group is not needed to install or use drifft. See
+[comparison methodology and measured results](benchmarks/FASTDTWF.md).
+
 ## Development checks
 
 The pre-commit configuration is adapted from `jaxqtl`: it retains the standard

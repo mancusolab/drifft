@@ -15,6 +15,7 @@ include = ["/src", "/tests", "/benchmarks", "/README.md", "/pyproject.toml", "/u
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.11", "ty>=0.0.1", "pre-commit>=4"]
+fastdtwf = ["fastdtwf @ git+https://github.com/jeffspence/fastDTWF@bd36496a64fda137cda5a2d6a97dd9343c97eb46"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
