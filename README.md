@@ -1,12 +1,15 @@
 # drifft
 
-Matrix-free Wright–Fisher transition operators in JAX, with an exact local
-diagonal–Toeplitz–diagonal binomial factorization and Lineax occupation solves.
+Matrix-free Wright–Fisher transitions using stable Bernstein sampling, Chebyshev
+interpolation and NUFFT evaluation in JAX, with Lineax expected-visits solves.
+This experimental branch replaces the previous local log-odds FFT backend.
 The statistical model uses `M=2N` gene copies and accepts arbitrary JAX-compatible
 selection functions. The built-in `Underdominance` model uses
 `q_s(x) = (x-s*x*(1-x))/(1-2*s*x*(1-x))`, for `0 <= s <= 1`.
 
 ## Installation and use
+
+Requires Python 3.12 or newer.
 
 ```sh
 uv sync
@@ -59,7 +62,8 @@ function. Scalar strengths are normalized to float64 automatically.
 `expect` and `advance` have different directions and are intentionally named
 explicitly. Neither changes the input, clips outputs, nor normalizes probability
 mass. Segregating operations remove endpoint contributions; they do not condition
-on survival. All repeated numerical operations are JAX-only with no host callbacks.
+on survival. Repeated operations remain JIT-compatible; NUFFTs use FINUFFT’s compiled FFI
+rather than Python host callbacks.
 
 Custom selection models use the same interface:
 
@@ -93,57 +97,69 @@ caller preconditions to avoid runtime callbacks. Plans require float64.
 
 ## Approximation and configuration
 
-Each integer center `j0` has local spacing `h=1/(M*p0*(1-p0))` in log-odds.
-The FFT computes **binomial**, not diffusion/Gaussian, expectations at these nodes.
-Convolutions are zero-padded to at least `R+2L-2`; the output slice begins at
-`L-1`. Plans batch blocks with the same power-of-two FFT length and cache kernel
-transforms. Disjoint core intervals determine routing; halos only support
-interpolation and are never added as extra row contributions.
+`expect` samples the Bernstein polynomial at fixed Chebyshev–Lobatto nodes,
+computes cosine coefficients using a real-FFT DCT-I, then evaluates them at the
+selection probabilities using FINUFFT. The degree and sample geometry depend on
+the destination population and accuracy settings, never on the input vector or
+selection strength. The plan stores only one node vector.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `tail_tol` | `1e-12` | Discarded binomial mass budget at grid nodes and boundary rows; accepted range `[1e-15, .1)` |
-| `interp_order` | `12` | Even polynomial stencil size, 2–16; 8 is faster in some configurations but less accurate |
-| `min_mode_count` | `128` | Direct fallback when `M*min(p,1-p) <= cutoff`; minimum configurable value 8 |
-| `block_spacing` | `1.0` | Center spacing in local standard deviations; `(0,4]` |
-| `balance` | `True` | Apply a constant per-block shift to balance the diagonal factors |
-| `dtype` | `jnp.float64` | Only float64 is supported in this release |
+| `accuracy` | `1e-10` | Nominal value-error budget; `[1e-13, .1)` |
+| `tail_tol` | allocated automatically | Optional stricter omitted binomial mass per node |
+| `nufft_tol` | `min(1e-13, accuracy/4)` | Requested FINUFFT tolerance; at least `1e-15` |
+| `batch_size` | `32` | Sampling nodes processed together |
+| `derivative_accuracy` | `False` | Increase degree by 50%, capped at exact degree; heuristic, not a derivative certificate |
+| `dtype` | `jnp.float64` | Only float64; enable x64 before planning |
 
-Input windows use host-side SciPy binomial quantiles rather than the suggested
-Bernstein bound. This keeps factors better conditioned while retaining a
-numerically checked tail budget. Stochastic ordering makes the two extreme
-node probabilities sufficient to bound the two discarded tails throughout the
-block. `plan.max_tail_mass` records the largest checked discarded mass. The
-independent banded baseline uses the conservative Bernstein bound.
+The nominal budget is split equally between spectral interpolation, sampling,
+NUFFT evaluation and roundoff. The fixed degree uses the value bound
+`4*M/L * exp(-L**2/(2*M))`; at `L=M` interpolation is exact in exact arithmetic.
+Per-node tail error is divided by twice a conservative Lobatto Lebesgue constant
+`1 + (2/pi)*log(L+1)`. Plan fields expose both the spectral bound and the
+amplified sampling bound. NUFFT tolerance and the roundoff allocation are
+**not rigorous error certificates**; both require empirical validation.
 
-The modal probability uses Stirling corrections, avoiding subtraction of large
-log-factorials. Input diagonal factors use the local recurrence; output factors
-use a `log1p`/`expm1` softplus difference. A constant balancing shift preserves
-the product. Intermediate host arithmetic uses `longdouble` where available,
-but correctness does not rely on extra precision (macOS ARM uses float64 here).
+Sampling builds nonnegative weights from binomial mode-relative ratios, then
+normalizes each retained stencil. A Bernstein tail bound controls discarded
+mass. This changes a sampling-node expectation by at most twice that mass times
+`max(abs(values))`. It is fixed linear preprocessing, not normalization of a
+transition output or segregating row. Endpoint samples and transition rows are
+exact. Spectral interpolation can still introduce tiny negative coefficients;
+outputs are neither clipped nor renormalized.
 
-The boundary sum has fixed width chosen by a binomial upper quantile at the
-cutoff. Upper rows are reflected onto the lower boundary. Small problems with
-`M <= 2*min_mode_count` use this direct path throughout. Batches of 64 rows bound
-per-batch forward temporary storage and skip direct work for batches entirely
-in the interior. Automatic transposition can retain `O(M*boundary_width)` residuals.
-The boundary input gather occurs before the scan so its automatic transpose
-accumulates a short boundary cotangent rather than a full vector per batch.
+`advance` is the algebraic transpose of the same approximation. Its sampling
+stage regenerates each stencil batch and scatters into one output accumulator.
+There is no permanent node-by-stencil weight table. Expected work is
+`O(L*W + L*log(L) + source_gene_copies)` up to NUFFT tolerance factors, with
+`L` and `W` approximately proportional to `sqrt(M*log(M))`. Working array storage
+is `O(M + source_gene_copies + L + batch_size*W)`, excluding library-managed
+FINUFFT scratch. XLA memory reports do not measure that external scratch.
 
-`tail_tol` is **not a bound on total operator error**. Interpolation and floating
-point roundoff are separate errors; polynomial interpolation can introduce tiny
-negative coefficients. Outputs are never clipped or renormalized. Consequently,
-the operator is linear in signed inputs and its automatic transpose satisfies
-the adjoint identity. Aggressive settings, especially a lower boundary cutoff
-or wider blocks, require fresh accuracy checks. Conservative defaults target
-normalized absolute matvec error below `1e-9`, not componentwise relative error.
+Selection derivatives evaluate the derivative polynomial in coefficient space,
+including at probability zero and one. The transpose has a matched derivative
+rule; it does not differentiate the singular angular coordinate. First and
+second polynomial derivatives, propagation gradients and small expected-visits
+gradients have independent reference tests. Sampling nodes are fixed geometry:
+differentiating the plan's node leaves is rejected. Differentiate selection
+parameters or input vectors while holding the plan fixed.
 
-For fixed configuration, block counts grow as `sqrt(M)`, their aggregate window
-and grid lengths as `M`, and FFT work as approximately `M log M`. Bucket padding
-has bounded overhead. The direct boundary path is at most linear in `M` for a
-fixed cutoff and tolerance. The banded reference does `O(M**1.5)` work.
-Planning/storage and measured runtime scaling are recorded in the benchmark
-reports; these estimates do not imply a GPU speed advantage.
+### Dependency and hardware constraints
+
+The replacement requires `jax-finufft`; it is a core dependency because it is
+now the only backend. The dependency follows upstream `jax-finufft` `main`; `uv.lock` records the exact
+commit. This includes batching fixes absent from release 1.3.1 and permits the
+latest JAX on supported Python versions. Installing from Git builds the native
+extension and requires a C++ toolchain. The build uses installed FFTW development
+libraries when available; otherwise it downloads and builds FFTW automatically
+(OpenMP is optional). Ubuntu CI installs `libfftw3-dev` to avoid that extra build.
+CPU execution is tested on Apple Silicon. CUDA requires a
+compatible CUDA-enabled FINUFFT installation and has not been validated here;
+TPU is unsupported. No dense fallback is used when a device lacks NUFFT support.
+
+The former `interp_order`, `min_mode_count`, `block_spacing` and `balance` factory
+options are removed. Default `build_transition_plan(gene_copies=...)`, rectangular
+source sizes, selection callables, and all `Transition` methods retain their API.
 
 ## Solves and limitations
 
@@ -167,98 +183,30 @@ benchmarks also evaluate residuals against the exact dense transition matrix,
 occupation-vector error, and total absorption time. Large systems have sampled
 one-step accuracy checks; large near-neutral solves are not certified by them.
 There is currently no preconditioner or rigorous a posteriori exact-model error
-bound. Derivatives with respect to selection strength are tested at an interior value against
-finite differences, but no global smoothness guarantee is made at block seams,
-the boundary switch, or endpoints of arbitrary supplied probability maps.
+bound. Derivative accuracy is measured separately from value accuracy; the optional
+larger degree alone does not certify gradients of ill-conditioned solves.
 
 ## Validation and benchmarks
 
 ```sh
-uv run pytest -p no:capture                  # includes M=65536 sampled tests
-uv run pytest -p no:capture -m 'not slow'    # omit large sampled-row cases
-uv run ruff check .
-uv run ruff format --check .
+uv run pytest -p no:capture
+uv run ruff check src tests benchmarks
+uv run ruff format --check src tests benchmarks
 uv run ty check src tests benchmarks
 uv run pre-commit run --all-files
 uv build
-uv run python benchmarks/benchmark.py --output benchmarks/cpu.json
-uv run python benchmarks/benchmark.py --sizes 1024 10000 --selections 0 .5 \
-  --orders 8 12 --tail-tols 1e-8 1e-12 --solve-max-m 0 \
-  --output benchmarks/accuracy_sweep.json
+uv run python benchmarks/benchmark.py --device cpu --output benchmarks/bernstein_cpu.json
+uv run --group fastdtwf python benchmarks/compare_fastdtwf.py --sizes 64 256 1024
 ```
 
-The benchmark runs on the JAX-selected device. Use a GPU-enabled JAX installation
-to repeat it there; no GPU results are claimed. It records package versions,
-configuration, plan time/storage, compilation, synchronized steady-state forward
-and transpose times, compiler temporary-memory estimates, process peak RSS,
-sampled accuracy, and first/warm solve times for both solvers. Dense comparisons
-are limited to `M <= 1024` by default. Run timing sweeps without competing jobs.
+The spectral benchmark reports compilation, warm execution, sampled forward and
+selection-JVP accuracy, plan storage, XLA temporary storage, mass defects and
+small-system solve diagnostics. Use `--source-gene-copies` for rectangular
+transitions, and `--derivative-accuracy` to evaluate the larger-degree policy.
+Multiple RHS use `jax.vmap`; this processes independent vectors rather than
+claiming a shared batched NUFFT speedup.
 
-Use `--device cpu`, `--device gpu` or `--device tpu` to select the backend explicitly;
-otherwise JAX selects it. Precision remains float64. `--quiet` suppresses progress
-logging on stderr. JSON is written to stdout unless `--output` names a file.
-Exit codes are 0 for a completed report, 2 for invalid arguments and 1 for runtime
-or file errors. A completed report can contain an unconverged solve; inspect its
-diagnostics. New reports carry `schema_version: 1`; the original measurements
-stored alongside this script predate that field.
-
-## Comparison with fastDTWF
-
-Install the optional, revision-pinned benchmark dependencies and run the CPU
-comparison separately from the signed-vector benchmark:
-
-```sh
-uv run --group fastdtwf python benchmarks/compare_fastdtwf.py \
-  --sizes 64 256 1024 4096 --repeats 3 --output benchmarks/fastdtwf_cpu.json
-uv run --group fastdtwf pytest -p no:capture tests/test_fastdtwf_benchmark.py
-```
-
-This compares full distribution propagation and small-system expected visits
-against [fastDTWF](https://github.com/jeffspence/fastDTWF). It records first-call
-and warm timings, setup costs, approximation settings, and dense-reference errors.
-To include Python startup, imports, plan construction, and first-call compilation,
-run each backend in fresh processes at the pre-expansion human population size:
-
-```sh
-uv run --group fastdtwf python benchmarks/compare_startup.py \
-  --output benchmarks/fastdtwf_pre_expansion_startup_cpu.json
-```
-
-This uses uniform input, three cold trials per configuration, and five warm
-calls per trial. It also estimates totals for 1, 10, and 100 repeated calls.
-The dependency group is not needed to install or use drifft. See
-[comparison methodology and measured results](benchmarks/FASTDTWF.md).
-
-## Development checks
-
-The pre-commit configuration is adapted from `jaxqtl`: it retains the standard
-file checks and runs Ruff lint/format plus ty over `src`, `tests` and `benchmarks`.
-The reference symlink and original task document are excluded. Install the hook
-with `uv run pre-commit install`; CI runs all hooks, the full test suite and builds
-using the locked uv environment on Python 3.11 and 3.12. The workflow follows the
-[uv GitHub Actions guide](https://docs.astral.sh/uv/guides/integration/github/).
-
-Public numerical docstrings describe shapes, approximation and failure contracts.
-Keep numerical array fields dynamic and shape/configuration metadata static;
-construction checks must inspect shapes without reading traced values. Use the
-plan factory for validated input configuration. This package is unreleased;
-rename APIs and their call sites directly without compatibility wrappers. Numerical changes require the independent reference and
-transform tests; formatting and documentation changes do not need new tests.
-
-The engineering checks retain this repository's ty toolchain. GPU/float32 and
-global derivative guarantees remain outside the validated contract. Runtime
-probability ranges remain caller preconditions to keep the original callback-free
-kernel contract. There is no plan checkpoint format, sampling API or dataframe
-adapter to validate; those checklist items do not apply to this package.
-
-The direct/banded method can be preferable when plan reuse is low, a platform
-handles gather/PMF arithmetic better than many small FFTs, or polynomial
-interpolation is unsuitable. The provided baseline recomputes log-PMFs on each
-call; it does not cache selection-specific band weights. Dense matvecs are much
-faster for small systems once their matrix is built, at quadratic storage cost.
-See [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for measured tradeoffs.
-
-API references checked during implementation:
-[Lineax operators](https://docs.kidger.site/lineax/api/operators/),
-[Lineax solvers](https://docs.kidger.site/lineax/api/solvers/), and
-[linear_solve](https://docs.kidger.site/lineax/api/linear_solve/).
+See [replacement results](benchmarks/BERNSTEIN.md) for measured limitations.
+The older [CPU report](benchmarks/RESULTS.md) and
+[fastDTWF comparison](benchmarks/FASTDTWF.md) describe the previous backend and
+must not be used as performance evidence for this replacement.

@@ -1,342 +1,171 @@
-"""Selection-independent, host-side FFT geometry construction."""
+"""Selection-independent Chebyshev geometry and explicit error allocations."""
 
-# Functional Core: deterministic planning, no file or network I/O.
-# NumPy/SciPy are intentional here: quantile-based windows and FFT buckets have
-# variable host-side sizes. The factory converts the completed plan to JAX
-# arrays; this module's construction routines never run inside a matvec or solve.
+# Functional Core: deterministic host-side dimensions and JAX sampling nodes.
 import math
 from typing import final
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import numpy as np
-from numpy.typing import DTypeLike
-from scipy.special import expit, logit
-from scipy.stats import binom
-
-
-@final
-class Block(eqx.Module):
-    """One local factorization with inclusive input and output intervals.
-
-    `b` scales input columns; `a` includes the modal probability and scales
-    output nodes. `kernel_fft` represents the zero-padded convolution kernel.
-    Shapes and transform lengths are static; numerical arrays are PyTree leaves.
-    """
-
-    b: jax.Array
-    a: jax.Array
-    kernel_fft: jax.Array
-    nfft: int = eqx.field(static=True)
-    length: int = eqx.field(static=True)
-    rows: int = eqx.field(static=True)
-
-
-def _stirling_correction(n: int) -> float:
-    """Return the log-factorial correction beyond leading Stirling terms."""
-    if n < 16:
-        return (
-            math.lgamma(n + 1)
-            - (n + 0.5) * math.log(n)
-            + n
-            - 0.5 * math.log(2 * math.pi)
-        )
-    # Below 16 the asymptotic series is less accurate; above it, the omitted
-    # n**-11 term is below float64 precision for the modal normalization.
-    z = 1.0 / n
-    return z * (
-        1 / 12
-        + z * z * (-1 / 360 + z * z * (1 / 1260 + z * z * (-1 / 1680 + z * z / 1188)))
-    )
-
-
-def make_block(
-    M: int, j0: int, lo: int, hi: int, rlo: int, rhi: int, *, balance: bool = True
-) -> Block:
-    """Construct exact DTD factors with recurrence and stable modal normalization."""
-    if not (0 < j0 < M and 0 <= lo <= hi <= M and rlo <= rhi):
-        raise ValueError("Invalid block intervals or reference count")
-    p = np.longdouble(j0) / M
-    eta = np.log(p) - np.log1p(-p)
-    h = 1 / (M * p * (1 - p))
-    r = np.arange(rlo, rhi + 1, dtype=np.longdouble)
-    delta = h * r
-    loga = delta * j0 - M * np.log1p(p * np.expm1(delta)) + h * r**2 / 2
-    # Build the recurrence through zero even when the requested window excludes it.
-    left, right = min(lo, j0), max(hi, j0)
-    j = np.arange(left, right, dtype=np.longdouble)
-    increments = np.log(M - j) - np.log(j + 1) + eta + h * (j - j0 + 0.5)
-    cumulative = np.r_[np.longdouble(0), np.cumsum(increments)]
-    logb = (cumulative - cumulative[j0 - left])[lo - left : hi - left + 1]
-    logB = (
-        -0.5 * np.log(2 * np.pi * M * p * (1 - p))
-        + _stirling_correction(M)
-        - _stirling_correction(j0)
-        - _stirling_correction(M - j0)
-    )
-    # A constant balancing shift preserves the exact product.
-    shift = (np.max(logb) + np.min(logb)) / 2 if balance else 0.0
-    a = np.exp(logB + loga + shift).astype(np.float64)
-    b = np.exp(logb - shift).astype(np.float64)
-    L, R = hi - lo + 1, rhi - rlo + 1
-    nfft = 1 << (R + 2 * L - 3).bit_length()
-    d = np.arange(rlo - (hi - j0), rhi - (lo - j0) + 1, dtype=np.float64)
-    kernel = np.exp(-float(h) * d * d / 2)
-    if not (np.all(np.isfinite(a)) and np.all(np.isfinite(b))):
-        raise ValueError(
-            "Nonfinite local factors; use narrower blocks or a larger cutoff"
-        )
-    return Block(
-        jnp.asarray(b),
-        jnp.asarray(a),
-        jnp.asarray(np.fft.rfft(kernel, nfft)),
-        nfft,
-        L,
-        R,
-    )
-
-
-@final
-class Bucket(eqx.Module):
-    """Blocks sharing an FFT length, padded only within the bucket.
-
-    `indices` and `b` have shape (blocks, max input length); `a`,
-    `conv_indices` and `output_indices` have shape (blocks, max node count).
-    Padded outputs have zero scale and scatter to the plan's sentinel node.
-    """
-
-    indices: jax.Array
-    b: jax.Array
-    a: jax.Array
-    kernel_fft: jax.Array
-    conv_indices: jax.Array
-    output_indices: jax.Array
-    nfft: int = eqx.field(static=True)
+from jax.typing import DTypeLike
 
 
 @final
 class TransitionPlan(eqx.Module):
-    r"""Immutable PyTree geometry constructed by `build_transition_plan`.
-
-    **Arguments:**
-
-    Use the factory rather than assembling this container manually. `edges`
-    partitions block cores in log-odds; `eta0` and `variance` define each grid.
-    `rmin` and `offsets` locate block nodes in a flat output array. `buckets`
-    contains the batched factors and cached transforms. Remaining fields record
-    boundary coefficients, configuration and the checked tail-mass diagnostic.
+    r"""Compact geometry prepared by `build_transition_plan` outside JIT.
 
     **Returns:**
 
-    A reusable selection-independent plan. Arrays are dynamic PyTree leaves;
-    configuration and dimensions are static Equinox metadata. The static fields
-    are retained for shape decisions and reproducible configuration reporting.
+    An immutable PyTree with one dynamic node vector. Dimensions, tolerances and
+    diagnostics are static. No node-by-stencil table is retained. `spectral_bound`
+    bounds value interpolation in exact arithmetic, not derivatives or roundoff.
+    `tail_tol` bounds omitted mass at each sampling node; `sampling_bound`
+    includes normalization and the conservative Lebesgue amplification.
 
-    **Raises:**
+    **Failure Modes:**
 
-    `ValueError` if block metadata or boundary dimensions are inconsistent.
-    The factory additionally validates configuration and requires float64.
+    Use the factory. Invalid structural metadata raises `ValueError`. FINUFFT's
+    requested tolerance is not a rigorous operator-norm error certificate.
     """
 
-    buckets: tuple[Bucket, ...]
-    edges: jax.Array
-    eta0: jax.Array
-    variance: jax.Array
-    rmin: jax.Array
-    offsets: jax.Array
-    boundary_logchoose: jax.Array
-    max_tail_mass: jax.Array
+    nodes: jax.Array
     gene_copies: int = eqx.field(static=True)
+    degree: int = eqx.field(static=True)
+    batch_size: int = eqx.field(static=True)
+    radius: int = eqx.field(static=True)
+    accuracy: float = eqx.field(static=True)
+    spectral_tol: float = eqx.field(static=True)
+    spectral_bound: float = eqx.field(static=True)
     tail_tol: float = eqx.field(static=True)
-    interp_order: int = eqx.field(static=True)
-    min_mode_count: int = eqx.field(static=True)
-    block_spacing: float = eqx.field(static=True)
-    balance: bool = eqx.field(static=True)
-    total_nodes: int = eqx.field(static=True)
-    boundary_width: int = eqx.field(static=True)
+    sampling_bound: float = eqx.field(static=True)
+    nufft_tol: float = eqx.field(static=True)
+    roundoff_budget: float = eqx.field(static=True)
+    derivative_accuracy: bool = eqx.field(static=True)
 
     def __check_init__(self) -> None:
-        """Check structural invariants without inspecting traced array values."""
-        block_count = self.eta0.size
-        if (
-            self.eta0.ndim != 1
-            or self.variance.shape != (block_count,)
-            or self.rmin.shape != (block_count,)
-            or self.offsets.shape != (block_count,)
-            or self.edges.shape != (max(0, block_count - 1),)
-        ):
-            raise ValueError(
-                "Plan block metadata must have matching one-dimensional shapes"
-            )
-        if (
-            not 1 <= self.boundary_width <= self.gene_copies + 1
-            or self.boundary_logchoose.shape != (self.boundary_width,)
-        ):
-            raise ValueError("boundary_width must match the boundary coefficient array")
+        """Reject inconsistent dimensions without inspecting array values."""
+        if self.gene_copies < 2 or not 1 <= self.degree <= self.gene_copies:
+            raise ValueError("degree must be between 1 and gene_copies")
+        if self.nodes.shape != (self.degree + 1,):
+            raise ValueError("nodes must have degree + 1 entries")
+        if self.batch_size < 1 or not 1 <= self.radius <= self.gene_copies:
+            raise ValueError("batch_size and radius must be positive")
+
+    @property
+    def stencil_width(self) -> int:
+        """Maximum padded stencil width, including masked off-grid entries."""
+        return 2 * self.radius + 1
+
+
+def _degree(size: int, tolerance: float) -> int:
+    """Binary-search the log of the supplied Lobatto interpolation error bound."""
+    lo, hi = 1, size
+    while lo < hi:
+        mid = (lo + hi) // 2
+        bound = math.log(4 * size / mid) - mid * mid / (2 * size)
+        if bound <= math.log(tolerance):
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
 
 
 def build_transition_plan(
     gene_copies: int,
     *,
-    tail_tol: float = 1e-12,
-    interp_order: int = 12,
-    min_mode_count: int = 128,
-    block_spacing: float = 1.0,
-    balance: bool = True,
+    accuracy: float = 1e-10,
+    tail_tol: float | None = None,
+    nufft_tol: float | None = None,
+    batch_size: int = 32,
+    derivative_accuracy: bool = False,
     dtype: DTypeLike = jnp.float64,
 ) -> TransitionPlan:
-    r"""Plan local binomial FFTs over all success probabilities, independent of selection.
+    r"""Prepare a fixed-degree Bernstein/Chebyshev/NUFFT transition.
 
     **Arguments:**
 
-    - `gene_copies`: Integer gene-copy count, at least two (diploid population size is `gene_copies/2`).
-    - `tail_tol`: Discarded mass budget in `[1e-15, .1)`, default `1e-12`.
-    - `interp_order`: Even polynomial stencil size from 2 through 16, default 12.
-    - `min_mode_count`: Boundary cutoff in expected copies, at least 8, default 128.
-    - `block_spacing`: Center separation in local standard deviations, `(0, 4]`.
-    - `balance`: Whether to recenter the diagonal multipliers, default true.
-    - `dtype`: Must be float64, with `jax_enable_x64` already enabled.
+    - `gene_copies`: Destination gene copies, at least two.
+    - `accuracy`: Nominal value-error budget, in `[1e-13, 0.1)`.
+    - `tail_tol`: Optional stricter per-node discarded binomial mass tolerance.
+    - `nufft_tol`: Optional stricter FINUFFT tolerance (at least `1e-15`).
+    - `batch_size`: Number of sampling nodes processed together.
+    - `derivative_accuracy`: Increase the fixed degree by 50 percent (capped at
+      the exact degree). This is a conservative heuristic, not a derivative bound.
+    - `dtype`: Only float64 is supported; enable JAX x64 before construction.
 
     **Returns:**
 
-    A `TransitionPlan` with host-computed quantile windows and cached kernel FFTs.
-    This factory is not JIT-compatible. Core intervals partition log-odds;
-    halos support interpolation. For `gene_copies <= 2*min_mode_count` all rows use the
-    direct fallback. Tail tolerance does not bound interpolation or roundoff.
+    Selection-independent geometry. The value budget is split equally between
+    spectral error, sampling error, requested NUFFT tolerance and roundoff.
+    Roundoff and actual NUFFT error must still be measured independently.
 
     **Raises:**
 
-    `ValueError` for invalid configuration, disabled x64 or nonfinite factors;
-    `TypeError` if `balance` is not boolean. Results are deterministic for a
-    fixed environment but need not be bitwise identical across platforms.
+    `ValueError` for invalid configuration, disabled x64 or unsupported dtype.
+    Old log-odds-specific planning options are intentionally removed.
     """
     if (
-        not isinstance(gene_copies, int)
-        or isinstance(gene_copies, bool)
+        isinstance(gene_copies, bool)
+        or not isinstance(gene_copies, int)
         or gene_copies < 2
     ):
         raise ValueError("gene_copies must be an integer >= 2")
-    if not (np.isfinite(tail_tol) and 1e-15 <= tail_tol < 0.1):
-        raise ValueError("tail_tol must be finite and in [1e-15, 0.1)")
     if (
-        not isinstance(interp_order, int)
-        or interp_order < 2
-        or interp_order > 16
-        or interp_order % 2
+        isinstance(batch_size, bool)
+        or not isinstance(batch_size, int)
+        or batch_size < 1
     ):
-        raise ValueError("interp_order must be an even integer from 2 to 16")
-    if not isinstance(min_mode_count, int) or min_mode_count < 8:
-        raise ValueError("min_mode_count must be an integer >= 8")
-    if not (np.isfinite(block_spacing) and 0 < block_spacing <= 4):
-        raise ValueError("block_spacing must be in (0, 4]")
-    if not isinstance(balance, bool):
-        raise TypeError("balance must be a bool")
-    if np.dtype(dtype) != np.dtype("float64") or not jax.config.x64_enabled:
-        raise ValueError("Enable jax_enable_x64 and use dtype=float64")
-    cutoff = min_mode_count / gene_copies
-    groups: dict[int, list[tuple[int, Block, int]]] = {}
-    offsets, rmins = [], []
-    centers: list[int] = []
-    if gene_copies > 2 * min_mode_count:
-        centers = [min_mode_count]
-        while centers[-1] < gene_copies - min_mode_count:
-            j = centers[-1]
-            centers.append(
-                min(
-                    gene_copies - min_mode_count,
-                    j + max(1, int(block_spacing * np.sqrt(j * (1 - j / gene_copies)))),
-                )
-            )
-    eta0 = logit(np.asarray(centers, dtype=float) / gene_copies)
-    variance = np.asarray(centers, dtype=float) * (
-        1 - np.asarray(centers, dtype=float) / gene_copies
+        raise ValueError("batch_size must be a positive integer")
+    if not isinstance(derivative_accuracy, bool):
+        raise ValueError("derivative_accuracy must be bool")
+    if not math.isfinite(accuracy) or not 1e-13 <= accuracy < 0.1:
+        raise ValueError("accuracy must be finite and in [1e-13, 0.1)")
+    if jnp.dtype(dtype) != jnp.dtype(jnp.float64) or not jax.config.read(
+        "jax_enable_x64"
+    ):
+        raise ValueError("float64 and jax_enable_x64=True are required")
+    budget = accuracy / 4
+    degree = _degree(gene_copies, budget)
+    if derivative_accuracy:
+        degree = min(gene_copies, math.ceil(1.5 * degree))
+    # Lambda_L <= 1 + (2/pi) log(L+1) is deliberately loose at small L.
+    lebesgue = 1 + 2 / math.pi * math.log(degree + 1)
+    allocated_tail = budget / (2 * lebesgue)
+    if tail_tol is None:
+        tail_tol = allocated_tail
+    if not math.isfinite(tail_tol) or not 0 < tail_tol < 0.1:
+        raise ValueError("tail_tol must be finite and in (0, 0.1)")
+    tail_tol = min(tail_tol, allocated_tail)
+    if nufft_tol is None:
+        nufft_tol = min(1e-13, budget)
+    if not math.isfinite(nufft_tol) or not 1e-15 <= nufft_tol <= budget:
+        raise ValueError("nufft_tol must be in [1e-15, accuracy / 4]")
+    # Bernstein: P(|J-Mp| >= t) <= 2 exp(-t²/(2(var+t/3))).
+    # t=sqrt(2 var A)+2A/3 suffices. var<=M/4; mode differs
+    # from Mp by <=1. The extra 1 covers centering and integer rounding.
+    a = math.log(2) - math.log(tail_tol)
+    radius = min(gene_copies, math.ceil(math.sqrt(gene_copies * a / 2) + 2 * a / 3) + 1)
+    index = jnp.arange(degree + 1, dtype=jnp.float64)
+    # Reflection avoids cancellation in tiny lower-tail nodes.
+    low = jnp.sin(jnp.pi * jnp.minimum(index, degree - index) / (2 * degree)) ** 2
+    nodes = jnp.where(index <= degree / 2, low, 1 - low)
+    bound = (
+        0.0
+        if degree == gene_copies
+        else 4 * gene_copies / degree * math.exp(-(degree**2) / (2 * gene_copies))
     )
-    edges = (eta0[:-1] + eta0[1:]) / 2
-    core_edges = (
-        np.r_[logit(cutoff), edges, logit(1 - cutoff)] if centers else np.array([])
-    )
-    total, max_tail = 0, 0.0
-    for i, j0 in enumerate(centers):
-        rlo = int(np.floor((core_edges[i] - eta0[i]) * variance[i])) - interp_order // 2
-        rhi = (
-            int(np.ceil((core_edges[i + 1] - eta0[i]) * variance[i]))
-            + interp_order // 2
-        )
-        pmin, pmax = expit(eta0[i] + np.array([rlo, rhi]) / variance[i])
-        lo = max(0, int(binom.ppf(tail_tol / 2, gene_copies, pmin)))
-        hi = min(gene_copies, int(binom.isf(tail_tol / 2, gene_copies, pmax)))
-        tail = max(
-            float(
-                binom.cdf(lo - 1, gene_copies, pmin) + binom.sf(hi, gene_copies, pmin)
-            ),
-            float(
-                binom.cdf(lo - 1, gene_copies, pmax) + binom.sf(hi, gene_copies, pmax)
-            ),
-        )
-        max_tail = max(max_tail, tail)
-        block = make_block(gene_copies, j0, lo, hi, rlo, rhi, balance=balance)
-        groups.setdefault(block.nfft, []).append((lo, block, total))
-        offsets.append(total)
-        rmins.append(rlo)
-        total += block.rows
-    buckets: list[Bucket] = []
-    for nfft, blocks in sorted(groups.items()):
-        block_count = len(blocks)
-        input_length = max(block.length for _, block, _ in blocks)
-        node_count = max(block.rows for _, block, _ in blocks)
-        indices = np.zeros((block_count, input_length), dtype=np.int32)
-        input_scale = np.zeros((block_count, input_length))
-        output_scale = np.zeros((block_count, node_count))
-        conv_indices = np.zeros((block_count, node_count), dtype=np.int32)
-        # The final flat node is a sentinel: padded rows never alias real nodes.
-        output_indices = np.full((block_count, node_count), total, dtype=np.int32)
-        for k, (lo, block, offset) in enumerate(blocks):
-            indices[k, : block.length] = np.arange(lo, lo + block.length)
-            input_scale[k, : block.length] = block.b
-            output_scale[k, : block.rows] = block.a
-            conv_indices[k, : block.rows] = np.arange(
-                block.length - 1, block.length - 1 + block.rows
-            )
-            output_indices[k, : block.rows] = np.arange(offset, offset + block.rows)
-        buckets.append(
-            Bucket(
-                indices=jnp.asarray(indices),
-                b=jnp.asarray(input_scale),
-                a=jnp.asarray(output_scale),
-                kernel_fft=jnp.stack([block.kernel_fft for _, block, _ in blocks]),
-                conv_indices=jnp.asarray(conv_indices),
-                output_indices=jnp.asarray(output_indices),
-                nfft=nfft,
-            )
-        )
-    # Stochastic monotonicity makes the upper quantile at the cutoff sufficient
-    # for all boundary probabilities. Reflect the upper boundary onto the lower.
-    width = min(
-        gene_copies + 1, int(binom.isf(tail_tol, gene_copies, min(cutoff, 0.5))) + 1
-    )
-    j = np.arange(width, dtype=float)
-    # Recurrence is accurate for small boundary counts, even at very large gene_copies.
-    logchoose = np.r_[0.0, np.cumsum(np.log(gene_copies - j[:-1]) - np.log(j[1:]))]
-    if not centers:
-        max_tail = float(binom.sf(width - 1, gene_copies, 0.5))
-    else:
-        max_tail = max(max_tail, float(binom.sf(width - 1, gene_copies, cutoff)))
     return TransitionPlan(
-        buckets=tuple(buckets),
-        edges=jnp.asarray(edges),
-        eta0=jnp.asarray(eta0),
-        variance=jnp.asarray(variance),
-        rmin=jnp.asarray(rmins, dtype=jnp.int32),
-        offsets=jnp.asarray(offsets, dtype=jnp.int32),
-        boundary_logchoose=jnp.asarray(logchoose),
-        max_tail_mass=jnp.asarray(max_tail),
-        gene_copies=gene_copies,
-        tail_tol=tail_tol,
-        interp_order=interp_order,
-        min_mode_count=min_mode_count,
-        block_spacing=block_spacing,
-        balance=balance,
-        total_nodes=total,
-        boundary_width=width,
+        nodes,
+        gene_copies,
+        degree,
+        min(batch_size, degree + 1),
+        radius,
+        accuracy,
+        budget,
+        bound,
+        tail_tol,
+        2 * tail_tol * lebesgue,
+        nufft_tol,
+        budget,
+        derivative_accuracy,
     )

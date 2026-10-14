@@ -1,0 +1,394 @@
+{
+  "schema_version": 2,
+  "backend": "chebyshev_nufft",
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "devices": [
+    "cpu:0"
+  ],
+  "versions": {
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "lineax": "0.1.1",
+    "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1"
+  },
+  "config": {
+    "sizes": [
+      1000,
+      10000,
+      28948,
+      100000,
+      1000000
+    ],
+    "source_gene_copies": null,
+    "selections": [
+      0.0,
+      0.0001
+    ],
+    "accuracy": 1e-10,
+    "batch_size": 32,
+    "derivative_accuracy": false,
+    "repeats": 5,
+    "dense_max_m": 512,
+    "solve_max_m": 512,
+    "seed": 17,
+    "output": "benchmarks/bernstein_cpu.json",
+    "device": "cpu",
+    "quiet": false
+  },
+  "runs": [
+    {
+      "M": 1000,
+      "source_gene_copies": 1000,
+      "s": 0.0,
+      "plan_seconds": 0.1495956250000745,
+      "plan_bytes": 1880,
+      "degree": 234,
+      "stencil_width": 275,
+      "batch_size": 32,
+      "spectral_bound": 2.20155636234702e-11,
+      "sampling_bound": 2.5e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.13432004186324775,
+        "median_seconds": 0.0014357499312609434,
+        "min_seconds": 0.001417791936546564,
+        "temporary_bytes": 233968
+      },
+      "advance": {
+        "compile_seconds": 0.16070162504911423,
+        "median_seconds": 0.0016383749898523092,
+        "min_seconds": 0.0015135419089347124,
+        "temporary_bytes": 190704
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.1658667919691652,
+        "median_seconds": 0.001647499855607748,
+        "min_seconds": 0.0016368748620152473,
+        "temporary_bytes": 250856
+      },
+      "sample_error": 2.9485853921124e-14,
+      "sample_jvp_error": 3.791356117943678e-12,
+      "mass_defect": 6.661338147750939e-16,
+      "minimum_mass": 0.0009187448901558931
+    },
+    {
+      "M": 1000,
+      "source_gene_copies": 1000,
+      "s": 0.0001,
+      "plan_seconds": 0.1495956250000745,
+      "plan_bytes": 1880,
+      "degree": 234,
+      "stencil_width": 275,
+      "batch_size": 32,
+      "spectral_bound": 2.20155636234702e-11,
+      "sampling_bound": 2.5e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.11553962482139468,
+        "median_seconds": 0.0013689161278307438,
+        "min_seconds": 0.0013511248398572206,
+        "temporary_bytes": 233968
+      },
+      "advance": {
+        "compile_seconds": 0.1268919159192592,
+        "median_seconds": 0.001595374895259738,
+        "min_seconds": 0.0015617921017110348,
+        "temporary_bytes": 190704
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.15386058297008276,
+        "median_seconds": 0.0016960001084953547,
+        "min_seconds": 0.001649749930948019,
+        "temporary_bytes": 250856
+      },
+      "sample_error": 2.8859179096642345e-14,
+      "sample_jvp_error": 3.6132416503242837e-12,
+      "mass_defect": 4.440892098500626e-16,
+      "minimum_mass": 0.0009188506623333698
+    },
+    {
+      "M": 10000,
+      "source_gene_copies": 10000,
+      "s": 0.0,
+      "plan_seconds": 0.15091387485153973,
+      "plan_bytes": 6040,
+      "degree": 754,
+      "stencil_width": 781,
+      "batch_size": 32,
+      "spectral_bound": 2.3961861950498326e-11,
+      "sampling_bound": 2.5e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.13606066606007516,
+        "median_seconds": 0.010023457929491997,
+        "min_seconds": 0.009766791947185993,
+        "temporary_bytes": 718768
+      },
+      "advance": {
+        "compile_seconds": 0.13744016597047448,
+        "median_seconds": 0.011245874920859933,
+        "min_seconds": 0.010923124849796295,
+        "temporary_bytes": 546928
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.16351049998775125,
+        "median_seconds": 0.011088083032518625,
+        "min_seconds": 0.010639333166182041,
+        "temporary_bytes": 873064
+      },
+      "sample_error": 8.35644993842068e-15,
+      "sample_jvp_error": 4.159095290390269e-11,
+      "mass_defect": 0.0,
+      "minimum_mass": 9.204804600323178e-05
+    },
+    {
+      "M": 10000,
+      "source_gene_copies": 10000,
+      "s": 0.0001,
+      "plan_seconds": 0.15091387485153973,
+      "plan_bytes": 6040,
+      "degree": 754,
+      "stencil_width": 781,
+      "batch_size": 32,
+      "spectral_bound": 2.3961861950498326e-11,
+      "sampling_bound": 2.5e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.11554558295756578,
+        "median_seconds": 0.009958333102986217,
+        "min_seconds": 0.009919834090396762,
+        "temporary_bytes": 718768
+      },
+      "advance": {
+        "compile_seconds": 0.12216245802119374,
+        "median_seconds": 0.011161750182509422,
+        "min_seconds": 0.01105716684833169,
+        "temporary_bytes": 546928
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.15691658318974078,
+        "median_seconds": 0.010766332969069481,
+        "min_seconds": 0.010323917027562857,
+        "temporary_bytes": 873064
+      },
+      "sample_error": 4.52617271408656e-14,
+      "sample_jvp_error": 2.25235385897804e-11,
+      "mass_defect": 2.220446049250313e-16,
+      "minimum_mass": 9.205874914748143e-05
+    },
+    {
+      "M": 28948,
+      "source_gene_copies": 28948,
+      "s": 0.0,
+      "plan_seconds": 0.14926224993541837,
+      "plan_bytes": 10360,
+      "degree": 1294,
+      "stencil_width": 1303,
+      "batch_size": 32,
+      "spectral_bound": 2.462182014839414e-11,
+      "sampling_bound": 2.4999999999999998e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.13056341605260968,
+        "median_seconds": 0.02512579201720655,
+        "min_seconds": 0.024800874991342425,
+        "temporary_bytes": 1276976
+      },
+      "advance": {
+        "compile_seconds": 0.13949762494303286,
+        "median_seconds": 0.029765750048682094,
+        "min_seconds": 0.02873629191890359,
+        "temporary_bytes": 1189616
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.1746593329589814,
+        "median_seconds": 0.02671995898708701,
+        "min_seconds": 0.02638616692274809,
+        "temporary_bytes": 1745256
+      },
+      "sample_error": 8.439136934459709e-14,
+      "sample_jvp_error": 1.290132445319614e-10,
+      "mass_defect": 2.220446049250313e-16,
+      "minimum_mass": 3.180208891630556e-05
+    },
+    {
+      "M": 28948,
+      "source_gene_copies": 28948,
+      "s": 0.0001,
+      "plan_seconds": 0.14926224993541837,
+      "plan_bytes": 10360,
+      "degree": 1294,
+      "stencil_width": 1303,
+      "batch_size": 32,
+      "spectral_bound": 2.462182014839414e-11,
+      "sampling_bound": 2.4999999999999998e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.11592933302745223,
+        "median_seconds": 0.02491120807826519,
+        "min_seconds": 0.024732625111937523,
+        "temporary_bytes": 1276976
+      },
+      "advance": {
+        "compile_seconds": 0.12539987498894334,
+        "median_seconds": 0.028537499951198697,
+        "min_seconds": 0.028088457882404327,
+        "temporary_bytes": 1189616
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.1707605419214815,
+        "median_seconds": 0.02682370785623789,
+        "min_seconds": 0.02609637496061623,
+        "temporary_bytes": 1745256
+      },
+      "sample_error": 1.7961621649764077e-13,
+      "sample_jvp_error": 1.2030493268255782e-10,
+      "mass_defect": 2.220446049250313e-16,
+      "minimum_mass": 3.180578946813398e-05
+    },
+    {
+      "M": 100000,
+      "source_gene_copies": 100000,
+      "s": 0.0,
+      "plan_seconds": 0.14949549990706146,
+      "plan_bytes": 19448,
+      "degree": 2430,
+      "stencil_width": 2389,
+      "batch_size": 32,
+      "spectral_bound": 2.4781425621597892e-11,
+      "sampling_bound": 2.5000000000000004e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.16438141698017716,
+        "median_seconds": 0.06575570884160697,
+        "min_seconds": 0.0639744580257684,
+        "temporary_bytes": 2757552
+      },
+      "advance": {
+        "compile_seconds": 0.15024954196996987,
+        "median_seconds": 0.07527200016193092,
+        "min_seconds": 0.07480233302339911,
+        "temporary_bytes": 4058160
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.1923610840458423,
+        "median_seconds": 0.06980699999257922,
+        "min_seconds": 0.0683490838855505,
+        "temporary_bytes": 4367272
+      },
+      "sample_error": 3.796998295721281e-14,
+      "sample_jvp_error": 7.376392829883116e-10,
+      "mass_defect": 0.0,
+      "minimum_mass": 9.206542781490296e-06
+    },
+    {
+      "M": 100000,
+      "source_gene_copies": 100000,
+      "s": 0.0001,
+      "plan_seconds": 0.14949549990706146,
+      "plan_bytes": 19448,
+      "degree": 2430,
+      "stencil_width": 2389,
+      "batch_size": 32,
+      "spectral_bound": 2.4781425621597892e-11,
+      "sampling_bound": 2.5000000000000004e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.1192370830103755,
+        "median_seconds": 0.06559216603636742,
+        "min_seconds": 0.06552616599947214,
+        "temporary_bytes": 2757552
+      },
+      "advance": {
+        "compile_seconds": 0.13814804097637534,
+        "median_seconds": 0.07575279101729393,
+        "min_seconds": 0.07518104184418917,
+        "temporary_bytes": 4058160
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.1842625830322504,
+        "median_seconds": 0.070054791867733,
+        "min_seconds": 0.06878699990920722,
+        "temporary_bytes": 4367272
+      },
+      "sample_error": 4.519008158405124e-14,
+      "sample_jvp_error": 2.277991573151894e-09,
+      "mass_defect": 1.1102230246251565e-16,
+      "minimum_mass": 9.207614362905772e-06
+    },
+    {
+      "M": 1000000,
+      "source_gene_copies": 1000000,
+      "s": 0.0,
+      "plan_seconds": 0.1467971249949187,
+      "plan_bytes": 62648,
+      "degree": 7830,
+      "stencil_width": 7485,
+      "batch_size": 32,
+      "spectral_bound": 2.4845042757625377e-11,
+      "sampling_bound": 2.5e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.16299362503923476,
+        "median_seconds": 0.49558308301493526,
+        "min_seconds": 0.49139358405955136,
+        "temporary_bytes": 24250864
+      },
+      "advance": {
+        "compile_seconds": 0.16087374999187887,
+        "median_seconds": 0.5732729169540107,
+        "min_seconds": 0.5710908330511302,
+        "temporary_bytes": 40182960
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.20553354104049504,
+        "median_seconds": 0.5474547920748591,
+        "min_seconds": 0.5254156251903623,
+        "temporary_bytes": 56250920
+      },
+      "sample_error": 2.8363047490453175e-12,
+      "sample_jvp_error": 5.6421071814583e-08,
+      "mass_defect": 0.0,
+      "minimum_mass": 9.206716625358448e-07
+    },
+    {
+      "M": 1000000,
+      "source_gene_copies": 1000000,
+      "s": 0.0001,
+      "plan_seconds": 0.1467971249949187,
+      "plan_bytes": 62648,
+      "degree": 7830,
+      "stencil_width": 7485,
+      "batch_size": 32,
+      "spectral_bound": 2.4845042757625377e-11,
+      "sampling_bound": 2.5e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.13017316698096693,
+        "median_seconds": 0.5065797078423202,
+        "min_seconds": 0.49225291702896357,
+        "temporary_bytes": 24250864
+      },
+      "advance": {
+        "compile_seconds": 0.1615698749665171,
+        "median_seconds": 0.5700764579232782,
+        "min_seconds": 0.5661696249153465,
+        "temporary_bytes": 40182960
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.19719524984247983,
+        "median_seconds": 0.5442055829335004,
+        "min_seconds": 0.5382601669989526,
+        "temporary_bytes": 56250920
+      },
+      "sample_error": 6.598969261254809e-12,
+      "sample_jvp_error": 9.31172690066262e-08,
+      "mass_defect": 4.440892098500626e-16,
+      "minimum_mass": 9.207788333822514e-07
+    }
+  ],
+  "process_peak_rss_native_units": 1712717824,
+  "rss_units": "bytes"
+}

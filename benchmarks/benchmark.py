@@ -1,6 +1,6 @@
-"""Reproducible CPU/GPU benchmark; emits JSON with synchronized timings."""
+"""Synchronized Chebyshev/NUFFT accuracy, compilation and execution benchmark."""
 
-# Imperative Shell: timing, device inspection, and report persistence.
+# Imperative Shell: device setup, timing, reference validation and report I/O.
 from __future__ import annotations
 
 import argparse
@@ -13,40 +13,33 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import TypedDict
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
 from scipy.stats import binom
 
-import drifft as wf
-from drifft._operator import _expect_banded
+import drifft
 
 LOGGER = logging.getLogger(__name__)
 
 
-class KernelTiming(TypedDict):
-    """JSON timing fields; only the backend memory estimate can be unavailable."""
-
-    compile_seconds: float
-    median_seconds: float
-    min_seconds: float
-    temporary_bytes: int | None
-
-
-def timed_kernel(
-    fn: Callable[..., jax.Array], args: tuple[jax.Array, ...], repeats: int
-) -> tuple[jax.Array, KernelTiming]:
-    """Compile once, warm up, then time synchronized calls and inspect temporaries."""
+def timed_kernel(fn: Callable, args: tuple, repeats: int):
+    """Compile separately, warm up once, then time synchronized execution."""
     start = time.perf_counter()
-    compiled = jax.jit(fn).lower(*args).compile()
+    dynamic, static = eqx.partition(args, eqx.is_array)
+    compiled = (
+        jax.jit(lambda arrays: fn(*eqx.combine(arrays, static)))
+        .lower(dynamic)
+        .compile()
+    )
     compilation = time.perf_counter() - start
-    compiled(*args).block_until_ready()
+    value = jax.block_until_ready(compiled(dynamic))
     elapsed = []
     for _ in range(repeats):
         start = time.perf_counter()
-        value = compiled(*args).block_until_ready()
+        value = jax.block_until_ready(compiled(dynamic))
         elapsed.append(time.perf_counter() - start)
     memory = compiled.memory_analysis()
     return value, {
@@ -58,156 +51,134 @@ def timed_kernel(
 
 
 def run(args: argparse.Namespace) -> None:
-    """Run the validated sweep and write one JSON report; log progress to stderr."""
+    """Measure source/destination transitions without dense production references."""
     rng = np.random.default_rng(args.seed)
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "backend": "chebyshev_nufft",
         "platform": platform.platform(),
         "devices": [str(d) for d in jax.devices()],
         "versions": {
             p: importlib.metadata.version(p)
-            for p in ["jax", "jaxlib", "lineax", "numpy", "scipy"]
+            for p in ["jax", "jaxlib", "lineax", "jax-finufft", "numpy", "scipy"]
         },
         "config": vars(args) | {"output": str(args.output)},
         "runs": [],
     }
-    for M in args.sizes:
-        vhost = rng.normal(size=M + 1)
-        v = jnp.asarray(vhost)
-        rows = np.unique(
-            np.r_[0, 1, 2, M // 2, M - 2, M - 1, M, rng.integers(0, M + 1, 64)]
+    for size in args.sizes:
+        source = size if args.source_gene_copies is None else args.source_gene_copies
+        values = jnp.asarray(rng.normal(size=size + 1))
+        mass = jnp.ones(source + 1) / (source + 1)
+        start = time.perf_counter()
+        plan = drifft.build_transition_plan(
+            size,
+            accuracy=args.accuracy,
+            batch_size=args.batch_size,
+            derivative_accuracy=args.derivative_accuracy,
         )
-        for order in args.orders:
-            for tail_tol in args.tail_tols:
-                start = time.perf_counter()
-                plan = wf.build_transition_plan(
-                    M,
-                    interp_order=order,
-                    tail_tol=tail_tol,
-                    min_mode_count=args.min_mode_count,
-                    block_spacing=args.block_spacing,
+        jax.block_until_ready(plan)
+        planning = time.perf_counter() - start
+        rows = np.unique(
+            np.r_[
+                0, 1, source // 2, source - 1, source, rng.integers(0, source + 1, 16)
+            ]
+        )
+        for strength in args.selections:
+            transition = drifft.Transition(
+                plan, drifft.Underdominance(strength), source_gene_copies=source
+            )
+            actual, expect_times = timed_kernel(
+                drifft.Transition.expect, (transition, values), args.repeats
+            )
+            propagated, advance_times = timed_kernel(
+                drifft.Transition.advance, (transition, mass), args.repeats
+            )
+
+            def selection_jvp(s, x, plan=plan, source=source):
+                return jax.jvp(
+                    lambda t: drifft.Transition(
+                        plan, drifft.Underdominance(t), source_gene_copies=source
+                    ).expect(x),
+                    (s,),
+                    (jnp.ones_like(s),),
+                )[1]
+
+            tangent, jvp_times = timed_kernel(
+                selection_jvp, (jnp.asarray(strength), values), args.repeats
+            )
+            probabilities = np.asarray(transition.probabilities)[rows]
+            # O(sample_rows * M), never a production-size square reference.
+            reference = (
+                binom.pmf(np.arange(size + 1)[None, :], size, probabilities[:, None])
+                @ values
+            )
+            derivative_q = (
+                size
+                * binom.pmf(np.arange(size)[None, :], size - 1, probabilities[:, None])
+                @ np.diff(values)
+            )
+            frequencies = rows / source
+            dq_ds = (
+                frequencies
+                * (1 - frequencies)
+                * (2 * frequencies - 1)
+                / (1 - 2 * strength * frequencies * (1 - frequencies)) ** 2
+            )
+            measurement = {
+                "M": size,
+                "source_gene_copies": source,
+                "s": strength,
+                "plan_seconds": planning,
+                "plan_bytes": sum(a.nbytes for a in jax.tree.leaves(plan)),
+                "degree": plan.degree,
+                "stencil_width": plan.stencil_width,
+                "batch_size": plan.batch_size,
+                "spectral_bound": plan.spectral_bound,
+                "sampling_bound": plan.sampling_bound,
+                "nufft_tol": plan.nufft_tol,
+                "expect": expect_times,
+                "advance": advance_times,
+                "selection_jvp": jvp_times,
+                "sample_error": float(
+                    np.max(np.abs(actual[rows] - reference))
+                    / max(1, float(jnp.max(jnp.abs(values))))
+                ),
+                "sample_jvp_error": float(
+                    np.max(np.abs(tangent[rows] - derivative_q * dq_ds))
+                ),
+                "mass_defect": float(jnp.abs(propagated.sum() - 1)),
+                "minimum_mass": float(propagated.min()),
+            }
+            if size == source and size <= args.solve_max_m:
+                result, times = timed_kernel(
+                    drifft.Transition.expected_visits, (transition,), args.repeats
                 )
-                jax.block_until_ready(plan)
-                planning = time.perf_counter() - start
-                plan_bytes = sum(a.nbytes for a in jax.tree.leaves(plan))
-                for s in args.selections:
-                    scalar = jnp.asarray(s)
-                    x = rows / M
-                    p = (x - s * x * (1 - x)) / (1 - 2 * s * x * (1 - x))
-                    reference = (
-                        binom.pmf(np.arange(M + 1)[None, :], M, p[:, None]) @ vhost
+                measurement["solve"] = times | {
+                    "converged": bool(result.converged),
+                    "residual_inf": float(result.residual_norm),
+                    "stats": {
+                        k: int(v) if v is not None else None
+                        for k, v in result.stats.items()
+                    },
+                }
+                if size <= args.dense_max_m:
+                    q = np.asarray(transition.probabilities)[1:-1]
+                    matrix = binom.pmf(np.arange(1, size)[None, :], size, q[:, None])
+                    rhs = np.eye(1, size - 1).ravel()
+                    exact = np.linalg.solve(np.eye(size - 1) - matrix.T, rhs)
+                    measurement["solve"]["exact_max_error"] = float(
+                        np.max(np.abs(result.visits - exact))
                     )
-                    fft, fft_times = timed_kernel(
-                        lambda s, v, plan=plan: wf.Transition(
-                            plan, wf.Underdominance(s)
-                        ).expect(v),
-                        (scalar, v),
-                        args.repeats,
-                    )
-                    band, band_times = timed_kernel(
-                        lambda s, v, M=M, tail_tol=tail_tol: _expect_banded(
-                            M, s, v, tail_tol=tail_tol
-                        ),
-                        (scalar, v),
-                        args.repeats,
-                    )
-                    _, transpose_times = timed_kernel(
-                        lambda s, v, plan=plan: (
-                            wf.Transition(plan, wf.Underdominance(s))
-                            .as_lineax(segregating=True)
-                            .T.mv(v)
-                        ),
-                        (scalar, v[1:-1]),
-                        args.repeats,
-                    )
-                    measurement = {
-                        "M": M,
-                        "s": s,
-                        "order": order,
-                        "tail_tol": tail_tol,
-                        "plan_seconds": planning,
-                        "plan_bytes": plan_bytes,
-                        "block_count": len(plan.eta0),
-                        "bucket_count": len(plan.buckets),
-                        "node_count": plan.total_nodes,
-                        "fft": fft_times,
-                        "banded": band_times,
-                        "transpose": transpose_times,
-                        "fft_sample_error": float(
-                            np.max(np.abs(np.asarray(fft)[rows] - reference))
-                            / max(1, np.max(np.abs(vhost)))
-                        ),
-                        "banded_sample_error": float(
-                            np.max(np.abs(np.asarray(band)[rows] - reference))
-                            / max(1, np.max(np.abs(vhost)))
-                        ),
-                    }
-                    if M <= args.dense_max_m:
-                        x = np.arange(M + 1) / M
-                        p = (x - s * x * (1 - x)) / (1 - 2 * s * x * (1 - x))
-                        dense = jnp.asarray(
-                            binom.pmf(np.arange(M + 1)[None, :], M, p[:, None])
-                        )
-                        _, measurement["dense"] = timed_kernel(
-                            lambda A, v: A @ v, (dense, v), args.repeats
-                        )
-                    if M <= args.solve_max_m:
-                        measurement["solves"] = {}
-                        for solver in ["gmres", "bicgstab"]:
-                            start = time.perf_counter()
-                            result = wf.Transition(
-                                plan, wf.Underdominance(scalar)
-                            ).expected_visits(solver=solver, max_steps=args.max_steps)
-                            jax.block_until_ready(result)
-                            first_seconds = time.perf_counter() - start
-                            start = time.perf_counter()
-                            result = wf.Transition(
-                                plan, wf.Underdominance(scalar)
-                            ).expected_visits(solver=solver, max_steps=args.max_steps)
-                            jax.block_until_ready(result)
-                            elapsed = time.perf_counter() - start
-                            solve = {
-                                "first_call_seconds": first_seconds,
-                                "warm_seconds": elapsed,
-                                "converged": bool(result.converged),
-                                "status": str(result.status),
-                                "residual_inf": float(result.residual_norm),
-                                "stats": {
-                                    k: int(v)
-                                    if np.ndim(v) == 0 and v is not None
-                                    else str(v)
-                                    for k, v in result.stats.items()
-                                },
-                                "occupation_sum": float(result.visits.sum()),
-                            }
-                            if M <= args.dense_max_m:
-                                rhs = np.eye(1, M - 1).ravel()
-                                Q = np.asarray(dense)[1:-1, 1:-1]
-                                exact = np.linalg.solve(np.eye(M - 1) - Q.T, rhs)
-                                solve["exact_residual_inf"] = float(
-                                    np.max(
-                                        np.abs(
-                                            np.asarray(result.visits)
-                                            - Q.T @ result.visits
-                                            - rhs
-                                        )
-                                    )
-                                )
-                                solve["occupation_max_error"] = float(
-                                    np.max(np.abs(np.asarray(result.visits) - exact))
-                                )
-                            measurement["solves"][solver] = solve
-                    report["runs"].append(measurement)
-                    LOGGER.info(
-                        "M=%d s=%g order=%d FFT=%.3fms band=%.3fms error=%.3g",
-                        M,
-                        s,
-                        order,
-                        1e3 * fft_times["median_seconds"],
-                        1e3 * band_times["median_seconds"],
-                        measurement["fft_sample_error"],
-                    )
-        # Keep multi-size sweeps from accumulating compiled executables indefinitely.
+            report["runs"].append(measurement)
+            LOGGER.info(
+                "M=%d source=%d s=%g expect=%.3fms advance=%.3fms error=%.3g",
+                size,
+                source,
+                strength,
+                1e3 * expect_times["median_seconds"],
+                1e3 * advance_times["median_seconds"],
+                measurement["sample_error"],
+            )
         jax.clear_caches()
     report["process_peak_rss_native_units"] = resource.getrusage(
         resource.RUSAGE_SELF
@@ -221,68 +192,53 @@ def run(args: argparse.Namespace) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    r"""Run the benchmark command with reproducible configuration.
+    r"""Run the reproducible benchmark.
 
     **Arguments:**
 
-    `argv`: Command-line arguments; defaults to the process arguments.
+    `argv`: CLI arguments, or the process arguments when omitted.
 
     **Returns:**
 
-    Exit code 0 when the report is written, 1 on runtime/I/O failure. Solver
-    nonconvergence remains a diagnostic in the report, not a benchmark failure.
-    JSON goes to stdout or `--output`; progress goes to stderr unless `--quiet`.
+    Zero on success, one on runtime/I/O failure. JSON goes to stdout or `--output`;
+    progress goes to stderr. Numerical accuracy and convergence are report fields.
 
     **Raises:**
 
-    `SystemExit(2)` for invalid usage; `SystemExit(0)` for `--help`.
+    `SystemExit(2)` for invalid arguments, `SystemExit(0)` for help.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--sizes", type=int, nargs="+", default=[64, 256, 1024, 4096, 10000, 65536]
+        "--sizes", type=int, nargs="+", default=[1000, 10000, 28948, 100000, 1000000]
     )
-    parser.add_argument("--selections", type=float, nargs="+", default=[0.0, 0.5, 1.0])
-    parser.add_argument("--orders", type=int, nargs="+", default=[12])
-    parser.add_argument("--tail-tols", type=float, nargs="+", default=[1e-12])
-    parser.add_argument("--min-mode-count", type=int, default=128)
-    parser.add_argument("--block-spacing", type=float, default=1.0)
-    parser.add_argument("--repeats", type=int, default=10)
-    parser.add_argument("--dense-max-m", type=int, default=1024)
-    parser.add_argument("--solve-max-m", type=int, default=1024)
-    parser.add_argument("--max-steps", type=int, default=2000)
+    parser.add_argument("--source-gene-copies", type=int)
+    parser.add_argument("--selections", type=float, nargs="+", default=[0.0, 1e-4])
+    parser.add_argument("--accuracy", type=float, default=1e-10)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--derivative-accuracy", action="store_true")
+    parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--dense-max-m", type=int, default=512)
+    parser.add_argument("--solve-max-m", type=int, default=512)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--output", type=Path)
-    parser.add_argument(
-        "--device",
-        choices=["cpu", "gpu", "tpu"],
-        help="JAX backend (default: JAX automatic selection)",
-    )
-    parser.add_argument(
-        "--quiet", action="store_true", help="Suppress progress logging"
-    )
+    parser.add_argument("--device", choices=["cpu", "gpu"])
+    parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
-    if args.repeats < 1 or min(args.sizes) < 2:
-        parser.error("repeats must be positive and sizes must be >= 2")
+    if args.repeats < 1 or min(args.sizes) < 2 or args.batch_size < 1:
+        parser.error("repeats/batch-size must be positive and sizes >= 2")
+    if args.source_gene_copies is not None and args.source_gene_copies < 2:
+        parser.error("source-gene-copies must be >= 2")
     if any(not np.isfinite(s) or not 0 <= s <= 1 for s in args.selections):
-        parser.error("--selections must be finite and in [0, 1]")
-    if any(order < 2 or order > 16 or order % 2 for order in args.orders):
-        parser.error("--orders must be even integers from 2 through 16")
-    if any(not np.isfinite(tol) or not 1e-15 <= tol < 0.1 for tol in args.tail_tols):
-        parser.error("--tail-tols must be finite and in [1e-15, 0.1)")
-    if args.min_mode_count < 8:
-        parser.error("--min-mode-count must be >= 8")
-    if not np.isfinite(args.block_spacing) or not 0 < args.block_spacing <= 4:
-        parser.error("--block-spacing must be finite and in (0, 4]")
-    if args.max_steps < 1 or args.seed < 0:
-        parser.error("--max-steps must be positive and --seed must be nonnegative")
-    if args.dense_max_m < 0 or args.solve_max_m < 0:
-        parser.error("--dense-max-m and --solve-max-m must be nonnegative")
+        parser.error("selections must be finite and in [0, 1]")
+    if not np.isfinite(args.accuracy) or not 1e-13 <= args.accuracy < 0.1:
+        parser.error("accuracy must be finite and in [1e-13, 0.1)")
+    if args.seed < 0 or min(args.dense_max_m, args.solve_max_m) < 0:
+        parser.error("seed and reference/solve size limits must be nonnegative")
     if args.output and (not args.output.parent.is_dir() or args.output.is_dir()):
-        parser.error("--output must name a file in an existing directory")
+        parser.error("output must name a file in an existing directory")
     logging.basicConfig(
         level=logging.WARNING if args.quiet else logging.INFO, format="%(message)s"
     )
-    # Backend and precision are startup decisions; no library import changes them.
     if args.device:
         jax.config.update("jax_platform_name", args.device)
     jax.config.update("jax_enable_x64", True)

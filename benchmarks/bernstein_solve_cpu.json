@@ -1,0 +1,136 @@
+{
+  "schema_version": 2,
+  "backend": "chebyshev_nufft",
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "devices": [
+    "cpu:0"
+  ],
+  "versions": {
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "lineax": "0.1.1",
+    "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1"
+  },
+  "config": {
+    "sizes": [
+      256
+    ],
+    "source_gene_copies": null,
+    "selections": [
+      0.0,
+      0.0001
+    ],
+    "accuracy": 1e-10,
+    "batch_size": 32,
+    "derivative_accuracy": false,
+    "repeats": 3,
+    "dense_max_m": 512,
+    "solve_max_m": 512,
+    "seed": 17,
+    "output": "benchmarks/bernstein_solve_cpu.json",
+    "device": "cpu",
+    "quiet": false
+  },
+  "runs": [
+    {
+      "M": 256,
+      "source_gene_copies": 256,
+      "s": 0.0,
+      "plan_seconds": 0.15491379192098975,
+      "plan_bytes": 944,
+      "degree": 117,
+      "stencil_width": 159,
+      "batch_size": 32,
+      "spectral_bound": 2.1412842561628306e-11,
+      "sampling_bound": 2.5e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.2795017089229077,
+        "median_seconds": 0.0005172500386834145,
+        "min_seconds": 0.0004984589759260416,
+        "temporary_bytes": 130864
+      },
+      "advance": {
+        "compile_seconds": 0.293964457930997,
+        "median_seconds": 0.0006497080903500319,
+        "min_seconds": 0.0006488750223070383,
+        "temporary_bytes": 108400
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.2788197500631213,
+        "median_seconds": 0.0008240421302616596,
+        "min_seconds": 0.0008187498897314072,
+        "temporary_bytes": 135400
+      },
+      "sample_error": 5.844422570609757e-14,
+      "sample_jvp_error": 4.856837154676441e-12,
+      "mass_defect": 1.5543122344752192e-15,
+      "minimum_mass": 0.003567080847814623,
+      "solve": {
+        "compile_seconds": 0.8965920000337064,
+        "median_seconds": 0.10552870808169246,
+        "min_seconds": 0.0933512921910733,
+        "temporary_bytes": 257992,
+        "converged": true,
+        "residual_inf": 4.440892098500626e-16,
+        "stats": {
+          "max_steps": 2000,
+          "num_steps": 3
+        },
+        "exact_max_error": 1.297850715786808e-13
+      }
+    },
+    {
+      "M": 256,
+      "source_gene_copies": 256,
+      "s": 0.0001,
+      "plan_seconds": 0.15491379192098975,
+      "plan_bytes": 944,
+      "degree": 117,
+      "stencil_width": 159,
+      "batch_size": 32,
+      "spectral_bound": 2.1412842561628306e-11,
+      "sampling_bound": 2.5e-11,
+      "nufft_tol": 1e-13,
+      "expect": {
+        "compile_seconds": 0.5902760829776525,
+        "median_seconds": 0.000640916870906949,
+        "min_seconds": 0.0006030420772731304,
+        "temporary_bytes": 130864
+      },
+      "advance": {
+        "compile_seconds": 0.3262194588314742,
+        "median_seconds": 0.0009428749326616526,
+        "min_seconds": 0.0009413750376552343,
+        "temporary_bytes": 108400
+      },
+      "selection_jvp": {
+        "compile_seconds": 0.3393513751216233,
+        "median_seconds": 0.0007526250556111336,
+        "min_seconds": 0.0007522501982748508,
+        "temporary_bytes": 135400
+      },
+      "sample_error": 5.829128039839434e-14,
+      "sample_jvp_error": 4.86827245183008e-12,
+      "mass_defect": 1.9984014443252818e-15,
+      "minimum_mass": 0.0035674785043191973,
+      "solve": {
+        "compile_seconds": 0.4983563341666013,
+        "median_seconds": 0.06258525000885129,
+        "min_seconds": 0.06250516697764397,
+        "temporary_bytes": 257992,
+        "converged": true,
+        "residual_inf": 1.1102230246251565e-16,
+        "stats": {
+          "max_steps": 2000,
+          "num_steps": 3
+        },
+        "exact_max_error": 1.177946629127291e-13
+      }
+    }
+  ],
+  "process_peak_rss_native_units": 407863296,
+  "rss_units": "bytes"
+}

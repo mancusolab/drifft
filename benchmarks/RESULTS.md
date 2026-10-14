@@ -1,5 +1,8 @@
 # Validation and CPU measurements
 
+These historical measurements use the removed local log-odds backend. See
+[the replacement report](BERNSTEIN.md) for the Chebyshev/NUFFT branch.
+
 These measurements and verification counts predate the `Transition` API refactor.
 The benchmark script now uses the object API; rerun it for current timings.
 

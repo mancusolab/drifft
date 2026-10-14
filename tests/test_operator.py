@@ -1,12 +1,9 @@
 # Functional Core: full transition and transformation contracts.
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from scipy.stats import binom
-
-from drifft._operator import _expect_banded
 
 jax.config.update("jax_enable_x64", True)
 
@@ -78,59 +75,12 @@ def test_dynamic_selection_linearity_vmap_and_transpose():
         np.testing.assert_allclose(mapped[i], compiled(jnp.asarray(s), v), atol=1e-12)
 
 
-def test_seams_and_truncation():
-    from scipy.special import expit
-
-    import drifft as wf
-
-    plan = wf.build_transition_plan(4096)
-    eta = np.asarray(plan.edges)
-    p = np.r_[
-        expit(eta - 1e-10),
-        expit(eta),
-        expit(eta + 1e-10),
-        128 / 4096 + np.array([-1e-12, 0, 1e-12]),
-    ]
-    v = np.random.default_rng(2).normal(size=4097)
-    transition = wf.Transition.from_probabilities(plan, jnp.asarray(p))
-    actual = eqx.filter_jit(transition.expect)(jnp.asarray(v))
-    exact = binom.pmf(np.arange(4097)[None, :], 4096, p[:, None]) @ v
-    np.testing.assert_allclose(actual, exact, atol=2e-9, rtol=0)
-    for bucket in plan.buckets:
-        assert np.all(np.isfinite(bucket.a))
-        assert np.all(np.isfinite(bucket.b))
-    assert float(plan.max_tail_mass) <= plan.tail_tol * 1.01
-
-
-def test_banded_reference():
-
-    M = 256
-    v = np.random.default_rng(3).normal(size=M + 1)
-    x = np.arange(M + 1) / M
-    exact = binom.pmf(np.arange(M + 1)[None, :], M, x[:, None]) @ v
-    np.testing.assert_allclose(
-        jax.jit(lambda v: _expect_banded(M, 0.0, v))(jnp.asarray(v)),
-        exact,
-        atol=2e-11,
-        rtol=0,
-    )
-
-
 def test_sampled_kernel_coefficients_and_negative_mass():
-    from scipy.special import expit
-
     import drifft as wf
 
     M = 4096
     plan = wf.build_transition_plan(M)
-    edges = np.asarray(plan.edges)
-    p = jnp.asarray(
-        np.r_[
-            128 / M - 1e-12,
-            128 / M + 1e-12,
-            expit(edges[[0, len(edges) // 2, -1]] + 1e-10),
-        ]
-    )
+    p = jnp.array([0.0, 1e-8, 0.01, 0.25, 0.5, 0.9, 1 - 1e-8, 1.0])
     transition = wf.Transition.from_probabilities(plan, p)
     actual = np.asarray(jax.jit(jax.vmap(transition.advance))(jnp.eye(len(p))))
     exact = binom.pmf(np.arange(M + 1)[None, :], M, np.asarray(p)[:, None])

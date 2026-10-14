@@ -1,5 +1,8 @@
 # fastDTWF comparison
 
+These historical measurements use the removed local log-odds backend. See
+[the replacement report](BERNSTEIN.md) for the Chebyshev/NUFFT branch.
+
 Recorded measurements below were collected before the Transition-object API
 refactor and retained through commit `9e3e694`. Raw JSON is retained as historical
 evidence; the updated scripts use `Transition.advance`

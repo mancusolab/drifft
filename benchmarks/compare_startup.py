@@ -51,7 +51,16 @@ def worker(args: argparse.Namespace) -> None:
         def call():
             return advance(transition, jax_mass).block_until_ready()
 
-        packages = ("drifft", "jax", "jaxlib", "equinox", "lineax", "numpy", "scipy")
+        packages = (
+            "drifft",
+            "jax",
+            "jaxlib",
+            "equinox",
+            "lineax",
+            "jax-finufft",
+            "numpy",
+            "scipy",
+        )
     else:
         torch = importlib.import_module("torch")
         # Upstream's DoubleTensor annotations predate modern Tensor factories.
@@ -126,6 +135,9 @@ def worker(args: argparse.Namespace) -> None:
             metadata
             | {
                 "warm_seconds": warm,
+                "drifft_backend": "chebyshev_nufft"
+                if args.worker == "drifft"
+                else None,
                 "versions": {
                     name: importlib.metadata.version(name) for name in packages
                 },

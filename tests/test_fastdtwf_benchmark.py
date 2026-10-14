@@ -57,6 +57,12 @@ def test_fastdtwf_matches_transition_and_expected_visits(gene_copies, tv_sd):
     report = json.loads(result.stdout)
     assert report["device"] == "cpu"
     assert report["versions"]["fastdtwf"]
+    assert report["versions"]["jax-finufft"]
+    assert report["drifft_backend"] == "chebyshev_nufft"
+    assert report["worker_backends"] == {
+        "drifft": {"drifft": True, "jax": True, "torch": False, "fastDTWF": False},
+        "fastdtwf": {"drifft": False, "jax": False, "torch": True, "fastDTWF": True},
+    }
     assert len(report["runs"]) == 2
     for run in report["runs"]:
         for transition in run["transitions"]:

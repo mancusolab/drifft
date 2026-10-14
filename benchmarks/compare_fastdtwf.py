@@ -12,6 +12,7 @@ import math
 import os
 import platform
 import statistics
+import subprocess
 import sys
 import time
 from collections.abc import Callable, Sequence
@@ -19,16 +20,10 @@ from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
-import equinox as eqx
-import jax
-import jax.numpy as jnp
-
 # NumPy/SciPy are confined to independent dense reference calculations and the
-# host boundary between JAX and PyTorch; neither conversion is timed as a kernel.
+# serialized boundary between isolated workers; conversions are not timed.
 import numpy as np
 from scipy.stats import binom
-
-import drifft
 
 LOGGER = logging.getLogger(__name__)
 
@@ -40,7 +35,11 @@ def timed_call(
 
     def evaluate():
         value = call()
-        return jax.block_until_ready(value) if synchronize else value
+        if synchronize:
+            import jax
+
+            return jax.block_until_ready(value)
+        return value
 
     start = time.perf_counter()
     value = evaluate()
@@ -57,7 +56,93 @@ def timed_call(
     }
 
 
-def run(args: argparse.Namespace) -> None:
+def loaded_backends() -> dict[str, bool]:
+    """Expose actual imports so isolation can be checked in the report."""
+    return {
+        name: name in sys.modules for name in ("drifft", "jax", "torch", "fastDTWF")
+    }
+
+
+def drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
+    """Measure drifft, exporting exact seeded inputs for the fastDTWF worker."""
+    import equinox as eqx
+    import jax
+    import jax.numpy as jnp
+
+    import drifft
+
+    jax.config.update("jax_platform_name", "cpu")
+    jax.config.update("jax_enable_x64", True)
+    records = []
+    for gene_copies in args.sizes:
+        start = time.perf_counter()
+        plan = drifft.build_transition_plan(gene_copies, tail_tol=args.tail_tol)
+        jax.block_until_ready(plan)
+        planning_seconds = time.perf_counter() - start
+        plan_bytes = sum(leaf.nbytes for leaf in jax.tree.leaves(plan))
+        random_mass = jax.random.uniform(
+            jax.random.fold_in(jax.random.key(args.seed), gene_copies),
+            (gene_copies + 1,),
+            dtype=jnp.float64,
+        )
+        inputs = {
+            "singleton": jnp.zeros(gene_copies + 1, dtype=jnp.float64).at[1].set(1),
+            "uniform": jnp.ones(gene_copies + 1, dtype=jnp.float64) / (gene_copies + 1),
+            "random": random_mass / random_mass.sum(),
+        }
+        jax.block_until_ready(inputs)
+        advance = eqx.filter_jit(drifft.Transition.advance)
+        for selection in args.selections:
+            scalar = jnp.asarray(selection, dtype=jnp.float64)
+            transition = drifft.Transition(plan, drifft.Underdominance(scalar))
+            probabilities = transition.probabilities
+            # Copies are outside both timed kernels. fastDTWF reuses these
+            # probabilities; drifft recomputes them inside Transition.advance,
+            # a conservative timing asymmetry for drifft.
+            host_probabilities = np.asarray(probabilities)
+            drifft_transitions = {}
+            for name, mass in inputs.items():
+                value, timing = timed_call(
+                    partial(advance, transition, mass),
+                    args.repeats,
+                    synchronize=True,
+                )
+                drifft_transitions[name] = (np.asarray(value).tolist(), timing)
+            drifft_solve = None
+            if gene_copies <= args.solve_max_m:
+                result, timing = timed_call(
+                    partial(transition.expected_visits, max_steps=args.max_steps),
+                    args.repeats,
+                    synchronize=True,
+                )
+                drifft_solve = (
+                    np.asarray(result.visits).tolist(),
+                    timing
+                    | {
+                        "converged": bool(result.converged),
+                        "status": str(result.status),
+                        "operator_residual_inf": float(result.residual_norm),
+                    },
+                )
+            records.append(
+                {
+                    "gene_copies": gene_copies,
+                    "selection": selection,
+                    "planning_seconds": planning_seconds,
+                    "plan_bytes": plan_bytes,
+                    "inputs": {
+                        name: np.asarray(mass).tolist() for name, mass in inputs.items()
+                    },
+                    "probabilities": host_probabilities.tolist(),
+                    "transitions": drifft_transitions,
+                    "solve": drifft_solve,
+                }
+            )
+        jax.clear_caches()
+    return {"records": records, "loaded_backends": loaded_backends()}
+
+
+def fastdtwf_worker(args: argparse.Namespace, payload: dict[str, Any]) -> None:
     """Measure identical no-mutation models on CPU, then persist their diagnostics."""
     start = time.perf_counter()
     try:
@@ -75,6 +160,11 @@ def run(args: argparse.Namespace) -> None:
         torch.set_num_threads(args.threads)
     report: dict[str, Any] = {
         "schema_version": 1,
+        "drifft_backend": "chebyshev_nufft",
+        "worker_backends": {
+            "drifft": payload["loaded_backends"],
+            "fastdtwf": loaded_backends(),
+        },
         "device": "cpu",
         "platform": platform.platform(),
         "versions": {
@@ -83,6 +173,7 @@ def run(args: argparse.Namespace) -> None:
                 "drifft",
                 "jax",
                 "jaxlib",
+                "jax-finufft",
                 "fastdtwf",
                 "torch",
                 "numba",
@@ -108,195 +199,197 @@ def run(args: argparse.Namespace) -> None:
         "config": vars(args) | {"output": str(args.output) if args.output else None},
         "runs": [],
     }
-    for gene_copies in args.sizes:
-        start = time.perf_counter()
-        plan = drifft.build_transition_plan(gene_copies, tail_tol=args.tail_tol)
-        jax.block_until_ready(plan)
-        planning_seconds = time.perf_counter() - start
-        plan_bytes = sum(leaf.nbytes for leaf in jax.tree.leaves(plan))
-        random_mass = jax.random.uniform(
-            jax.random.fold_in(jax.random.key(args.seed), gene_copies),
-            (gene_copies + 1,),
-            dtype=jnp.float64,
-        )
-        inputs = {
-            "singleton": jnp.zeros(gene_copies + 1, dtype=jnp.float64).at[1].set(1),
-            "uniform": jnp.ones(gene_copies + 1, dtype=jnp.float64) / (gene_copies + 1),
-            "random": random_mass / random_mass.sum(),
+    for record in payload["records"]:
+        gene_copies = record["gene_copies"]
+        selection = record["selection"]
+        planning_seconds = record["planning_seconds"]
+        plan_bytes = record["plan_bytes"]
+        inputs = {name: np.asarray(mass) for name, mass in record["inputs"].items()}
+        host_probabilities = np.asarray(record["probabilities"])
+        torch_probabilities = torch.tensor(host_probabilities, dtype=torch.float64)
+        torch_inputs = {
+            name: torch.tensor(mass, dtype=torch.float64)
+            for name, mass in inputs.items()
         }
-        advance = eqx.filter_jit(drifft.Transition.advance)
-        for selection in args.selections:
-            scalar = jnp.asarray(selection, dtype=jnp.float64)
-            transition = drifft.Transition(plan, drifft.Underdominance(scalar))
-            probabilities = transition.probabilities
-            # Copies are outside both timed kernels. fastDTWF reuses these
-            # probabilities; drifft recomputes them inside Transition.advance,
-            # a conservative timing asymmetry for drifft.
-            host_probabilities = np.asarray(probabilities)
-            torch_probabilities = torch.tensor(host_probabilities, dtype=torch.float64)
-            torch_inputs = {
-                name: torch.tensor(np.asarray(mass), dtype=torch.float64)
-                for name, mass in inputs.items()
+        drifft_transitions = {
+            name: (np.asarray(value), timing)
+            for name, (value, timing) in record["transitions"].items()
+        }
+        drifft_solve = record["solve"]
+        if drifft_solve is not None:
+            drifft_solve = (np.asarray(drifft_solve[0]), drifft_solve[1])
+        exact = None
+        if gene_copies <= args.dense_max_m:
+            exact = binom.pmf(
+                np.arange(gene_copies + 1)[None, :],
+                gene_copies,
+                host_probabilities[:, None],
+            )
+        for tv_sd in args.tv_sds:
+            start = time.perf_counter()
+            index_sets = fastdtwf.coarse_grain(
+                torch_probabilities, gene_copies, tv_sd, no_fix=False, sfs=False
+            )
+            torch_counts = torch.arange(gene_copies + 1, dtype=torch.float64)
+            # The public mat_multiply API accepts precomputed log binomial
+            # coefficients. Prepare them outside timed calls, like drifft's plan.
+            bcoefs = (
+                torch.lgamma(torch.tensor(gene_copies + 1.0, dtype=torch.float64))
+                - torch.lgamma(torch_counts + 1)
+                - torch.lgamma(gene_copies - torch_counts + 1)
+            )
+            setup_seconds = time.perf_counter() - start
+            measurement: dict[str, Any] = {
+                "gene_copies": gene_copies,
+                "selection_strength": selection,
+                "tv_sd": tv_sd,
+                "row_eps": args.row_eps,
+                "drifft_plan_seconds": planning_seconds,
+                "drifft_plan_bytes": plan_bytes,
+                "fastdtwf_setup_seconds": setup_seconds,
+                "fastdtwf_group_count": int(index_sets.max()) + 1,
+                "transitions": [],
             }
-            exact = None
-            if gene_copies <= args.dense_max_m:
-                exact = binom.pmf(
-                    np.arange(gene_copies + 1)[None, :],
-                    gene_copies,
-                    host_probabilities[:, None],
-                )
-            drifft_transitions = {}
-            for name, mass in inputs.items():
-                value, timing = timed_call(
-                    partial(advance, transition, mass),
-                    args.repeats,
-                    synchronize=True,
-                )
-                drifft_transitions[name] = (np.asarray(value), timing)
-            drifft_solve = None
-            if gene_copies <= args.solve_max_m:
-                result, timing = timed_call(
-                    partial(transition.expected_visits, max_steps=args.max_steps),
-                    args.repeats,
-                    synchronize=True,
-                )
-                drifft_solve = (
-                    np.asarray(result.visits),
-                    timing
-                    | {
-                        "converged": bool(result.converged),
-                        "status": str(result.status),
-                        "operator_residual_inf": float(result.residual_norm),
-                    },
-                )
-            for tv_sd in args.tv_sds:
-                start = time.perf_counter()
-                index_sets = fastdtwf.coarse_grain(
-                    torch_probabilities, gene_copies, tv_sd, no_fix=False, sfs=False
-                )
-                torch_counts = torch.arange(gene_copies + 1, dtype=torch.float64)
-                # The public mat_multiply API accepts precomputed log binomial
-                # coefficients. Cache these, just as drifft caches its FFT factors.
-                bcoefs = (
-                    torch.lgamma(torch.tensor(gene_copies + 1.0, dtype=torch.float64))
-                    - torch.lgamma(torch_counts + 1)
-                    - torch.lgamma(gene_copies - torch_counts + 1)
-                )
-                setup_seconds = time.perf_counter() - start
-                measurement: dict[str, Any] = {
-                    "gene_copies": gene_copies,
-                    "selection_strength": selection,
-                    "tv_sd": tv_sd,
-                    "row_eps": args.row_eps,
-                    "drifft_plan_seconds": planning_seconds,
-                    "drifft_plan_bytes": plan_bytes,
-                    "fastdtwf_setup_seconds": setup_seconds,
-                    "fastdtwf_group_count": int(index_sets.max()) + 1,
-                    "transitions": [],
-                }
-                with torch.no_grad():
-                    for name, mass in inputs.items():
-                        other, timing = timed_call(
-                            partial(
-                                fastdtwf.mat_multiply,
-                                torch_inputs[name],
-                                index_sets,
-                                torch_probabilities,
-                                gene_copies,
-                                args.row_eps,
-                                no_fix=False,
-                                sfs=False,
-                                bcoefs=bcoefs,
-                            ),
-                            args.repeats,
-                        )
-                        other = other.numpy()
-                        ours, our_timing = drifft_transitions[name]
-                        comparison: dict[str, Any] = {
-                            "input": name,
-                            "between_methods_l1": float(np.abs(ours - other).sum()),
-                        }
-                        for backend, value, metrics in (
-                            ("drifft", ours, our_timing),
-                            ("fastdtwf", other, timing),
-                        ):
-                            comparison[backend] = metrics | {
-                                "mass": float(value.sum()),
-                                "minimum": float(value.min()),
-                            }
-                            if exact is not None:
-                                reference = np.asarray(mass) @ exact
-                                comparison[backend]["exact_l1_error"] = float(
-                                    np.abs(value - reference).sum()
-                                )
-                        measurement["transitions"].append(comparison)
-                    if drifft_solve is not None:
-                        start = time.perf_counter()
-                        sfs_sets = fastdtwf.coarse_grain(
+            with torch.no_grad():
+                for name, mass in inputs.items():
+                    other, timing = timed_call(
+                        partial(
+                            fastdtwf.mat_multiply,
+                            torch_inputs[name],
+                            index_sets,
                             torch_probabilities,
                             gene_copies,
-                            tv_sd,
+                            args.row_eps,
+                            no_fix=False,
+                            sfs=False,
+                            bcoefs=bcoefs,
+                        ),
+                        args.repeats,
+                    )
+                    other = other.numpy()
+                    ours, our_timing = drifft_transitions[name]
+                    comparison: dict[str, Any] = {
+                        "input": name,
+                        "between_methods_l1": float(np.abs(ours - other).sum()),
+                    }
+                    for backend, value, metrics in (
+                        ("drifft", ours, our_timing),
+                        ("fastdtwf", other, timing),
+                    ):
+                        comparison[backend] = metrics | {
+                            "mass": float(value.sum()),
+                            "minimum": float(value.min()),
+                        }
+                        if exact is not None:
+                            reference = np.asarray(mass) @ exact
+                            comparison[backend]["exact_l1_error"] = float(
+                                np.abs(value - reference).sum()
+                            )
+                    measurement["transitions"].append(comparison)
+                if drifft_solve is not None:
+                    start = time.perf_counter()
+                    sfs_sets = fastdtwf.coarse_grain(
+                        torch_probabilities,
+                        gene_copies,
+                        tv_sd,
+                        no_fix=False,
+                        sfs=True,
+                    )
+                    measurement["fastdtwf_sfs_setup_seconds"] = (
+                        time.perf_counter() - start
+                    )
+                    other, timing = timed_call(
+                        partial(
+                            fastdtwf.equilibrium_solve,
+                            sfs_sets,
+                            torch_probabilities,
+                            gene_copies,
+                            args.row_eps,
                             no_fix=False,
                             sfs=True,
-                        )
-                        measurement["fastdtwf_sfs_setup_seconds"] = (
-                            time.perf_counter() - start
-                        )
-                        other, timing = timed_call(
-                            partial(
-                                fastdtwf.equilibrium_solve,
-                                sfs_sets,
-                                torch_probabilities,
-                                gene_copies,
-                                args.row_eps,
-                                no_fix=False,
-                                sfs=True,
-                                injection_rate=1.0 / gene_copies,
-                            ),
-                            args.repeats,
-                        )
-                        ours, our_timing = drifft_solve
-                        other = other.numpy()[1:-1]
-                        solves: dict[str, Any] = {
-                            "between_methods_max_error": float(
-                                np.abs(ours - other).max()
-                            )
+                            injection_rate=1.0 / gene_copies,
+                        ),
+                        args.repeats,
+                    )
+                    ours, our_timing = drifft_solve
+                    other = other.numpy()[1:-1]
+                    solves: dict[str, Any] = {
+                        "between_methods_max_error": float(np.abs(ours - other).max())
+                    }
+                    reference_visits = None
+                    if exact is not None:
+                        system = np.eye(gene_copies - 1) - exact[1:-1, 1:-1].T
+                        rhs = np.zeros(gene_copies - 1)
+                        rhs[0] = 1
+                        reference_visits = np.linalg.solve(system, rhs)
+                    for backend, value, metrics in (
+                        ("drifft", ours, our_timing),
+                        ("fastdtwf", other, timing),
+                    ):
+                        solves[backend] = metrics | {
+                            "visits_sum": float(value.sum()),
+                            "finite": bool(np.isfinite(value).all()),
                         }
-                        reference_visits = None
-                        if exact is not None:
-                            system = np.eye(gene_copies - 1) - exact[1:-1, 1:-1].T
-                            rhs = np.zeros(gene_copies - 1)
-                            rhs[0] = 1
-                            reference_visits = np.linalg.solve(system, rhs)
-                        for backend, value, metrics in (
-                            ("drifft", ours, our_timing),
-                            ("fastdtwf", other, timing),
-                        ):
-                            solves[backend] = metrics | {
-                                "visits_sum": float(value.sum()),
-                                "finite": bool(np.isfinite(value).all()),
-                            }
-                            if reference_visits is not None:
-                                solves[backend]["exact_max_error"] = float(
-                                    np.abs(value - reference_visits).max()
-                                )
-                                solves[backend]["exact_residual_inf"] = float(
-                                    np.abs(system @ value - rhs).max()
-                                )
-                        measurement["expected_visits"] = solves
-                report["runs"].append(measurement)
-                LOGGER.info(
-                    "gene_copies=%d selection=%g tv_sd=%g completed",
-                    gene_copies,
-                    selection,
-                    tv_sd,
-                )
-        jax.clear_caches()
+                        if reference_visits is not None:
+                            solves[backend]["exact_max_error"] = float(
+                                np.abs(value - reference_visits).max()
+                            )
+                            solves[backend]["exact_residual_inf"] = float(
+                                np.abs(system @ value - rhs).max()
+                            )
+                    measurement["expected_visits"] = solves
+            report["runs"].append(measurement)
+            LOGGER.info(
+                "gene_copies=%d selection=%g tv_sd=%g completed",
+                gene_copies,
+                selection,
+                tv_sd,
+            )
+    report["worker_backends"]["fastdtwf"] = loaded_backends()
     output = json.dumps(report, indent=2) + "\n"
     if args.output:
         args.output.write_text(output, encoding="utf-8")
     else:
         sys.stdout.write(output)
+
+
+def run(args: argparse.Namespace) -> None:
+    """Run disjoint numerical backends; serialization is outside kernel timings."""
+    config = vars(args) | {"output": None}
+    config.pop("worker", None)
+    environment = os.environ.copy()
+    environment["JAX_PLATFORMS"] = "cpu"
+    payload: dict[str, Any] = {"config": config}
+    for backend in ("drifft", "fastdtwf"):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--worker",
+                backend,
+                *(["--quiet"] if args.quiet else []),
+            ],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+            env=environment,
+        )
+        if result.returncode:
+            raise RuntimeError(
+                f"{backend} worker failed ({result.returncode}): {result.stderr.strip()}"
+            )
+        if result.stderr:
+            sys.stderr.write(result.stderr)
+        data = json.loads(result.stdout)
+        payload["drifft"] = data
+    data["config"] = vars(args) | {"output": str(args.output) if args.output else None}
+    data["config"].pop("worker", None)
+    encoded = json.dumps(data, indent=2) + "\n"
+    if args.output:
+        args.output.write_text(encoded, encoding="utf-8")
+    else:
+        sys.stdout.write(encoded)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -317,6 +410,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--worker", choices=["drifft", "fastdtwf"], help=argparse.SUPPRESS
+    )
     args = parser.parse_args(argv)
     if min(args.sizes) < 2 or args.repeats < 1 or args.max_steps < 1:
         parser.error("sizes must be >= 2; repeats and max-steps must be positive")
@@ -337,12 +433,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.WARNING if args.quiet else logging.INFO, format="%(message)s"
     )
-    # fastDTWF uses CPU-only NumPy/Numba paths; prohibit cross-device speed ratios.
-    jax.config.update("jax_platform_name", "cpu")
-    jax.config.update("jax_enable_x64", True)
     try:
-        run(args)
-    except (OSError, RuntimeError, ValueError) as error:
+        if args.worker:
+            payload = json.load(sys.stdin)
+            worker_args = argparse.Namespace(**payload["config"])
+            if args.worker == "drifft":
+                sys.stdout.write(json.dumps(drifft_worker(worker_args)) + "\n")
+            else:
+                fastdtwf_worker(worker_args, payload["drifft"])
+        else:
+            run(args)
+    except (ImportError, OSError, RuntimeError, ValueError) as error:
         LOGGER.error("error: %s", error)
         return 1
     return 0

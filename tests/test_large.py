@@ -3,7 +3,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from scipy.special import expit
 from scipy.stats import binom
 
 import drifft as wf
@@ -45,37 +44,9 @@ def test_large_sampled_rows(M):
     print(f"M={M} sampled normalized error={worst:.3g}")
 
 
-def test_all_planned_nodes_isolate_fft_and_truncation():
-    plan = wf.build_transition_plan(4096)
-    v = np.random.default_rng(10).normal(size=4097)
-    worst, tail_error = 0.0, 0.0
-    for bucket in plan.buckets:
-        u = np.asarray(bucket.b) * v[np.asarray(bucket.indices)]
-        conv = np.fft.irfft(
-            np.fft.rfft(u, n=bucket.nfft) * np.asarray(bucket.kernel_fft), n=bucket.nfft
-        )
-        actual = np.asarray(bucket.a) * np.take_along_axis(
-            conv, np.asarray(bucket.conv_indices), axis=-1
-        )
-        for k in range(len(u)):
-            valid = np.asarray(bucket.output_indices[k]) < plan.total_nodes
-            offset = int(bucket.output_indices[k, 0])
-            block = int(np.searchsorted(np.asarray(plan.offsets), offset))
-            r = np.arange(valid.sum()) + int(plan.rmin[block])
-            p = expit(float(plan.eta0[block]) + r / float(plan.variance[block]))
-            columns = np.asarray(bucket.indices[k])[np.asarray(bucket.b[k]) != 0]
-            pmf = binom.pmf(columns[None, :], plan.gene_copies, p[:, None])
-            reference = pmf @ v[columns]
-            worst = max(worst, np.max(np.abs(actual[k, valid] - reference)))
-            tail_error = max(tail_error, float(np.max(1 - pmf.sum(axis=1))))
-    print(f"planned node FFT error={worst:.3g}, discarded mass={tail_error:.3g}")
-    assert worst < 2e-10
-    assert tail_error < 2e-12
-
-
 @pytest.mark.parametrize("s", [0.0, 0.001, 0.5, 1.0])
-def test_fft_occupation(s):
-    # This size actually exercises FFT + interpolation in the solve.
+def test_spectral_occupation(s):
+    # This size actually exercises spectral evaluation in the solve.
     M = 512
     plan = wf.build_transition_plan(M)
     x = np.arange(1, M) / M
@@ -92,7 +63,7 @@ def test_fft_occupation(s):
     np.testing.assert_allclose(result.visits.sum(), exact.sum(), rtol=1e-7)
 
 
-def test_selection_derivative_away_from_seams():
+def test_selection_derivative_interior():
     plan = wf.build_transition_plan(1024)
     v = jnp.asarray(np.random.default_rng(19).normal(size=1025))
     fun = jax.jit(

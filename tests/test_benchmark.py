@@ -15,11 +15,11 @@ SCRIPT = Path(__file__).resolve().parents[1] / "benchmarks" / "benchmark.py"
     "arguments",
     [
         ["--selections", "nan"],
-        ["--orders", "3"],
-        ["--tail-tols", "0"],
-        ["--min-mode-count", "0"],
-        ["--block-spacing", "inf"],
-        ["--max-steps", "0"],
+        ["--accuracy", "0"],
+        ["--accuracy", "nan"],
+        ["--batch-size", "0"],
+        ["--source-gene-copies", "0"],
+        ["--repeats", "0"],
         ["--seed", "-1"],
     ],
 )

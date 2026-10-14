@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "drifft_backend": "chebyshev_nufft",
+  "worker_backends": {
+    "drifft": {
+      "drifft": true,
+      "jax": true,
+      "torch": false,
+      "fastDTWF": false
+    },
+    "fastdtwf": {
+      "drifft": false,
+      "jax": false,
+      "torch": true,
+      "fastDTWF": true
+    }
+  },
+  "device": "cpu",
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "versions": {
+    "drifft": "0.1.0",
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "jax-finufft": "1.3.2.dev36+g8ae08bb11",
+    "fastdtwf": "0.0.6",
+    "torch": "2.14.1",
+    "numba": "0.68.0",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1"
+  },
+  "fastdtwf_source": {
+    "url": "https://github.com/jeffspence/fastDTWF",
+    "vcs_info": {
+      "vcs": "git",
+      "commit_id": "bd36496a64fda137cda5a2d6a97dd9343c97eb46",
+      "requested_revision": "bd36496a64fda137cda5a2d6a97dd9343c97eb46"
+    }
+  },
+  "fastdtwf_import_seconds": 2.398741333046928,
+  "torch_threads": 4,
+  "thread_environment": {
+    "OMP_NUM_THREADS": null,
+    "MKL_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "XLA_FLAGS": null
+  },
+  "config": {
+    "sizes": [
+      28948
+    ],
+    "selections": [
+      0.0,
+      0.0001
+    ],
+    "tv_sds": [
+      0.1
+    ],
+    "row_eps": 1e-08,
+    "tail_tol": 1e-12,
+    "repeats": 3,
+    "dense_max_m": 1024,
+    "solve_max_m": 256,
+    "max_steps": 2000,
+    "threads": null,
+    "seed": 17,
+    "output": "benchmarks/bernstein_fastdtwf_cpu.json",
+    "quiet": false
+  },
+  "runs": [
+    {
+      "gene_copies": 28948,
+      "selection_strength": 0.0,
+      "tv_sd": 0.1,
+      "row_eps": 1e-08,
+      "drifft_plan_seconds": 0.16805512504652143,
+      "drifft_plan_bytes": 10360,
+      "fastdtwf_setup_seconds": 0.01666500000283122,
+      "fastdtwf_group_count": 4654,
+      "transitions": [
+        {
+          "input": "singleton",
+          "between_methods_l1": 1.0364633947397623e-11,
+          "drifft": {
+            "first_call_seconds": 0.214716583956033,
+            "median_seconds": 0.0304045001976192,
+            "min_seconds": 0.029687667032703757,
+            "mass": 1.0000000000000124,
+            "minimum": -1.1619652829157574e-15
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.21571562509052455,
+            "median_seconds": 0.22573170810937881,
+            "min_seconds": 0.20650833286345005,
+            "mass": 1.0,
+            "minimum": 0.0
+          }
+        },
+        {
+          "input": "uniform",
+          "between_methods_l1": 4.3726226966260925e-06,
+          "drifft": {
+            "first_call_seconds": 0.02954295789822936,
+            "median_seconds": 0.02957249991595745,
+            "min_seconds": 0.029359749983996153,
+            "mass": 0.9999999999999998,
+            "minimum": 3.180208891630556e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.30361445900052786,
+            "median_seconds": 0.2044916250742972,
+            "min_seconds": 0.1970264590345323,
+            "mass": 1.0,
+            "minimum": 3.18020889163783e-05
+          }
+        },
+        {
+          "input": "random",
+          "between_methods_l1": 1.9368957654559543e-05,
+          "drifft": {
+            "first_call_seconds": 0.029533375054597855,
+            "median_seconds": 0.02923695812933147,
+            "min_seconds": 0.028589291963726282,
+            "mass": 0.9999999999999998,
+            "minimum": 1.580847897128374e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.20575549989007413,
+            "median_seconds": 0.2088574159424752,
+            "min_seconds": 0.19957791711203754,
+            "mass": 1.0,
+            "minimum": 1.58084789711339e-05
+          }
+        }
+      ]
+    },
+    {
+      "gene_copies": 28948,
+      "selection_strength": 0.0001,
+      "tv_sd": 0.1,
+      "row_eps": 1e-08,
+      "drifft_plan_seconds": 0.16805512504652143,
+      "drifft_plan_bytes": 10360,
+      "fastdtwf_setup_seconds": 0.0009800840634852648,
+      "fastdtwf_group_count": 4654,
+      "transitions": [
+        {
+          "input": "singleton",
+          "between_methods_l1": 1.0381329359837267e-11,
+          "drifft": {
+            "first_call_seconds": 0.029538541799411178,
+            "median_seconds": 0.029315708903595805,
+            "min_seconds": 0.027530791936442256,
+            "mass": 1.000000000000013,
+            "minimum": -1.1630129646183373e-15
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.19433279195800424,
+            "median_seconds": 0.19670662516728044,
+            "min_seconds": 0.1938032079488039,
+            "mass": 1.0,
+            "minimum": 0.0
+          }
+        },
+        {
+          "input": "uniform",
+          "between_methods_l1": 4.372535895127466e-06,
+          "drifft": {
+            "first_call_seconds": 0.028394666966050863,
+            "median_seconds": 0.029051499906927347,
+            "min_seconds": 0.028842333937063813,
+            "mass": 0.9999999999999998,
+            "minimum": 3.1805789468133984e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.19575341721065342,
+            "median_seconds": 0.19347633398137987,
+            "min_seconds": 0.19000658299773932,
+            "mass": 1.0,
+            "minimum": 3.1805789468206626e-05
+          }
+        },
+        {
+          "input": "random",
+          "between_methods_l1": 1.9369320326256043e-05,
+          "drifft": {
+            "first_call_seconds": 0.028431916842237115,
+            "median_seconds": 0.029123499989509583,
+            "min_seconds": 0.02911487501114607,
+            "mass": 0.9999999999999997,
+            "minimum": 1.5810800596813402e-05
+          },
+          "fastdtwf": {
+            "first_call_seconds": 0.1924296661745757,
+            "median_seconds": 0.1914609579835087,
+            "min_seconds": 0.1873614580836147,
+            "mass": 1.0,
+            "minimum": 1.5810800596642372e-05
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,14 +1,24 @@
 [project]
 name = "drifft"
 version = "0.1.0"
-description = "Local log-odds FFT Wright–Fisher operators in JAX"
+description = "Chebyshev/NUFFT Wright–Fisher operators in JAX"
 readme = "README.md"
-requires-python = ">=3.11"
-dependencies = ["jax>=0.4.38", "equinox>=0.11.12", "lineax>=0.0.8", "numpy>=1.26", "scipy>=1.12"]
+requires-python = ">=3.12"
+dependencies = [
+    "jax>=0.11.2",
+    "equinox>=0.11.12",
+    "lineax>=0.0.8",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "jax-finufft @ git+https://github.com/flatironinstitute/jax-finufft@main",
+]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/tests", "/benchmarks", "/README.md", "/pyproject.toml", "/uv.lock"]
@@ -23,7 +33,7 @@ markers = ["slow: large numerical validation"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py312"
 extend-exclude = ["jaxqtl"]
 
 [tool.ruff.lint]
@@ -33,4 +43,4 @@ select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
 include = ["src", "tests", "benchmarks"]
 
 [tool.ty.environment]
-python-version = "3.11"
+python-version = "3.12"
