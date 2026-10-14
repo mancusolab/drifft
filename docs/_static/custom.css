@@ -1,0 +1,8 @@
+/* Keep anchors visible below the header and match the compact jaxqtl layout. */
+html { scroll-padding-top: 50px; font-size: 110%; }
+.md-typeset h1 { font-size: 1.6rem; }
+.md-typeset h2 { font-size: 1.5rem; }
+.md-typeset h3 { font-size: 1.3rem; }
+.md-main__inner { margin-bottom: 1.5rem; }
+/* Separate generated API descriptions without relying on custom templates. */
+div.doc-contents { padding-left: 1rem; border-left: 2px solid var(--md-default-fg-color--lightest); }
