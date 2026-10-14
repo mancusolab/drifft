@@ -13,6 +13,7 @@ nav = [
         "guide/installation.md",
         "guide/quickstart.md",
         "guide/transitions.md",
+        "guide/demography.md",
         "guide/backends.md",
         "guide/numerics.md",
         "guide/solves.md",

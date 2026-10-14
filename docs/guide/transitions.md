@@ -62,7 +62,8 @@ For population-size changes, the backend specifies destination size and
 performs the reverse mapping for mass. Explicit probabilities may also describe
 sampled source rows. Segregating and expected-visits operations assume complete,
 ordered allele-count grids; expected visits additionally requires equal source
-and destination sizes. A full changing-size demographic workflow is not provided.
+and destination sizes. For a sequence of size changes, use
+[`Demography` and `DemographicTransition`](demography.md).
 
 Inputs must have the documented shapes. Frequencies and probabilities must be in
 `[0, 1]`, and `Underdominance.strength` must be scalar and in `[0, 1]`. Shape checks

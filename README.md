@@ -49,6 +49,7 @@ generation. Reuse the backend across selection strengths, or substitute
 `drifft.NUFFT` to use the Chebyshev/NUFFT implementation.
 
 The guide covers [custom selection and the API](docs/guide/transitions.md),
+[demographic histories](docs/guide/demography.md),
 [backend tradeoffs](docs/guide/backends.md),
 [accuracy settings](docs/guide/numerics.md), and
 [expected visits and solver limitations](docs/guide/solves.md).
