@@ -14,7 +14,7 @@ jax.config.update("jax_enable_x64", True)
 
 
 def test_selection_model_and_both_transition_directions():
-    plan = drifft.build_transition_plan(16)
+    plan = drifft.NUFFT(16)
     transition = drifft.Transition(plan, selection=drifft.Underdominance(strength=0.1))
     x = np.arange(17) / 16
     p = (x - 0.1 * x * (1 - x)) / (1 - 0.2 * x * (1 - x))
@@ -46,7 +46,7 @@ def test_selection_model_and_both_transition_directions():
 
 
 def test_explicit_probabilities_preserve_rectangular_transitions():
-    plan = drifft.build_transition_plan(8)
+    plan = drifft.NUFFT(8)
     p = jnp.array([0.0, 0.15, 0.7, 1.0])
     transition = drifft.Transition.from_probabilities(plan, p)
     matrix = binom.pmf(np.arange(9)[None, :], 8, np.asarray(p)[:, None])
@@ -61,7 +61,7 @@ def test_explicit_probabilities_preserve_rectangular_transitions():
 
 
 def test_custom_selection_and_rectangular_source_size():
-    plan = drifft.build_transition_plan(8)
+    plan = drifft.NUFFT(8)
     transition = drifft.Transition(plan, selection=lambda x: x**2, source_gene_copies=4)
     np.testing.assert_allclose(transition.probabilities, (np.arange(5) / 4) ** 2)
     np.testing.assert_allclose(
@@ -72,7 +72,7 @@ def test_custom_selection_and_rectangular_source_size():
 
 
 def test_parameters_are_dynamic_and_not_stale_cached_probabilities():
-    plan = drifft.build_transition_plan(512)
+    plan = drifft.NUFFT(512)
     transition = drifft.Transition(plan, selection=drifft.Underdominance(0.1))
     traces = []
 
@@ -87,7 +87,7 @@ def test_parameters_are_dynamic_and_not_stale_cached_probabilities():
     second = expect(changed, values)
     assert len(traces) == 1
     assert not np.allclose(first, second)
-    assert changed.plan is transition.plan
+    assert changed.backend is transition.backend
     derivative = jax.grad(
         lambda s: drifft.Transition(plan, drifft.Underdominance(s)).expect(values)[200]
     )(0.1)
@@ -105,7 +105,7 @@ def test_parameters_are_dynamic_and_not_stale_cached_probabilities():
 
 
 def test_custom_probabilities_drive_expected_visits():
-    plan = drifft.build_transition_plan(16)
+    plan = drifft.NUFFT(16)
     p = jnp.arange(17, dtype=jnp.float64) / 16
     transition = drifft.Transition.from_probabilities(plan, p)
     matrix = binom.pmf(np.arange(17)[None, :], 16, np.asarray(p)[:, None])
@@ -118,7 +118,7 @@ def test_custom_probabilities_drive_expected_visits():
 
 
 def test_transition_rejects_ambiguous_or_invalid_configuration():
-    plan = drifft.build_transition_plan(16)
+    plan = drifft.NUFFT(16)
     with pytest.raises(ValueError):
         drifft.Transition(plan)
     with pytest.raises(ValueError):
@@ -132,7 +132,7 @@ def test_transition_rejects_ambiguous_or_invalid_configuration():
 
 
 def test_custom_model_gradients_through_advance_and_batched_solves():
-    plan = drifft.build_transition_plan(16)
+    plan = drifft.NUFFT(16)
     mass = jnp.zeros(17).at[7].set(1.0)
 
     def mean_next_count(bias):
@@ -153,7 +153,7 @@ def test_custom_model_gradients_through_advance_and_batched_solves():
 
 
 def test_transition_shape_errors_are_explicit():
-    plan = drifft.build_transition_plan(16)
+    plan = drifft.NUFFT(16)
     model = drifft.Transition(plan, drifft.Underdominance(0.0))
     with pytest.raises(ValueError, match="distribution"):
         model.advance(jnp.ones(16))

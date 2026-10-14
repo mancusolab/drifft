@@ -14,10 +14,12 @@ from scipy.stats import binom
 SCRIPT = Path(__file__).resolve().parents[1] / "benchmarks" / "compare_epochs.py"
 
 
-@pytest.mark.parametrize("backend", ["drifft", "fastdtwf", "condensed", "refreshed"])
+@pytest.mark.parametrize(
+    "backend", ["nufft", "fft", "fastdtwf", "condensed", "refreshed"]
+)
 @pytest.mark.parametrize("source", [16, 12])
 def test_epoch_worker_matches_dense_chain(backend, source):
-    if backend != "drifft" and importlib.util.find_spec("fastDTWF") is None:
+    if backend not in {"nufft", "fft"} and importlib.util.find_spec("fastDTWF") is None:
         pytest.skip("Requires optional fastdtwf dependency group")
     generations = [1, 7, 60] if source == 16 else [1]
     command = [

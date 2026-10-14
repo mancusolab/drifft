@@ -1,7 +1,7 @@
 [project]
 name = "drifft"
 version = "0.1.0"
-description = "Chebyshev/NUFFT Wright–Fisher operators in JAX"
+description = "FFT and Chebyshev/NUFFT Wright–Fisher operators in JAX"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

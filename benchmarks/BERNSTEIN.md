@@ -193,3 +193,8 @@ uv run --group fastdtwf python benchmarks/compare_fastdtwf.py \
   --sizes 28948 --selections 0 0.0001 --tv-sds 0.1 --repeats 3 \
   --output benchmarks/bernstein_fastdtwf_cpu.json
 ```
+
+These measurements predate the shared backend API. To reproduce the archived
+commands above, check out revision `f52b47f`. For new runs, use the current
+`compare_backends.py`, `compare_startup.py`, or `compare_epochs.py`; both FFT
+and NUFFT are built in and no `--baseline-source` argument is accepted.

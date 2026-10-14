@@ -1,8 +1,7 @@
 # drifft
 
-Matrix-free Wright–Fisher transitions using stable Bernstein sampling, Chebyshev
-interpolation and NUFFT evaluation in JAX, with Lineax expected-visits solves.
-This experimental branch replaces the previous local log-odds FFT backend.
+Matrix-free Wright–Fisher transitions with interchangeable FFT and Chebyshev/NUFFT
+backends in JAX, with Lineax expected-visits solves.
 The statistical model uses `M=2N` gene copies and accepts arbitrary JAX-compatible
 selection functions. The built-in `Underdominance` model uses
 `q_s(x) = (x-s*x*(1-x))/(1-2*s*x*(1-x))`, for `0 <= s <= 1`.
@@ -24,9 +23,9 @@ import jax.numpy as jnp
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-plan = drifft.build_transition_plan(gene_copies=20000)
+backend = drifft.FFT(gene_copies=20000)  # or drifft.NUFFT(gene_copies=20000)
 transition = drifft.Transition(
-    plan, selection=drifft.Underdominance(strength=0.05)
+    backend, selection=drifft.Underdominance(strength=0.05)
 )
 
 # Compile stable functions that accept the transition as a PyTree argument.
@@ -41,17 +40,18 @@ if not bool(result.converged):
 visits = result.visits  # index zero is one mutant copy; includes generation zero
 ```
 
-Build the plan once and reuse it across transitions. `Transition` binds the plan
+Build the backend once and reuse it across transitions. `Transition` binds the backend
 without rebuilding it. Selection parameters are dynamic array leaves, while
 shape/configuration metadata are static. For another selection strength, construct
-`Transition(plan, Underdominance(new_strength))` and pass it to the same compiled
+`Transition(backend, Underdominance(new_strength))` and pass it to the same compiled
 function. Scalar strengths are normalized to float64 automatically.
 
 | API | Contract |
 | --- | --- |
-| `build_transition_plan(gene_copies, **options)` | Host-side preparation for the destination population |
-| `Transition(plan, selection=...)` | Bind a JAX-compatible frequency-to-probability callable |
-| `Transition.from_probabilities(plan, probabilities)` | Bind explicit probabilities, one per source row |
+| `FFT(gene_copies, **options)` / `NUFFT(gene_copies, **options)` | Prepare destination geometry outside JIT |
+| `AbstractTransitionBackend` | Equinox abstract base; implement linear `expect(probabilities, values)` |
+| `Transition(backend, selection=...)` | Bind a JAX-compatible frequency-to-probability callable |
+| `Transition.from_probabilities(backend, probabilities)` | Bind explicit probabilities, one per source row |
 | `transition.expect(values)` | Destination values to source expectations: `P @ values` |
 | `transition.advance(distribution)` | Source mass to destination mass: `P.T @ distribution` |
 | `transition.expect_segregating(values)` | Interior expectations with endpoint values zero |
@@ -69,11 +69,11 @@ Custom selection models use the same interface:
 
 ```python
 # Any JAX-compatible callable that returns one probability per frequency works.
-custom = drifft.Transition(plan, selection=lambda frequency: frequency**2)
+custom = drifft.Transition(backend, selection=lambda frequency: frequency**2)
 # An Equinox callable can carry dynamic parameters for inference or sweeps.
 # Alternatively, supply already evaluated probabilities explicitly.
 offspring_probabilities = custom.probabilities
-explicit = drifft.Transition.from_probabilities(plan, offspring_probabilities)
+explicit = drifft.Transition.from_probabilities(backend, offspring_probabilities)
 ```
 
 Model probabilities are evaluated during application, keeping parameter updates
@@ -82,8 +82,8 @@ the differentiated function if gradients through their construction are needed.
 Use Equinox fields for trainable parameters instead of closing over changing
 Python values in fresh lambdas.
 
-For population-size changes, the plan specifies destination size and
-`Transition(plan, selection=..., source_gene_copies=...)` specifies source size.
+For population-size changes, the backend specifies destination size and
+`Transition(backend, selection=..., source_gene_copies=...)` specifies source size.
 `expect` maps destination-length values to source-length expectations; `advance`
 performs the reverse mapping for mass. Explicit probabilities may also describe
 sampled source rows. Segregating and expected-visits operations assume complete,
@@ -93,15 +93,38 @@ and destination sizes. A full changing-size demographic workflow is not provided
 Inputs must have the documented shapes. Frequencies and probabilities must be in
 `[0, 1]`, and `Underdominance.strength` must be scalar and in `[0, 1]`. Shape checks
 raise during construction or tracing; finite values and numerical ranges remain
-caller preconditions to avoid runtime callbacks. Plans require float64.
+caller preconditions to avoid runtime callbacks. Backends require float64.
 
-## Approximation and configuration
+## Backend selection
+
+Both backends implement `AbstractTransitionBackend`, an abstract Equinox module.
+`Transition` owns selection, source size, propagation, and solver integration;
+backends own selection-independent geometry and the expectation approximation.
+Choose a backend explicitly and reuse it across selection strengths.
+
+`FFT` uses local log-odds blocks, cached Fourier coefficients, and interpolation.
+It favors repeated applications at a fixed size, at the cost of larger geometry
+and XLA temporary storage. Its constructor accepts `tail_tol`, `interp_order`,
+`min_mode_count`, `block_spacing`, and `balance`. Host NumPy/SciPy preparation
+uses binomial quantiles and extended precision for conditioned Fourier weights;
+application and differentiation use JAX arrays. Interpolation boundaries can
+limit gradient smoothness and should be checked for inference workloads.
+
+`NUFFT` stores a small node vector and regenerates sampling weights, trading
+extra work per application for lower stored geometry and XLA temporary storage.
+Its polynomial derivative rules remain finite at probability endpoints.
+These custom operations use experimental `jax.experimental.hijax.HiPrim` to
+preserve explicit JVP, transpose, and batching behavior under JAX transforms.
+Hijax does not itself make gradients faster or reduce demographic recompilation:
+changing population shapes can require new compilations for either backend.
+
+## NUFFT approximation and configuration
 
 `expect` samples the Bernstein polynomial at fixed Chebyshev–Lobatto nodes,
 computes cosine coefficients using a real-FFT DCT-I, then evaluates them at the
 selection probabilities using FINUFFT. The degree and sample geometry depend on
 the destination population and accuracy settings, never on the input vector or
-selection strength. The plan stores only one node vector.
+selection strength. The backend stores only one node vector.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -141,13 +164,12 @@ including at probability zero and one. The transpose has a matched derivative
 rule; it does not differentiate the singular angular coordinate. First and
 second polynomial derivatives, propagation gradients and small expected-visits
 gradients have independent reference tests. Sampling nodes are fixed geometry:
-differentiating the plan's node leaves is rejected. Differentiate selection
-parameters or input vectors while holding the plan fixed.
+differentiating the backend's node leaves is rejected. Differentiate selection
+parameters or input vectors while holding the backend fixed.
 
 ### Dependency and hardware constraints
 
-The replacement requires `jax-finufft`; it is a core dependency because it is
-now the only backend. The dependency follows upstream `jax-finufft` `main`; `uv.lock` records the exact
+`jax-finufft` remains a core dependency for the NUFFT implementation. The dependency follows upstream `jax-finufft` `main`; `uv.lock` records the exact
 commit. This includes batching fixes absent from release 1.3.1 and permits the
 latest JAX on supported Python versions. Installing from Git builds the native
 extension and requires a C++ toolchain. The build uses installed FFTW development
@@ -156,10 +178,6 @@ libraries when available; otherwise it downloads and builds FFTW automatically
 CPU execution is tested on Apple Silicon. CUDA requires a
 compatible CUDA-enabled FINUFFT installation and has not been validated here;
 TPU is unsupported. No dense fallback is used when a device lacks NUFFT support.
-
-The former `interp_order`, `min_mode_count`, `block_spacing` and `balance` factory
-options are removed. Default `build_transition_plan(gene_copies=...)`, rectangular
-source sizes, selection callables, and all `Transition` methods retain their API.
 
 ## Solves and limitations
 
@@ -200,13 +218,16 @@ uv run --group fastdtwf python benchmarks/compare_fastdtwf.py --sizes 64 256 102
 ```
 
 The spectral benchmark reports compilation, warm execution, sampled forward and
-selection-JVP accuracy, plan storage, XLA temporary storage, mass defects and
+selection-JVP accuracy, backend storage, XLA temporary storage, mass defects and
 small-system solve diagnostics. Use `--source-gene-copies` for rectangular
 transitions, and `--derivative-accuracy` to evaluate the larger-degree policy.
 Multiple RHS use `jax.vmap`; this processes independent vectors rather than
 claiming a shared batched NUFFT speedup.
 
-See [replacement results](benchmarks/BERNSTEIN.md) for measured limitations.
+Use `benchmarks/compare_backends.py` to compare both installed backends.
+`compare_startup.py` and `compare_epochs.py` also compare both against fastDTWF.
+
+See [historical replacement results](benchmarks/BERNSTEIN.md) for measured limitations.
 The older [CPU report](benchmarks/RESULTS.md) and
 [fastDTWF comparison](benchmarks/FASTDTWF.md) describe the previous backend and
-must not be used as performance evidence for this replacement.
+record earlier revisions; their measurements have not been regenerated for this refactor.

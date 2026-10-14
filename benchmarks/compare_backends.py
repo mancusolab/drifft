@@ -1,6 +1,6 @@
-"""Compare this backend with an archived drifft source tree in isolated processes."""
+"""Compare FFT and NUFFT in isolated processes."""
 
-# Imperative Shell: imports isolated by revision, synchronized timings and JSON I/O.
+# Imperative Shell: imports isolated by backend, synchronized timings and JSON I/O.
 import argparse
 import importlib.metadata
 import json
@@ -12,8 +12,7 @@ from pathlib import Path
 
 
 def worker(args):
-    """Time the shared Transition API using one selected source tree."""
-    sys.path.insert(0, str(args.source.resolve()))
+    """Time the shared Transition API using one concrete backend."""
     import equinox as eqx
     import jax
     import jax.numpy as jnp
@@ -27,7 +26,7 @@ def worker(args):
     runs = []
     for size in args.sizes:
         start = time.perf_counter()
-        plan = drifft.build_transition_plan(size)
+        plan = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(size)
         jax.block_until_ready(plan)
         planning = time.perf_counter() - start
         values = jnp.asarray(np.random.default_rng(17).normal(size=size + 1))
@@ -104,17 +103,15 @@ def worker(args):
 
 
 def main():
-    """Run revisions sequentially, with one fresh worker per implementation."""
+    """Run backends sequentially, with one fresh worker per implementation."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--baseline-source", type=Path)
-    parser.add_argument("--baseline-revision", default="b13114f")
     parser.add_argument(
         "--sizes", type=int, nargs="+", default=[1000, 10000, 28948, 100000]
     )
     parser.add_argument("--selections", type=float, nargs="+", default=[0.0, 1e-4])
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--source", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--worker", choices=["fft", "nufft"], help=argparse.SUPPRESS)
     args = parser.parse_args()
     if (
         min(args.sizes) < 2
@@ -122,37 +119,21 @@ def main():
         or any(not 0 <= s <= 1 for s in args.selections)
     ):
         parser.error("sizes >= 2, repeats >= 1 and selections in [0,1] are required")
-    if args.source:
+    if args.worker:
         print(json.dumps(worker(args)))
         return
-    if (
-        args.baseline_source is None
-        or not (args.baseline_source / "drifft" / "__init__.py").is_file()
-    ):
-        parser.error("baseline-source must contain an archived drifft package")
     report = {
-        "baseline_revision": args.baseline_revision,
-        "config": vars(args)
-        | {
-            "baseline_source": str(args.baseline_source),
-            "output": str(args.output),
-            "source": None,
-        },
+        "config": vars(args) | {"output": str(args.output)},
         "implementations": {},
     }
-    # Same locked interpreter and dependency versions for both revisions. No
-    # inherited PYTHONPATH should silently select a different source tree.
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
-    for name, source in (
-        ("local_log_odds", args.baseline_source),
-        ("chebyshev_nufft", Path(__file__).resolve().parents[1] / "src"),
-    ):
+    for name in ("fft", "nufft"):
         command = [
             sys.executable,
             str(Path(__file__).resolve()),
-            "--source",
-            str(source),
+            "--worker",
+            name,
             "--sizes",
             *map(str, args.sizes),
             "--selections",

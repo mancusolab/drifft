@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-BACKENDS = ("drifft", "previous", "reference", "fastdtwf", "condensed", "refreshed")
+BACKENDS = ("nufft", "fft", "reference", "fastdtwf", "condensed", "refreshed")
 
 
 def worker(args: argparse.Namespace) -> dict[str, Any]:
@@ -29,13 +29,11 @@ def worker(args: argparse.Namespace) -> dict[str, Any]:
     strength = args.selections[0]
     metadata: dict[str, Any] = {}
     initialized = time.perf_counter()
-    if backend in {"drifft", "previous", "reference"}:
+    if backend in {"nufft", "fft", "reference"}:
         import equinox as eqx
         import jax
         import jax.numpy as jnp
 
-        if backend == "previous":
-            sys.path.insert(0, str(args.baseline_source.resolve()))
         import drifft
 
         jax.config.update("jax_enable_x64", True)
@@ -48,11 +46,11 @@ def worker(args: argparse.Namespace) -> dict[str, Any]:
         if backend == "reference":
             options = {"accuracy": 1e-13, "tail_tol": 1e-15, "nufft_tol": 1e-15}
         if backend == "reference":
-            plan = drifft.build_transition_plan(
-                size, accuracy=1e-13, tail_tol=1e-15, nufft_tol=1e-15
-            )
+            plan = drifft.NUFFT(size, accuracy=1e-13, tail_tol=1e-15, nufft_tol=1e-15)
         else:
-            plan = drifft.build_transition_plan(size, tail_tol=1e-12)
+            plan = (drifft.FFT if backend == "fft" else drifft.NUFFT)(
+                size, tail_tol=1e-12
+            )
         transition = drifft.Transition(
             plan, selection=drifft.Underdominance(strength), source_gene_copies=source
         )
@@ -192,8 +190,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     records = []
     for selection in args.selections:
         selected = []
-        backends = [b for b in BACKENDS if b != "previous" or args.baseline_source]
-        for backend in backends:
+        for backend in BACKENDS:
             command = [
                 sys.executable,
                 str(Path(__file__).resolve()),
@@ -214,8 +211,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             ]
             if args.source_gene_copies:
                 command += ["--source-gene-copies", str(args.source_gene_copies)]
-            if args.baseline_source:
-                command += ["--baseline-source", str(args.baseline_source)]
             if args.threads:
                 command += ["--threads", str(args.threads)]
             process = subprocess.run(
@@ -255,7 +250,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()
         },
         "timing_repeats": 1,
-        "reference": "Chebyshev/NUFFT accuracy=1e-13; cross-check previous backend independently",
+        "reference": "Chebyshev/NUFFT accuracy=1e-13; cross-check FFT independently",
         "thread_environment": {
             k: os.environ.get(k)
             for k in (
@@ -281,7 +276,6 @@ def main() -> None:
     parser.add_argument(
         "--initial", choices=["uniform", "singleton"], default="uniform"
     )
-    parser.add_argument("--baseline-source", type=Path)
     parser.add_argument("--tv-sd", type=float, default=0.1)
     parser.add_argument("--row-eps", type=float, default=1e-8)
     parser.add_argument("--threads", type=int)
@@ -306,13 +300,6 @@ def main() -> None:
         parser.error("row-eps must be finite and in (0, 1)")
     if args.threads is not None and args.threads < 1:
         parser.error("threads must be positive")
-    if (
-        args.baseline_source
-        and not (args.baseline_source / "drifft" / "__init__.py").is_file()
-    ):
-        parser.error("baseline-source must contain drifft/__init__.py")
-    if args.worker == "previous" and args.baseline_source is None:
-        parser.error("previous worker requires baseline-source")
     if args.output and not args.output.parent.is_dir():
         parser.error("output directory must exist")
     try:

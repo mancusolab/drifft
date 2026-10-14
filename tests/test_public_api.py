@@ -13,8 +13,8 @@ jax.config.update("jax_enable_x64", True)
 
 
 def test_transition_api_keywords_under_jit():
-    plan = drifft.build_transition_plan(gene_copies=512)
-    assert isinstance(plan, drifft.TransitionPlan)
+    plan = drifft.NUFFT(gene_copies=512)
+    assert isinstance(plan, drifft.NUFFT)
     assert plan.gene_copies == 512
     values = jnp.linspace(-1.0, 1.0, 513)
     model = drifft.Transition(plan, selection=drifft.Underdominance(strength=0.1))
@@ -32,7 +32,7 @@ def test_transition_api_keywords_under_jit():
 
 
 def test_expected_visits_result_fields_survive_pytree_roundtrip():
-    plan = drifft.build_transition_plan(gene_copies=16)
+    plan = drifft.NUFFT(gene_copies=16)
     result = drifft.Transition(
         plan, drifft.Underdominance(jnp.asarray(0.1))
     ).expected_visits()

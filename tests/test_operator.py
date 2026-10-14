@@ -12,7 +12,7 @@ jax.config.update("jax_enable_x64", True)
 def test_full_and_transient(M):
     import drifft as wf
 
-    plan = wf.build_transition_plan(M)
+    plan = wf.NUFFT(M)
     apply = jax.jit(lambda s, v: wf.Transition(plan, wf.Underdominance(s)).expect(v))
     rng = np.random.default_rng(42)
     vectors = [
@@ -44,7 +44,7 @@ def test_dynamic_selection_linearity_vmap_and_transpose():
     import drifft as wf
 
     M = 1024
-    plan = wf.build_transition_plan(M)
+    plan = wf.NUFFT(M)
     traces = []
 
     def apply(s, v):
@@ -79,7 +79,7 @@ def test_sampled_kernel_coefficients_and_negative_mass():
     import drifft as wf
 
     M = 4096
-    plan = wf.build_transition_plan(M)
+    plan = wf.NUFFT(M)
     p = jnp.array([0.0, 1e-8, 0.01, 0.25, 0.5, 0.9, 1 - 1e-8, 1.0])
     transition = wf.Transition.from_probabilities(plan, p)
     actual = np.asarray(jax.jit(jax.vmap(transition.advance))(jnp.eye(len(p))))

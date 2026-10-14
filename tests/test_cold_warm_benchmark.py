@@ -52,7 +52,7 @@ def test_measure_process_preserves_records_already_in_pipe(monkeypatch):
         warm_repeats=1,
         threads=None,
     )
-    measured = measure_process(args, "drifft", 0.1, 0.1)
+    measured = measure_process(args, "nufft", 0.1, 0.1)
     assert measured["first_call_seconds"] == first["first_call_seconds"]
     assert measured["warm_seconds"] == result["warm_seconds"]
     assert measured["mass"] == result["mass"]
@@ -60,15 +60,8 @@ def test_measure_process_preserves_records_already_in_pipe(monkeypatch):
     assert measured["process_to_first_result_seconds"] > 0
 
 
-@pytest.mark.parametrize("backend", ["drifft", "fastdtwf", "previous"])
+@pytest.mark.parametrize("backend", ["nufft", "fastdtwf", "fft"])
 def test_isolated_worker_times_first_result_and_matches_reference(backend, tmp_path):
-    import shutil
-
-    extra = []
-    if backend == "previous":
-        # An isolated source copy tests routing without a historical Git checkout.
-        shutil.copytree(SCRIPT.parent.parent / "src" / "drifft", tmp_path / "drifft")
-        extra = ["--baseline-source", str(tmp_path)]
     if backend == "fastdtwf" and importlib.util.find_spec("fastDTWF") is None:
         pytest.skip("Install the optional fastdtwf dependency group")
     process = subprocess.run(
@@ -83,7 +76,6 @@ def test_isolated_worker_times_first_result_and_matches_reference(backend, tmp_p
             "0.1",
             "--warm-repeats",
             "2",
-            *extra,
         ],
         text=True,
         capture_output=True,
@@ -102,8 +94,6 @@ def test_isolated_worker_times_first_result_and_matches_reference(backend, tmp_p
         "jax": backend != "fastdtwf",
         "torch": backend == "fastdtwf",
     }
-    if backend == "previous":
-        assert Path(result["source_path"]).is_relative_to(tmp_path)
     frequency = np.arange(17) / 16
     probabilities = (frequency - 0.1 * frequency * (1 - frequency)) / (
         1 - 0.2 * frequency * (1 - frequency)
@@ -144,7 +134,7 @@ def test_parent_reports_process_startup_and_amortized_estimates():
     )
     assert process.returncode == 0, process.stderr
     report = json.loads(process.stdout)
-    assert len(report["runs"]) == 2
+    assert len(report["runs"]) == 3
     for run in report["runs"]:
         sample = run["samples"][0]
         cold = sample["process_to_first_result_seconds"]

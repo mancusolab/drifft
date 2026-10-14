@@ -76,7 +76,7 @@ def drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
     records = []
     for gene_copies in args.sizes:
         start = time.perf_counter()
-        plan = drifft.build_transition_plan(gene_copies, tail_tol=args.tail_tol)
+        plan = drifft.NUFFT(gene_copies, tail_tol=args.tail_tol)
         jax.block_until_ready(plan)
         planning_seconds = time.perf_counter() - start
         plan_bytes = sum(leaf.nbytes for leaf in jax.tree.leaves(plan))

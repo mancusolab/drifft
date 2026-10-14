@@ -31,25 +31,25 @@ def worker(args: argparse.Namespace) -> None:
     gene_copies = args.gene_copies
     selection = args.selections[0]
     metadata: dict[str, Any] = {}
-    if args.worker in {"drifft", "previous"}:
+    if args.worker in {"nufft", "fft"}:
         import equinox as eqx
         import jax
         import jax.numpy as jnp
 
-        if args.worker == "previous":
-            sys.path.insert(0, str(args.baseline_source.resolve()))
         import drifft
 
         metadata["source_path"] = drifft.__file__
         metadata["drifft_backend"] = (
-            "local_log_odds_fft" if args.worker == "previous" else "chebyshev_nufft"
+            "local_log_odds_fft" if args.worker == "fft" else "chebyshev_nufft"
         )
 
         imported = time.perf_counter()
         jax.config.update("jax_platform_name", "cpu")
         jax.config.update("jax_enable_x64", True)
         jax.config.update("jax_enable_compilation_cache", False)
-        plan = drifft.build_transition_plan(gene_copies, tail_tol=args.tail_tol)
+        plan = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(
+            gene_copies, tail_tol=args.tail_tol
+        )
         jax_mass = jnp.full(gene_copies + 1, 1.0 / (gene_copies + 1), dtype=jnp.float64)
         transition = drifft.Transition(plan, selection=drifft.Underdominance(selection))
         jax.block_until_ready((transition, jax_mass))
@@ -125,7 +125,7 @@ def worker(args: argparse.Namespace) -> None:
         start = time.perf_counter()
         value = call()
         warm.append(time.perf_counter() - start)
-    if args.worker in {"drifft", "previous"}:
+    if args.worker in {"nufft", "fft"}:
         metadata["plan_bytes"] = sum(leaf.nbytes for leaf in jax.tree.leaves(plan))
         metadata["persistent_compilation_cache"] = False
     else:
@@ -181,8 +181,6 @@ def measure_process(
         "--warm-repeats",
         str(args.warm_repeats),
     ]
-    if backend == "previous":
-        command.extend(["--baseline-source", str(args.baseline_source)])
     if args.threads is not None:
         command.extend(["--threads", str(args.threads)])
     environment = os.environ.copy()
@@ -223,9 +221,9 @@ def run(args: argparse.Namespace) -> None:
     """Alternate backend order across trials and retain every raw timing sample."""
     runs = []
     for selection in args.selections:
-        cases = [("drifft", args.tv_sds[0])] + [("fastdtwf", sd) for sd in args.tv_sds]
-        if args.baseline_source is not None:
-            cases.insert(1, ("previous", args.tv_sds[0]))
+        cases = [("nufft", args.tv_sds[0]), ("fft", args.tv_sds[0])] + [
+            ("fastdtwf", sd) for sd in args.tv_sds
+        ]
         samples: dict[tuple[str, float], list[dict[str, Any]]] = {
             case: [] for case in cases
         }
@@ -272,9 +270,6 @@ def run(args: argparse.Namespace) -> None:
         "config": vars(args)
         | {
             "output": str(args.output) if args.output else None,
-            "baseline_source": str(args.baseline_source)
-            if args.baseline_source
-            else None,
         },
         "thread_environment": {
             name: os.environ.get(name)
@@ -307,22 +302,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--threads", type=int, help="PyTorch CPU threads; default is unchanged"
     )
-    parser.add_argument(
-        "--baseline-source", type=Path, help="Previous drifft source directory"
-    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument(
-        "--worker", choices=["drifft", "previous", "fastdtwf"], help=argparse.SUPPRESS
+        "--worker", choices=["nufft", "fft", "fastdtwf"], help=argparse.SUPPRESS
     )
     args = parser.parse_args(argv)
-    if args.worker == "previous" and args.baseline_source is None:
-        parser.error("previous worker requires --baseline-source")
-    if (
-        args.baseline_source is not None
-        and not (args.baseline_source / "drifft" / "__init__.py").is_file()
-    ):
-        parser.error("baseline-source must contain drifft/__init__.py")
     if args.gene_copies < 2 or min(args.cold_repeats, args.warm_repeats) < 1:
         parser.error("gene-copies must be >= 2 and repetition counts must be positive")
     if any(not math.isfinite(s) or not 0 <= s <= 1 for s in args.selections):

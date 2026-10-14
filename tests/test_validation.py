@@ -9,7 +9,7 @@ jax.config.update("jax_enable_x64", True)
 
 
 def test_subnormal_positive_tail_tolerance_has_finite_radius():
-    plan = wf.build_transition_plan(16, tail_tol=1e-310)
+    plan = wf.NUFFT(16, tail_tol=1e-310)
     assert plan.tail_tol == 1e-310
     assert plan.radius == 16
 
@@ -30,11 +30,11 @@ def test_subnormal_positive_tail_tolerance_has_finite_radius():
 )
 def test_invalid_plan(kwargs):
     with pytest.raises(ValueError):
-        wf.build_transition_plan(**kwargs)
+        wf.NUFFT(**kwargs)
 
 
 def test_shapes_and_solver_options():
-    plan = wf.build_transition_plan(16)
+    plan = wf.NUFFT(16)
     with pytest.raises(ValueError):
         wf.Transition(plan, wf.Underdominance(0.0)).expect(jnp.ones(16))
     with pytest.raises(ValueError):
@@ -56,18 +56,17 @@ def test_shapes_and_solver_options():
     ],
 )
 def test_solver_rejects_invalid_static_options(options):
-    plan = wf.build_transition_plan(16)
+    plan = wf.NUFFT(16)
     with pytest.raises(ValueError, match="finite|integer"):
         wf.Transition(plan, wf.Underdominance(jnp.asarray(0.0))).expected_visits(
             **options
         )
 
 
-def test_plan_constructor_rejects_inconsistent_metadata():
-    from dataclasses import replace
+def test_nufft_rejects_inconsistent_node_geometry():
+    import equinox as eqx
 
-    plan = wf.build_transition_plan(512)
+    backend = wf.NUFFT(512)
+    broken = eqx.tree_at(lambda b: b.nodes, backend, backend.nodes[:-1])
     with pytest.raises(ValueError, match="nodes"):
-        replace(plan, nodes=plan.nodes[:-1])
-    with pytest.raises(ValueError, match="degree"):
-        replace(plan, degree=0)
+        broken.__check_init__()

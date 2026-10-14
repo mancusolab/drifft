@@ -10,15 +10,15 @@ import numpy as np
 import pytest
 from scipy.stats import binom
 
-from drifft import build_transition_plan
-from drifft._spectral import sample_bernstein
+from drifft import NUFFT
+from drifft.backends._spectral import sample_bernstein
 
 jax.config.update("jax_enable_x64", True)
 
 
 @pytest.mark.parametrize("size,batch_size", [(16, 3), (512, 17)])
 def test_sampling_signed_adjoint_and_transforms(size, batch_size):
-    plan = build_transition_plan(size, batch_size=batch_size)
+    plan = NUFFT(size, batch_size=batch_size)
     rng = np.random.default_rng(size)
     values = jnp.asarray(rng.normal(size=(2, size + 1)))
     mass = jnp.asarray(rng.normal(size=plan.degree + 1))
@@ -60,7 +60,7 @@ def test_sampling_signed_adjoint_and_transforms(size, batch_size):
 
 @pytest.mark.parametrize("size,batch_size", [(512, 7), (2048, 19)])
 def test_sampling_transpose_initializes_full_accumulator_only_once(size, batch_size):
-    plan = build_transition_plan(size, batch_size=batch_size)
+    plan = NUFFT(size, batch_size=batch_size)
     transpose = jax.jit(
         lambda mass: jax.linear_transpose(
             lambda v: sample_bernstein(plan, v), jnp.zeros(size + 1)
@@ -76,7 +76,7 @@ def test_sampling_transpose_initializes_full_accumulator_only_once(size, batch_s
 
 
 def test_sampling_rejects_trainable_geometry():
-    plan = build_transition_plan(16)
+    plan = NUFFT(16)
 
     def sample_nodes(nodes):
         updated = eqx.tree_at(lambda p: p.nodes, plan, nodes)

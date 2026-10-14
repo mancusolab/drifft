@@ -1,6 +1,6 @@
 """Reusable selection models and matrix-free transition operations."""
 
-# Functional Core: pure operations over a compact spectral plan.
+# Functional Core: pure operations over a prepared transition backend.
 from collections.abc import Callable
 from typing import Literal, final
 
@@ -9,9 +9,8 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 
-from ._plan import TransitionPlan
 from ._solve import ExpectedVisitsResult, _expected_visits
-from ._spectral import expect_probabilities as _expect_probabilities
+from .backends import AbstractTransitionBackend
 
 
 @final
@@ -46,14 +45,14 @@ class Underdominance(eqx.Module):
 
 @final
 class Transition(eqx.Module):
-    r"""A reusable plan combined with a selection model or explicit probabilities.
+    r"""A reusable backend combined with a selection model or explicit probabilities.
 
     **Arguments:**
 
-    - `plan`: Geometry for the destination population, prepared outside JIT.
+    - `backend`: Geometry for the destination population, prepared outside JIT.
     - `selection`: A JAX-compatible callable mapping source frequencies to
       offspring probabilities. Equinox models keep numeric parameters dynamic.
-    - `source_gene_copies`: Source population size; defaults to the plan's size.
+    - `source_gene_copies`: Source population size; defaults to the backend's size.
     - `probabilities`: Alternative to selection; normally supplied through
       `Transition.from_probabilities`. Each entry defines one source row.
 
@@ -71,26 +70,26 @@ class Transition(eqx.Module):
     **Failure Modes:**
 
     Probabilities must be finite and in `[0, 1]`. No runtime callbacks enforce
-    these value preconditions. Approximation errors are those of the plan; no
+    these value preconditions. Approximation errors are those of the backend; no
     outputs are clipped or renormalized. Methods are pure and return new arrays.
     `expect` and `advance` are undecorated for use inside an outer `eqx.filter_jit`.
     `expected_visits` supplies its own JIT boundary.
     """
 
-    plan: TransitionPlan
+    backend: AbstractTransitionBackend
     selection: Callable[[jax.Array], jax.Array] | None
     _probabilities: jax.Array | None
     source_gene_copies: int = eqx.field(static=True)
 
     def __init__(
         self,
-        plan: TransitionPlan,
+        backend: AbstractTransitionBackend,
         selection: Callable[[jax.Array], jax.Array] | None = None,
         *,
         source_gene_copies: int | None = None,
         probabilities: jax.Array | None = None,
     ):
-        self.plan = plan
+        self.backend = backend
         self.selection = selection
         self._probabilities = (
             None
@@ -98,7 +97,7 @@ class Transition(eqx.Module):
             else jnp.asarray(probabilities, dtype=jnp.float64)
         )
         inferred = (
-            plan.gene_copies
+            backend.gene_copies
             if self._probabilities is None
             else self._probabilities.size - 1
         )
@@ -129,15 +128,15 @@ class Transition(eqx.Module):
 
     @classmethod
     def from_probabilities(
-        cls, plan: TransitionPlan, probabilities: jax.Array
+        cls, backend: AbstractTransitionBackend, probabilities: jax.Array
     ) -> "Transition":
-        """Bind one probability per source row; destination size comes from plan.
+        """Bind one probability per source row; destination size comes from backend.
 
         Arrays remain dynamic leaves. To differentiate through their construction,
         evaluate the probability map inside the differentiated function. Rows may
         represent sampled probabilities rather than a complete allele-count grid.
         """
-        return cls(plan, probabilities=probabilities)
+        return cls(backend, probabilities=probabilities)
 
     @property
     def probabilities(self) -> jax.Array:
@@ -159,36 +158,38 @@ class Transition(eqx.Module):
     def expect(self, values: jax.Array) -> jax.Array:
         r"""Compute $Pv$: destination values to expectations at each source state.
 
-        Input length is `plan.gene_copies + 1`; output length is
+        Input length is `backend.gene_copies + 1`; output length is
         `source_gene_copies + 1`. Signed values are supported. Shape mismatches
         raise `ValueError`, including when traced under JIT.
         """
-        return _expect_probabilities(
-            self.plan, self.probabilities, jnp.asarray(values, dtype=jnp.float64)
+        return self.backend.expect(
+            self.probabilities, jnp.asarray(values, dtype=jnp.float64)
         )
 
     def advance(self, distribution: jax.Array) -> jax.Array:
         r"""Compute $P^T\mu$: source mass to next-generation destination mass.
 
         Input length is `source_gene_copies + 1`; output length is
-        `plan.gene_copies + 1`. This transposes the implemented approximation
+        `backend.gene_copies + 1`. This transposes the implemented approximation
         exactly, including routing. It does not mutate or normalize the input.
         """
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
         if distribution.shape != (self.source_gene_copies + 1,):
             raise ValueError("distribution must have source_gene_copies + 1 entries")
-        spec = jax.ShapeDtypeStruct((self.plan.gene_copies + 1,), jnp.float64)
+        spec = jax.ShapeDtypeStruct((self.backend.gene_copies + 1,), jnp.float64)
         return jax.linear_transpose(self.expect, spec)(distribution)[0]
 
     def expect_segregating(self, values: jax.Array) -> jax.Array:
         """Expect interior-state values, treating both destination endpoints as zero.
 
-        Input has `plan.gene_copies - 1` entries; output has
+        Input has `backend.gene_copies - 1` entries; output has
         `source_gene_copies - 1`. Source and destination rows must represent
         complete allele-count grids. Endpoint loss is not conditioned away.
         """
         values = jnp.asarray(values, dtype=jnp.float64)
-        if self.source_gene_copies < 2 or values.shape != (self.plan.gene_copies - 1,):
+        if self.source_gene_copies < 2 or values.shape != (
+            self.backend.gene_copies - 1,
+        ):
             raise ValueError(
                 "segregating values require interior source and destination states"
             )
@@ -198,7 +199,7 @@ class Transition(eqx.Module):
         """Advance interior mass, removing trajectories that reach either endpoint.
 
         Input has `source_gene_copies - 1` entries; output has
-        `plan.gene_copies - 1`. Total mass may decrease; no renormalization occurs.
+        `backend.gene_copies - 1`. Total mass may decrease; no renormalization occurs.
         """
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
         if self.source_gene_copies < 2 or distribution.shape != (
@@ -213,7 +214,11 @@ class Transition(eqx.Module):
         `segregating=True` excludes endpoint states. No symmetry or positive
         definiteness tags are attached. Rectangular operators are supported.
         """
-        size = self.plan.gene_copies - 1 if segregating else self.plan.gene_copies + 1
+        size = (
+            self.backend.gene_copies - 1
+            if segregating
+            else self.backend.gene_copies + 1
+        )
         return lx.FunctionLinearOperator(
             self.expect_segregating if segregating else self.expect,
             jax.ShapeDtypeStruct((size,), jnp.float64),
@@ -242,11 +247,11 @@ class Transition(eqx.Module):
         `ValueError`; numerical nonconvergence is returned without throwing.
         Global differentiability of solves is not certified.
         """
-        if self.source_gene_copies != self.plan.gene_copies:
+        if self.source_gene_copies != self.backend.gene_copies:
             raise ValueError("expected_visits requires a square transition")
         return _expected_visits(
             self.as_lineax(segregating=True),
-            self.plan.gene_copies,
+            self.backend.gene_copies,
             solver=solver,
             rtol=rtol,
             atol=atol,

@@ -2,13 +2,14 @@
 
 # Functional Core: public API exports.
 from ._operator import Transition, Underdominance
-from ._plan import TransitionPlan, build_transition_plan
 from ._solve import ExpectedVisitsResult
+from .backends import FFT, NUFFT, AbstractTransitionBackend
 
 __all__ = [
     "ExpectedVisitsResult",
     "Transition",
-    "TransitionPlan",
+    "AbstractTransitionBackend",
+    "FFT",
+    "NUFFT",
     "Underdominance",
-    "build_transition_plan",
 ]

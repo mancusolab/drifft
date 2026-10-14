@@ -70,7 +70,7 @@ def run(args: argparse.Namespace) -> None:
         values = jnp.asarray(rng.normal(size=size + 1))
         mass = jnp.ones(source + 1) / (source + 1)
         start = time.perf_counter()
-        plan = drifft.build_transition_plan(
+        plan = drifft.NUFFT(
             size,
             accuracy=args.accuracy,
             batch_size=args.batch_size,

@@ -11,10 +11,11 @@ jax.config.update("jax_enable_x64", True)
 
 @pytest.mark.parametrize("M", [16, 64, 256])
 @pytest.mark.parametrize("s", [0.0, 0.001, 0.5, 1.0])
-def test_occupation(M, s):
+@pytest.mark.parametrize("backend", ["FFT", "NUFFT"])
+def test_occupation(M, s, backend):
     import drifft as wf
 
-    plan = wf.build_transition_plan(M)
+    plan = getattr(wf, backend)(M)
     x = np.arange(1, M) / M
     p = (x - s * x * (1 - x)) / (1 - 2 * s * x * (1 - x))
     Q = binom.pmf(np.arange(1, M)[None, :], M, p[:, None])
@@ -44,7 +45,7 @@ def test_occupation(M, s):
 def test_nonconvergence_and_bicgstab():
     import drifft as wf
 
-    plan = wf.build_transition_plan(64)
+    plan = wf.NUFFT(64)
     result = wf.Transition(plan, wf.Underdominance(jnp.asarray(0.0))).expected_visits(
         max_steps=1, restart=2
     )

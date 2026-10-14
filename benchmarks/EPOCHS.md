@@ -171,3 +171,8 @@ uv run --group fastdtwf python benchmarks/compare_epochs.py \
   --source-gene-copies 28948 --gene-copies 57896 --generations 1 \
   --output benchmarks/bernstein_size_change_cpu.json
 ```
+
+These measurements predate the shared backend API. To reproduce the archived
+commands above, check out revision `f52b47f`. For new runs, use the current
+`compare_backends.py`, `compare_startup.py`, or `compare_epochs.py`; both FFT
+and NUFFT are built in and no `--baseline-source` argument is accepted.
