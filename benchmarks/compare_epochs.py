@@ -90,7 +90,8 @@ def worker(args: argparse.Namespace) -> dict[str, Any]:
         )
         packages = ("jax", "jaxlib", "equinox", "lineax", "jax-finufft")
     else:
-        import torch
+        # PyTorch is installed only with the optional fastdtwf dependency group.
+        torch = importlib.import_module("torch")
 
         fast = cast(Any, importlib.import_module("fastDTWF.fastDTWF"))
         torch.set_grad_enabled(False)
