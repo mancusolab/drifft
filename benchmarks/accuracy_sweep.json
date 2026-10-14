@@ -1,0 +1,587 @@
+{
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "devices": [
+    "cpu:0"
+  ],
+  "versions": {
+    "jax": "0.11.2",
+    "jaxlib": "0.11.2",
+    "lineax": "0.1.1",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1"
+  },
+  "config": {
+    "sizes": [
+      1024,
+      10000
+    ],
+    "selections": [
+      0.0,
+      0.5
+    ],
+    "orders": [
+      8,
+      12
+    ],
+    "tail_tols": [
+      1e-08,
+      1e-12
+    ],
+    "min_mode_count": 128,
+    "block_spacing": 1.0,
+    "repeats": 5,
+    "dense_max_m": 1024,
+    "solve_max_m": 0,
+    "max_steps": 2000,
+    "seed": 17,
+    "output": "benchmarks/accuracy_sweep.json"
+  },
+  "runs": [
+    {
+      "M": 1024,
+      "s": 0.0,
+      "order": 8,
+      "tail_tol": 1e-08,
+      "plan_seconds": 0.4409997088368982,
+      "plan_bytes": 409856,
+      "block_count": 58,
+      "bucket_count": 1,
+      "node_count": 1347,
+      "fft": {
+        "compile_seconds": 0.21267966693267226,
+        "median_seconds": 0.0004766660276800394,
+        "min_seconds": 0.0004660829436033964,
+        "temporary_bytes": 591072
+      },
+      "banded": {
+        "compile_seconds": 0.09261654084548354,
+        "median_seconds": 0.003426708048209548,
+        "min_seconds": 0.0033424999564886093,
+        "temporary_bytes": 251048
+      },
+      "transpose": {
+        "compile_seconds": 0.27411133307032287,
+        "median_seconds": 0.0006178750190883875,
+        "min_seconds": 0.0006134170107543468,
+        "temporary_bytes": 2180600
+      },
+      "fft_sample_error": 5.707860354041513e-11,
+      "banded_sample_error": 1.622686080776407e-13,
+      "dense": {
+        "compile_seconds": 0.014332125196233392,
+        "median_seconds": 0.00011041690595448017,
+        "min_seconds": 8.787494152784348e-05,
+        "temporary_bytes": 0
+      }
+    },
+    {
+      "M": 1024,
+      "s": 0.5,
+      "order": 8,
+      "tail_tol": 1e-08,
+      "plan_seconds": 0.4409997088368982,
+      "plan_bytes": 409856,
+      "block_count": 58,
+      "bucket_count": 1,
+      "node_count": 1347,
+      "fft": {
+        "compile_seconds": 0.1493452498689294,
+        "median_seconds": 0.0004979579243808985,
+        "min_seconds": 0.0004830830730497837,
+        "temporary_bytes": 591072
+      },
+      "banded": {
+        "compile_seconds": 0.08295241696760058,
+        "median_seconds": 0.003751375013962388,
+        "min_seconds": 0.003484416054561734,
+        "temporary_bytes": 251048
+      },
+      "transpose": {
+        "compile_seconds": 0.23216350004076958,
+        "median_seconds": 0.0006888750940561295,
+        "min_seconds": 0.0006743748672306538,
+        "temporary_bytes": 2180600
+      },
+      "fft_sample_error": 8.063068002984272e-10,
+      "banded_sample_error": 1.278416641942575e-13,
+      "dense": {
+        "compile_seconds": 0.014424833003431559,
+        "median_seconds": 0.00010808301158249378,
+        "min_seconds": 0.00010012509301304817,
+        "temporary_bytes": 0
+      }
+    },
+    {
+      "M": 1024,
+      "s": 0.0,
+      "order": 8,
+      "tail_tol": 1e-12,
+      "plan_seconds": 0.19206079212017357,
+      "plan_bytes": 510024,
+      "block_count": 58,
+      "bucket_count": 2,
+      "node_count": 1347,
+      "fft": {
+        "compile_seconds": 0.1759241670370102,
+        "median_seconds": 0.0005573329981416464,
+        "min_seconds": 0.0005364581011235714,
+        "temporary_bytes": 691744
+      },
+      "banded": {
+        "compile_seconds": 0.08738245815038681,
+        "median_seconds": 0.003729958087205887,
+        "min_seconds": 0.003599582938477397,
+        "temporary_bytes": 308392
+      },
+      "transpose": {
+        "compile_seconds": 0.2579139999579638,
+        "median_seconds": 0.0007850409019738436,
+        "min_seconds": 0.0007209579925984144,
+        "temporary_bytes": 2420536
+      },
+      "fft_sample_error": 6.449937146594149e-12,
+      "banded_sample_error": 1.2790593853522998e-13,
+      "dense": {
+        "compile_seconds": 0.01384262484498322,
+        "median_seconds": 8.91250092536211e-05,
+        "min_seconds": 8.300016634166241e-05,
+        "temporary_bytes": 0
+      }
+    },
+    {
+      "M": 1024,
+      "s": 0.5,
+      "order": 8,
+      "tail_tol": 1e-12,
+      "plan_seconds": 0.19206079212017357,
+      "plan_bytes": 510024,
+      "block_count": 58,
+      "bucket_count": 2,
+      "node_count": 1347,
+      "fft": {
+        "compile_seconds": 0.16634895792230964,
+        "median_seconds": 0.0005695419386029243,
+        "min_seconds": 0.0005657500587403774,
+        "temporary_bytes": 691744
+      },
+      "banded": {
+        "compile_seconds": 0.08336916705593467,
+        "median_seconds": 0.0036225419025868177,
+        "min_seconds": 0.0033132079988718033,
+        "temporary_bytes": 308392
+      },
+      "transpose": {
+        "compile_seconds": 0.23675420810468495,
+        "median_seconds": 0.0008677078876644373,
+        "min_seconds": 0.0008372091688215733,
+        "temporary_bytes": 2420536
+      },
+      "fft_sample_error": 2.846390796824685e-11,
+      "banded_sample_error": 1.278416641942575e-13,
+      "dense": {
+        "compile_seconds": 0.013745666947215796,
+        "median_seconds": 0.00011112494394183159,
+        "min_seconds": 9.562494233250618e-05,
+        "temporary_bytes": 0
+      }
+    },
+    {
+      "M": 1024,
+      "s": 0.0,
+      "order": 12,
+      "tail_tol": 1e-08,
+      "plan_seconds": 0.1331405839882791,
+      "plan_bytes": 416352,
+      "block_count": 58,
+      "bucket_count": 1,
+      "node_count": 1579,
+      "fft": {
+        "compile_seconds": 0.15713070798665285,
+        "median_seconds": 0.0004972079768776894,
+        "min_seconds": 0.0004829580429941416,
+        "temporary_bytes": 592928
+      },
+      "banded": {
+        "compile_seconds": 0.09078345890156925,
+        "median_seconds": 0.0032950828317552805,
+        "min_seconds": 0.0029163749422878027,
+        "temporary_bytes": 251048
+      },
+      "transpose": {
+        "compile_seconds": 0.2742947079241276,
+        "median_seconds": 0.0006743751000612974,
+        "min_seconds": 0.0006655000615864992,
+        "temporary_bytes": 2182456
+      },
+      "fft_sample_error": 4.789292447755237e-11,
+      "banded_sample_error": 1.622686080776407e-13,
+      "dense": {
+        "compile_seconds": 0.01398354209959507,
+        "median_seconds": 0.00011670798994600773,
+        "min_seconds": 0.00010791700333356857,
+        "temporary_bytes": 0
+      }
+    },
+    {
+      "M": 1024,
+      "s": 0.5,
+      "order": 12,
+      "tail_tol": 1e-08,
+      "plan_seconds": 0.1331405839882791,
+      "plan_bytes": 416352,
+      "block_count": 58,
+      "bucket_count": 1,
+      "node_count": 1579,
+      "fft": {
+        "compile_seconds": 0.1364160841330886,
+        "median_seconds": 0.0005562498699873686,
+        "min_seconds": 0.0005386669654399157,
+        "temporary_bytes": 592928
+      },
+      "banded": {
+        "compile_seconds": 0.09194199997000396,
+        "median_seconds": 0.003635290777310729,
+        "min_seconds": 0.003562707919627428,
+        "temporary_bytes": 251048
+      },
+      "transpose": {
+        "compile_seconds": 0.25821291701868176,
+        "median_seconds": 0.0007004169747233391,
+        "min_seconds": 0.0006861670408397913,
+        "temporary_bytes": 2182456
+      },
+      "fft_sample_error": 8.063068002984272e-10,
+      "banded_sample_error": 1.278416641942575e-13,
+      "dense": {
+        "compile_seconds": 0.014358957996591926,
+        "median_seconds": 0.00010708300396800041,
+        "min_seconds": 0.00010179216042160988,
+        "temporary_bytes": 0
+      }
+    },
+    {
+      "M": 1024,
+      "s": 0.0,
+      "order": 12,
+      "tail_tol": 1e-12,
+      "plan_seconds": 0.12533670896664262,
+      "plan_bytes": 538888,
+      "block_count": 58,
+      "bucket_count": 2,
+      "node_count": 1579,
+      "fft": {
+        "compile_seconds": 0.1699057500809431,
+        "median_seconds": 0.0006294171325862408,
+        "min_seconds": 0.0006020830478519201,
+        "temporary_bytes": 718176
+      },
+      "banded": {
+        "compile_seconds": 0.08811675012111664,
+        "median_seconds": 0.0037575000897049904,
+        "min_seconds": 0.003556458977982402,
+        "temporary_bytes": 308392
+      },
+      "transpose": {
+        "compile_seconds": 0.26171512505970895,
+        "median_seconds": 0.0007708750199526548,
+        "min_seconds": 0.0007470001000910997,
+        "temporary_bytes": 2446968
+      },
+      "fft_sample_error": 7.415652089699578e-15,
+      "banded_sample_error": 1.2790593853522998e-13,
+      "dense": {
+        "compile_seconds": 0.01380324992351234,
+        "median_seconds": 0.00012700003571808338,
+        "min_seconds": 0.00010112486779689789,
+        "temporary_bytes": 0
+      }
+    },
+    {
+      "M": 1024,
+      "s": 0.5,
+      "order": 12,
+      "tail_tol": 1e-12,
+      "plan_seconds": 0.12533670896664262,
+      "plan_bytes": 538888,
+      "block_count": 58,
+      "bucket_count": 2,
+      "node_count": 1579,
+      "fft": {
+        "compile_seconds": 0.16037637507542968,
+        "median_seconds": 0.0006307919975370169,
+        "min_seconds": 0.000609041890129447,
+        "temporary_bytes": 718176
+      },
+      "banded": {
+        "compile_seconds": 0.0875162910670042,
+        "median_seconds": 0.003669374855235219,
+        "min_seconds": 0.0034365830942988396,
+        "temporary_bytes": 308392
+      },
+      "transpose": {
+        "compile_seconds": 0.26605400000698864,
+        "median_seconds": 0.0008238330483436584,
+        "min_seconds": 0.0008082499261945486,
+        "temporary_bytes": 2446968
+      },
+      "fft_sample_error": 1.8744004686098714e-14,
+      "banded_sample_error": 1.278416641942575e-13,
+      "dense": {
+        "compile_seconds": 0.014114208053797483,
+        "median_seconds": 0.00010645901784300804,
+        "min_seconds": 9.929109364748001e-05,
+        "temporary_bytes": 0
+      }
+    },
+    {
+      "M": 10000,
+      "s": 0.0,
+      "order": 8,
+      "tail_tol": 1e-08,
+      "plan_seconds": 1.3551538330502808,
+      "plan_bytes": 5251288,
+      "block_count": 275,
+      "bucket_count": 3,
+      "node_count": 12493,
+      "fft": {
+        "compile_seconds": 0.23617220809683204,
+        "median_seconds": 0.0015504169277846813,
+        "min_seconds": 0.0014932500198483467,
+        "temporary_bytes": 6063200
+      },
+      "banded": {
+        "compile_seconds": 0.09168395888991654,
+        "median_seconds": 0.08439791691489518,
+        "min_seconds": 0.08407395798712969,
+        "temporary_bytes": 824488
+      },
+      "transpose": {
+        "compile_seconds": 0.3371055000461638,
+        "median_seconds": 0.003882582997903228,
+        "min_seconds": 0.0037470839451998472,
+        "temporary_bytes": 20068984
+      },
+      "fft_sample_error": 2.8954231662792323e-10,
+      "banded_sample_error": 1.1102834287081682e-11
+    },
+    {
+      "M": 10000,
+      "s": 0.5,
+      "order": 8,
+      "tail_tol": 1e-08,
+      "plan_seconds": 1.3551538330502808,
+      "plan_bytes": 5251288,
+      "block_count": 275,
+      "bucket_count": 3,
+      "node_count": 12493,
+      "fft": {
+        "compile_seconds": 0.20833720895461738,
+        "median_seconds": 0.0016229581087827682,
+        "min_seconds": 0.0014850830193609,
+        "temporary_bytes": 6063200
+      },
+      "banded": {
+        "compile_seconds": 0.09649220900610089,
+        "median_seconds": 0.1043292919639498,
+        "min_seconds": 0.10076541686430573,
+        "temporary_bytes": 824488
+      },
+      "transpose": {
+        "compile_seconds": 0.4044374160002917,
+        "median_seconds": 0.00446758302859962,
+        "min_seconds": 0.004444333957508206,
+        "temporary_bytes": 20068984
+      },
+      "fft_sample_error": 2.0252189355783263e-10,
+      "banded_sample_error": 8.855836948200557e-12
+    },
+    {
+      "M": 10000,
+      "s": 0.0,
+      "order": 8,
+      "tail_tol": 1e-12,
+      "plan_seconds": 1.0380876660346985,
+      "plan_bytes": 6042140,
+      "block_count": 275,
+      "bucket_count": 3,
+      "node_count": 12493,
+      "fft": {
+        "compile_seconds": 0.23593316599726677,
+        "median_seconds": 0.001642458839341998,
+        "min_seconds": 0.001499915961176157,
+        "temporary_bytes": 7079200
+      },
+      "banded": {
+        "compile_seconds": 0.08848970895633101,
+        "median_seconds": 0.10691562481224537,
+        "min_seconds": 0.1056069580372423,
+        "temporary_bytes": 976040
+      },
+      "transpose": {
+        "compile_seconds": 0.3246261249296367,
+        "median_seconds": 0.004395291907712817,
+        "min_seconds": 0.004244457930326462,
+        "temporary_bytes": 21970040
+      },
+      "fft_sample_error": 1.0891120918462632e-12,
+      "banded_sample_error": 3.916807835641862e-12
+    },
+    {
+      "M": 10000,
+      "s": 0.5,
+      "order": 8,
+      "tail_tol": 1e-12,
+      "plan_seconds": 1.0380876660346985,
+      "plan_bytes": 6042140,
+      "block_count": 275,
+      "bucket_count": 3,
+      "node_count": 12493,
+      "fft": {
+        "compile_seconds": 0.21328641683794558,
+        "median_seconds": 0.0018815831281244755,
+        "min_seconds": 0.0016850410029292107,
+        "temporary_bytes": 7079200
+      },
+      "banded": {
+        "compile_seconds": 0.09209441719576716,
+        "median_seconds": 0.10841599991545081,
+        "min_seconds": 0.10662150010466576,
+        "temporary_bytes": 976040
+      },
+      "transpose": {
+        "compile_seconds": 0.3414091670420021,
+        "median_seconds": 0.004615374840795994,
+        "min_seconds": 0.004475124878808856,
+        "temporary_bytes": 21970040
+      },
+      "fft_sample_error": 6.371707517124897e-12,
+      "banded_sample_error": 3.916722274720991e-12
+    },
+    {
+      "M": 10000,
+      "s": 0.0,
+      "order": 12,
+      "tail_tol": 1e-08,
+      "plan_seconds": 0.6191177081782371,
+      "plan_bytes": 5315544,
+      "block_count": 275,
+      "bucket_count": 3,
+      "node_count": 13593,
+      "fft": {
+        "compile_seconds": 0.21798374992795289,
+        "median_seconds": 0.0018808329477906227,
+        "min_seconds": 0.0016024578362703323,
+        "temporary_bytes": 6153888
+      },
+      "banded": {
+        "compile_seconds": 0.09011016599833965,
+        "median_seconds": 0.08810900012031198,
+        "min_seconds": 0.08642950002104044,
+        "temporary_bytes": 824488
+      },
+      "transpose": {
+        "compile_seconds": 0.34706662502139807,
+        "median_seconds": 0.004307708004489541,
+        "min_seconds": 0.004181500058621168,
+        "temporary_bytes": 20108408
+      },
+      "fft_sample_error": 2.0182438154599447e-10,
+      "banded_sample_error": 1.1102834287081682e-11
+    },
+    {
+      "M": 10000,
+      "s": 0.5,
+      "order": 12,
+      "tail_tol": 1e-08,
+      "plan_seconds": 0.6191177081782371,
+      "plan_bytes": 5315544,
+      "block_count": 275,
+      "bucket_count": 3,
+      "node_count": 13593,
+      "fft": {
+        "compile_seconds": 0.22063337499275804,
+        "median_seconds": 0.0017954579088836908,
+        "min_seconds": 0.0017828750424087048,
+        "temporary_bytes": 6153888
+      },
+      "banded": {
+        "compile_seconds": 0.099621000001207,
+        "median_seconds": 0.08992904191836715,
+        "min_seconds": 0.08827062509953976,
+        "temporary_bytes": 824488
+      },
+      "transpose": {
+        "compile_seconds": 0.33508137497119606,
+        "median_seconds": 0.004025124944746494,
+        "min_seconds": 0.003950334154069424,
+        "temporary_bytes": 20108408
+      },
+      "fft_sample_error": 1.644698901240796e-10,
+      "banded_sample_error": 8.855836948200557e-12
+    },
+    {
+      "M": 10000,
+      "s": 0.0,
+      "order": 12,
+      "tail_tol": 1e-12,
+      "plan_seconds": 0.43385999999009073,
+      "plan_bytes": 6104076,
+      "block_count": 275,
+      "bucket_count": 3,
+      "node_count": 13593,
+      "fft": {
+        "compile_seconds": 0.21883108303882182,
+        "median_seconds": 0.0019708750769495964,
+        "min_seconds": 0.0018137500155717134,
+        "temporary_bytes": 7145440
+      },
+      "banded": {
+        "compile_seconds": 0.09719216707162559,
+        "median_seconds": 0.10948820784687996,
+        "min_seconds": 0.10748849995434284,
+        "temporary_bytes": 976040
+      },
+      "transpose": {
+        "compile_seconds": 0.354653833899647,
+        "median_seconds": 0.0044559158850461245,
+        "min_seconds": 0.004295415943488479,
+        "temporary_bytes": 22001208
+      },
+      "fft_sample_error": 1.750489543214523e-14,
+      "banded_sample_error": 3.916807835641862e-12
+    },
+    {
+      "M": 10000,
+      "s": 0.5,
+      "order": 12,
+      "tail_tol": 1e-12,
+      "plan_seconds": 0.43385999999009073,
+      "plan_bytes": 6104076,
+      "block_count": 275,
+      "bucket_count": 3,
+      "node_count": 13593,
+      "fft": {
+        "compile_seconds": 0.22343920799903572,
+        "median_seconds": 0.0019400829914957285,
+        "min_seconds": 0.0018584588542580605,
+        "temporary_bytes": 7145440
+      },
+      "banded": {
+        "compile_seconds": 0.09691941714845598,
+        "median_seconds": 0.11384462495334446,
+        "min_seconds": 0.10995391593314707,
+        "temporary_bytes": 976040
+      },
+      "transpose": {
+        "compile_seconds": 0.33705120789818466,
+        "median_seconds": 0.005008042091503739,
+        "min_seconds": 0.004736125003546476,
+        "temporary_bytes": 22001208
+      },
+      "fft_sample_error": 2.4203045491441125e-14,
+      "banded_sample_error": 3.916722274720991e-12
+    }
+  ],
+  "process_peak_rss_native_units": 771211264,
+  "rss_units": "bytes"
+}

@@ -1,0 +1,67 @@
+# Functional Core: invalid configuration contracts.
+import jax
+import jax.numpy as jnp
+import pytest
+
+import drifft as wf
+
+jax.config.update("jax_enable_x64", True)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"gene_copies": 1},
+        {"gene_copies": 16.5},
+        {"gene_copies": True},
+        {"gene_copies": 16, "tail_tol": 0},
+        {"gene_copies": 16, "tail_tol": float("nan")},
+        {"gene_copies": 16, "interp_order": 3},
+        {"gene_copies": 16, "min_mode_count": 0},
+        {"gene_copies": 16, "block_spacing": 0},
+        {"gene_copies": 16, "dtype": jnp.float32},
+    ],
+)
+def test_invalid_plan(kwargs):
+    with pytest.raises(ValueError):
+        wf.build_transition_plan(**kwargs)
+
+
+def test_shapes_and_solver_options():
+    with pytest.raises(TypeError):
+        wf.build_transition_plan(16, balance="yes")  # ty: ignore[invalid-argument-type] -- deliberate invalid input
+    plan = wf.build_transition_plan(16)
+    with pytest.raises(ValueError):
+        wf.expected_next_values(plan, 0.0, jnp.ones(16))
+    with pytest.raises(ValueError):
+        wf.expected_segregating_values(plan, 0.0, jnp.ones(16))
+    with pytest.raises(ValueError):
+        wf.expected_visits(plan, 0.0, solver="cg")  # ty: ignore[invalid-argument-type] -- unsupported solver
+    with pytest.raises(ValueError):
+        wf.expected_visits(plan, 0.0, max_steps=0)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"rtol": float("inf")},
+        {"atol": float("inf")},
+        {"max_steps": 1.5},
+        {"max_steps": True},
+        {"restart": 2.5},
+    ],
+)
+def test_solver_rejects_invalid_static_options(options):
+    plan = wf.build_transition_plan(16)
+    with pytest.raises(ValueError, match="finite|integer"):
+        wf.expected_visits(plan, jnp.asarray(0.0), **options)
+
+
+def test_plan_constructor_rejects_inconsistent_metadata():
+    from dataclasses import replace
+
+    plan = wf.build_transition_plan(512)
+    with pytest.raises(ValueError, match="boundary_width"):
+        replace(plan, boundary_width=plan.boundary_width + 1)
+    with pytest.raises(ValueError, match="block metadata"):
+        replace(plan, offsets=plan.offsets[:-1])

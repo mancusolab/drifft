@@ -1,0 +1,35 @@
+[project]
+name = "drifft"
+version = "0.1.0"
+description = "Local log-odds FFT Wright–Fisher operators in JAX"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["jax>=0.4.38", "equinox>=0.11.12", "lineax>=0.0.8", "numpy>=1.26", "scipy>=1.12"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/benchmarks", "/README.md", "/pyproject.toml", "/uv.lock"]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.11", "ty>=0.0.1", "pre-commit>=4"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: large numerical validation"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+extend-exclude = ["jaxqtl"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.ty.src]
+include = ["src", "tests", "benchmarks"]
+
+[tool.ty.environment]
+python-version = "3.11"
