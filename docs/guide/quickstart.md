@@ -13,7 +13,7 @@ jax.config.update("jax_enable_x64", True)
 # 2,000 gene copies represent 1,000 diploid individuals.
 backend = drifft.FFT(gene_copies=2000)
 transition = drifft.Transition(
-    backend, selection=drifft.Underdominance(strength=0.01)
+    backend, frequency_map=drifft.Underdominance(strength=0.01)
 )
 
 # Start with one mutant copy and reuse the compiled operation across generations.

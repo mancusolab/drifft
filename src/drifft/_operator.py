@@ -1,7 +1,6 @@
-"""Reusable selection models and matrix-free transition operations."""
+"""Matrix-free transition operations driven by frequency maps."""
 
-# Functional Core: pure operations over a prepared transition backend.
-from collections.abc import Callable
+# pattern: Functional Core; pure operations over a prepared transition backend.
 from typing import Literal, final
 
 import equinox as eqx
@@ -9,63 +8,35 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 
+from ._frequency import AbstractFrequencyMap
 from ._solve import ExpectedVisitsResult, _solve_expected_visits
 from .backends import AbstractTransitionBackend
 
 
 @final
-class Underdominance(eqx.Module):
-    r"""Symmetric heterozygote disadvantage, callable on allele frequencies.
-
-    **Arguments:**
-
-    - `strength`: Scalar selection coefficient in `[0, 1]`, converted to a
-      float64 JAX leaf. Changing its value does not change model structure.
-
-    **Failure Modes:**
-
-    Frequencies and strength must lie in `[0, 1]`; these are caller preconditions.
-    Non-scalar strength raises `ValueError`. Keep x64 enabled.
-    """
-
-    strength: jax.Array = eqx.field(
-        converter=lambda x: jnp.asarray(x, dtype=jnp.float64)
-    )
-
-    def __check_init__(self) -> None:
-        """Require scalar selection without inspecting traced values."""
-        if self.strength.ndim != 0:
-            raise ValueError("strength must be scalar")
-
-    def __call__(self, frequencies: jax.Array) -> jax.Array:
-        """Return offspring probabilities with the same shape as frequencies."""
-        disadvantage = self.strength * frequencies * (1 - frequencies)
-        return (frequencies - disadvantage) / (1 - 2 * disadvantage)
-
-
-@final
 class Transition(eqx.Module):
-    r"""A reusable backend combined with a selection model or explicit probabilities.
+    r"""A reusable backend combined with a frequency map or explicit probabilities.
 
     **Arguments:**
 
     - `backend`: Geometry for the destination population, prepared outside JIT.
-    - `selection`: A JAX-compatible callable mapping source frequencies to
-      offspring probabilities. Equinox models keep numeric parameters dynamic.
+    - `frequency_map`: An `AbstractFrequencyMap` mapping source frequencies to
+      offspring probabilities. Wrap custom functions in `FrequencyMap`.
     - `source_gene_copies`: Source population size; defaults to the backend's size.
-    - `probabilities`: Alternative to selection; normally supplied through
+    - `probabilities`: Alternative to `frequency_map`; normally supplied through
       `Transition.from_probabilities`. Each entry defines one source row.
 
     **Returns:**
 
     An immutable PyTree. Construction binds existing geometry without rebuilding
-    it. Selection probabilities are evaluated during application, so updates and
+    it. Offspring probabilities are evaluated during application, so updates and
     differentiation through model parameters cannot use a stale cached vector.
 
     **Raises:**
 
     `ValueError` for ambiguous configuration, invalid source dimensions, or an
-    empty/non-vector probability array; `TypeError` for non-callable selection.
+    empty/non-vector probability array; `TypeError` for a map not implementing
+    `AbstractFrequencyMap`.
 
     **Failure Modes:**
 
@@ -78,21 +49,21 @@ class Transition(eqx.Module):
     """
 
     backend: AbstractTransitionBackend
-    selection: Callable[[jax.Array], jax.Array] | None
+    frequency_map: AbstractFrequencyMap | None
     _probabilities: jax.Array | None
     source_gene_copies: int = eqx.field(static=True)
 
     def __init__(
         self,
         backend: AbstractTransitionBackend,
-        selection: Callable[[jax.Array], jax.Array] | None = None,
+        frequency_map: AbstractFrequencyMap | None = None,
         *,
         source_gene_copies: int | None = None,
         probabilities: jax.Array | None = None,
     ) -> None:
-        """Bind destination geometry and either a selection model or explicit rows."""
+        """Bind destination geometry and either a frequency map or explicit rows."""
         self.backend = backend
-        self.selection = selection
+        self.frequency_map = frequency_map
         self._probabilities = (
             None
             if probabilities is None
@@ -109,19 +80,19 @@ class Transition(eqx.Module):
 
     def __check_init__(self) -> None:
         """Validate static dimensions and mutually exclusive construction modes."""
-        if (self.selection is None) == (self._probabilities is None):
-            raise ValueError("Provide exactly one of selection or probabilities")
+        if (self.frequency_map is None) == (self._probabilities is None):
+            raise ValueError("Provide exactly one of frequency_map or probabilities")
         if not isinstance(self.source_gene_copies, int) or isinstance(
             self.source_gene_copies, bool
         ):
             raise ValueError("source_gene_copies must be an integer")
-        if self.selection is not None:
-            if not callable(self.selection):
-                raise TypeError("selection must be callable")
-            if self.source_gene_copies < 2:
-                raise ValueError(
-                    "source_gene_copies must be >= 2 for a selection model"
+        if self.frequency_map is not None:
+            if not isinstance(self.frequency_map, AbstractFrequencyMap):
+                raise TypeError(
+                    "frequency_map must be an AbstractFrequencyMap; wrap functions in FrequencyMap"
                 )
+            if self.source_gene_copies < 2:
+                raise ValueError("source_gene_copies must be >= 2 for a frequency map")
         elif self._probabilities is not None:
             if self._probabilities.ndim != 1 or self._probabilities.size == 0:
                 raise ValueError("probabilities must be a nonempty vector")
@@ -142,18 +113,20 @@ class Transition(eqx.Module):
 
     @property
     def probabilities(self) -> jax.Array:
-        """Evaluate the selection model on the source grid, or return supplied rows."""
+        """Evaluate the frequency map on the source grid, or return supplied rows."""
         if self._probabilities is not None:
             return self._probabilities
-        assert self.selection is not None
+        assert self.frequency_map is not None
         frequencies = (
             jnp.arange(self.source_gene_copies + 1, dtype=jnp.float64)
             / self.source_gene_copies
         )
-        probabilities = jnp.asarray(self.selection(frequencies), dtype=jnp.float64)
+        probabilities = jnp.asarray(
+            self.frequency_map.apply(frequencies), dtype=jnp.float64
+        )
         if probabilities.shape != frequencies.shape:
             raise ValueError(
-                "selection must return one probability per source frequency"
+                "frequency_map must return one probability per source frequency"
             )
         return probabilities
 
@@ -243,8 +216,8 @@ class Transition(eqx.Module):
         """Solve expected interior visits from one copy, including generation zero.
 
         Requires a square, constant-size transition on a complete allele-count
-        grid. Visits end at the first endpoint hit, even if a custom selection
-        map would otherwise permit leaving endpoints. The chain must eventually
+        grid. Visits end at the first endpoint hit, even if a custom frequency map
+        would otherwise permit leaving endpoints. The chain must eventually
         hit an endpoint for finite visits to exist.
 
         Solver controls and failure diagnostics are preserved in the returned

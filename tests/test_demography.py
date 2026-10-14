@@ -41,7 +41,7 @@ def test_demographic_evaluation_matches_dense_boundary_history(
     """Hold the source size and change only on the final interval generation."""
     history = drifft.Demography(ne=sizes, generations=durations)
     model = drifft.DemographicTransition(
-        history, backend=backend, selection=drifft.Underdominance(0.07)
+        history, backend=backend, frequency_map=drifft.Underdominance(0.07)
     )
     matrix = jnp.eye(2 * sizes[0] + 1)
     for source, destination, duration in zip(
@@ -68,14 +68,14 @@ def test_demographic_selection_gradient_and_batching(backend):
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5, 11], [3, 2]),
         backend=backend,
-        selection=drifft.Underdominance(0.07),
+        frequency_map=drifft.Underdominance(0.07),
     )
     initial = jnp.eye(17)[3]
     values = jnp.sin(jnp.arange(23))
 
     def objective(strength):
         """Replace selection while reusing the prepared geometry."""
-        updated = eqx.tree_at(lambda m: m.selection.strength, model, strength)
+        updated = eqx.tree_at(lambda m: m.frequency_map.strength, model, strength)
         return updated.advance(initial) @ values
 
     def reference(strength):
@@ -150,7 +150,7 @@ def test_demographic_methods_reject_wrong_shape(method, size):
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5], [2]),
         backend=drifft.FFT,
-        selection=drifft.Underdominance(0.07),
+        frequency_map=drifft.Underdominance(0.07),
     )
     with pytest.raises(ValueError):
         getattr(model, method)(jnp.ones(size))

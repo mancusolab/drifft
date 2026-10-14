@@ -9,6 +9,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
+from ._frequency import AbstractFrequencyMap
 from ._operator import Transition
 from .backends import AbstractTransitionBackend
 
@@ -89,32 +90,33 @@ class Demography(eqx.Module):
 
 @final
 class DemographicTransition(eqx.Module):
-    r"""Prepared evolution through a demography under a shared selection model.
+    r"""Prepared evolution through a demography under a shared frequency map.
 
     **Arguments:**
 
     - `demography`: Population history with size changes at interval endpoints.
     - `backend`: Callable taking a gene-copy count and returning prepared geometry,
       such as `FFT`, `NUFFT`, or `functools.partial(NUFFT, accuracy=1e-11)`.
-    - `selection`: JAX-compatible frequency-to-probability map used at every
-      generation. Equinox selection models keep their parameters differentiable.
+    - `frequency_map`: An `AbstractFrequencyMap` used at every generation.
+      Its Equinox array parameters remain differentiable. Wrap custom functions
+      in `FrequencyMap`, and combine processes with `Composition`.
 
     **Returns:**
 
     An immutable PyTree. Construct outside JIT: one backend is built per distinct
-    population size. Geometry is independent of selection. Public numerical
+    population size. Geometry is independent of the frequency map. Public numerical
     methods compile automatically, and fixed-length loops support reverse-mode
-    differentiation through selection. Changing the schedule may recompile.
+    differentiation through its parameters. Changing the schedule may recompile.
 
     **Raises:**
 
-    `TypeError` for invalid history, selection, or backend factory results;
+    `TypeError` for invalid history, frequency map, or backend factory results;
     `ValueError` if a factory returns geometry with the wrong gene-copy count.
     Backend construction can also raise its documented configuration errors.
 
     **Failure Modes:**
 
-    Enable JAX x64. Selection must return one finite probability in `[0, 1]` per
+    Enable JAX x64. The map must return one finite probability in `[0, 1]` per
     source frequency. No clipping, renormalization, or equilibrium solve occurs.
     Backend approximation errors can accumulate over generations; derivative
     accuracy retains the chosen backend's limitations. Reverse-mode memory can
@@ -122,7 +124,7 @@ class DemographicTransition(eqx.Module):
     """
 
     demography: Demography
-    selection: Callable[[jax.Array], jax.Array]
+    frequency_map: AbstractFrequencyMap
     _sizes: tuple[int, ...]
     _backends: tuple[AbstractTransitionBackend, ...]
 
@@ -131,15 +133,19 @@ class DemographicTransition(eqx.Module):
         demography: Demography,
         *,
         backend: Callable[[int], AbstractTransitionBackend],
-        selection: Callable[[jax.Array], jax.Array],
+        frequency_map: AbstractFrequencyMap,
     ) -> None:
         """Prepare each distinct population geometry once, outside transformations."""
         if not isinstance(demography, Demography):
             raise TypeError("demography must be a Demography")
-        if not callable(selection) or not callable(backend):
-            raise TypeError("selection and backend must be callable")
+        if not isinstance(frequency_map, AbstractFrequencyMap):
+            raise TypeError(
+                "frequency_map must be an AbstractFrequencyMap; wrap functions in FrequencyMap"
+            )
+        if not callable(backend):
+            raise TypeError("backend must be callable")
         self.demography = demography
-        self.selection = selection
+        self.frequency_map = frequency_map
         self._sizes = tuple(dict.fromkeys(demography.ne))
         self._backends = tuple(backend(2 * size) for size in self._sizes)
 
@@ -152,10 +158,10 @@ class DemographicTransition(eqx.Module):
                 raise ValueError("backend must preserve the requested gene-copy count")
 
     def _transition(self, source_ne: int, destination_ne: int) -> Transition:
-        """Bind current selection to existing geometry without caching probabilities."""
+        """Bind the current frequency map to existing geometry without caching probabilities."""
         return Transition(
             self._backends[self._sizes.index(destination_ne)],
-            self.selection,
+            self.frequency_map,
             source_gene_copies=2 * source_ne,
         )
 

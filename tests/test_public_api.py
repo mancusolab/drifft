@@ -18,7 +18,9 @@ def test_transition_api_keywords_under_jit():
     assert isinstance(backend, drifft.NUFFT)
     assert backend.gene_copies == 512
     values = jnp.linspace(-1.0, 1.0, 513)
-    model = drifft.Transition(backend, selection=drifft.Underdominance(strength=0.1))
+    model = drifft.Transition(
+        backend, frequency_map=drifft.Underdominance(strength=0.1)
+    )
     actual = model.expect(values=values)
     frequency = np.arange(513) / 512
     probabilities = (frequency - 0.1 * frequency * (1 - frequency)) / (
@@ -66,7 +68,7 @@ def test_direct_methods_compile_once_for_dynamic_inputs(backend_type, method_nam
         traces.append(1)
         return frequencies**2
 
-    transition = drifft.Transition(backend_type(32), selection)
+    transition = drifft.Transition(backend_type(32), drifft.FrequencyMap(selection))
     method = getattr(transition, method_name)
     size = 31 if method_name.endswith("segregating") else 33
     vector = jnp.linspace(0.1, 0.9, size)

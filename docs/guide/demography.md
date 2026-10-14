@@ -1,7 +1,7 @@
 # Demographic histories
 
 `Demography` describes population sizes and timing. `DemographicTransition`
-combines that history with a numerical backend and a shared selection model.
+combines that history with a numerical backend and a shared frequency map.
 It evaluates allele-count distributions deterministically.
 
 ```python
@@ -19,7 +19,7 @@ history = drifft.Demography(
 model = drifft.DemographicTransition(
     history,
     backend=drifft.FFT,
-    selection=drifft.Underdominance(0.01),
+    frequency_map=drifft.Underdominance(0.01),
 )
 initial = jnp.zeros(2 * history.initial_ne + 1).at[1].set(1.0)
 final = model.advance(initial)
@@ -63,14 +63,14 @@ its output has `2 * history.initial_ne + 1` entries. It is the adjoint of
 `.advance()`, not backward population evolution. Both methods accept signed
 vectors and leave inputs unchanged; neither clips nor renormalizes outputs.
 
-Selection applies on the source frequency grid at every generation, including
+The frequency map applies on the source grid at every generation, including
 size changes. Update an Equinox selection model without rebuilding geometry:
 
 ```python
 terminal_frequency = jnp.linspace(0.0, 1.0, 2 * history.final_ne + 1)
 
 def expected_frequency(strength):
-    updated = eqx.tree_at(lambda m: m.selection.strength, model, strength)
+    updated = eqx.tree_at(lambda m: m.frequency_map.strength, model, strength)
     return updated.advance(initial) @ terminal_frequency
 
 gradient = jax.grad(expected_frequency)(jnp.asarray(0.01))
@@ -93,12 +93,13 @@ from functools import partial
 spectral_model = drifft.DemographicTransition(
     history,
     backend=partial(drifft.NUFFT, accuracy=1e-11, derivative_accuracy=True),
-    selection=drifft.Underdominance(0.01),
+    frequency_map=drifft.Underdominance(0.01),
 )
 ```
 
-The current API uses one selection callable throughout the history and returns
-only the final distribution. Each generation inherits the chosen backend's
+The current API uses one frequency map throughout the history and returns
+only the final distribution. Use [frequency-map composition](transitions.md#selection-and-mutation)
+to combine selection and mutation in an explicit order. Each generation inherits the chosen backend's
 approximation and derivative limitations; errors can accumulate over long
 histories. See [numerical accuracy](numerics.md). Small dense-reference tests
 validate timing and gradients; they do not establish accuracy or performance

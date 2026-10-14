@@ -51,7 +51,7 @@ def run_worker(args: argparse.Namespace) -> None:
         )
         jax_mass = jnp.full(gene_copies + 1, 1.0 / (gene_copies + 1), dtype=jnp.float64)
         transition = drifft.Transition(
-            backend, selection=drifft.Underdominance(selection)
+            backend, frequency_map=drifft.Underdominance(selection)
         )
         jax.block_until_ready((transition, jax_mass))
 

@@ -17,7 +17,7 @@ def test_selection_model_and_both_transition_directions():
     """Match underdominance expectations and propagation to dense references."""
     backend = drifft.NUFFT(16)
     transition = drifft.Transition(
-        backend, selection=drifft.Underdominance(strength=0.1)
+        backend, frequency_map=drifft.Underdominance(strength=0.1)
     )
     x = np.arange(17) / 16
     p = (x - 0.1 * x * (1 - x)) / (1 - 0.2 * x * (1 - x))
@@ -64,7 +64,7 @@ def test_custom_selection_and_rectangular_source_size():
     """Apply arbitrary selection callables on the requested source grid."""
     backend = drifft.NUFFT(8)
     transition = drifft.Transition(
-        backend, selection=lambda x: x**2, source_gene_copies=4
+        backend, frequency_map=drifft.FrequencyMap(lambda x: x**2), source_gene_copies=4
     )
     np.testing.assert_allclose(transition.probabilities, (np.arange(5) / 4) ** 2)
     np.testing.assert_allclose(
@@ -77,7 +77,7 @@ def test_custom_selection_and_rectangular_source_size():
 def test_parameters_are_dynamic_and_not_stale_cached_probabilities():
     """Reuse compiled calls while selection parameters change as dynamic leaves."""
     backend = drifft.NUFFT(512)
-    transition = drifft.Transition(backend, selection=drifft.Underdominance(0.1))
+    transition = drifft.Transition(backend, frequency_map=drifft.Underdominance(0.1))
     traces = []
 
     @eqx.filter_jit
@@ -88,7 +88,7 @@ def test_parameters_are_dynamic_and_not_stale_cached_probabilities():
 
     values = jnp.sin(jnp.arange(513))
     first = expect(transition, values)
-    changed = drifft.Transition(backend, selection=drifft.Underdominance(0.2))
+    changed = drifft.Transition(backend, frequency_map=drifft.Underdominance(0.2))
     second = expect(changed, values)
     assert len(traces) == 1
     assert not np.allclose(first, second)
@@ -150,7 +150,9 @@ def test_custom_model_gradients_through_advance_and_batched_solves():
         # Construct the callable inside differentiation so its parameter stays
         # connected to the outer trace rather than a precomputed probability map.
         """Return the propagated mean count for a custom selection model."""
-        model = drifft.Transition(backend, selection=lambda x: x + bias * x * (1 - x))
+        model = drifft.Transition(
+            backend, frequency_map=drifft.FrequencyMap(lambda x: x + bias * x * (1 - x))
+        )
         return model.advance(mass) @ jnp.arange(17, dtype=jnp.float64)
 
     derivative = jax.jit(jax.grad(mean_next_count))(jnp.asarray(0.02))
@@ -173,9 +175,9 @@ def test_transition_shape_errors_are_explicit():
     with pytest.raises(ValueError, match="interior"):
         model.advance_segregating(jnp.ones(16))
     with pytest.raises(ValueError, match="probability"):
-        drifft.Transition(backend, selection=lambda x: jnp.asarray(0.5)).expect(
-            jnp.ones(17)
-        )
+        drifft.Transition(
+            backend, frequency_map=drifft.FrequencyMap(lambda x: jnp.asarray(0.5))
+        ).expect(jnp.ones(17))
     with pytest.raises(ValueError, match="exactly one"):
         drifft.Transition(
             backend, drifft.Underdominance(0.0), probabilities=jnp.linspace(0, 1, 17)

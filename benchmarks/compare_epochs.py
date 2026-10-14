@@ -55,7 +55,7 @@ def run_worker(args: argparse.Namespace) -> dict[str, Any]:
             )
         transition = drifft.Transition(
             backend,
-            selection=drifft.Underdominance(strength),
+            frequency_map=drifft.Underdominance(strength),
             source_gene_copies=source,
         )
         mass = jnp.full(source + 1, 1 / (source + 1), dtype=jnp.float64)
