@@ -21,7 +21,7 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/benchmarks", "/README.md", "/pyproject.toml", "/uv.lock"]
+include = ["/src", "/tests", "/benchmarks", "/docs", "/README.md", "/pyproject.toml", "/uv.lock"]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.11", "ty>=0.0.1", "pre-commit>=4"]
