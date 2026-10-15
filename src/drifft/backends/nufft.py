@@ -15,7 +15,17 @@ from ._spectral import _evaluate, compute_cosine_coefficients, sample_bernstein
 
 @final
 class NUFFT(AbstractTransitionBackend):
-    r"""Compact geometry prepared by `NUFFT` outside JIT.
+    r"""Binomial expectations through Chebyshev approximation and NUFFT evaluation.
+
+    The binomial expectation is sampled at fixed Chebyshev–Lobatto nodes and
+    expanded in cosine modes. NUFFT evaluation then supplies expectations at
+    arbitrary offspring probabilities without storing the transition matrix.
+
+    **Arguments:**
+
+    See `__init__` for `gene_copies`, approximation tolerances, `batch_size`,
+    `derivative_accuracy`, and `dtype`. The destination size and accuracy controls
+    determine the fixed polynomial degree and sampling stencil dimensions.
 
     **Returns:**
 
@@ -29,6 +39,10 @@ class NUFFT(AbstractTransitionBackend):
 
     Construct outside JIT. Invalid structural metadata raises `ValueError`. FINUFFT's
     requested tolerance is not a rigorous operator-norm error certificate.
+    Finite inputs and probabilities in `[0, 1]` are unchecked preconditions.
+    Approximation bounds do not certify derivatives or total floating-point error;
+    results can vary across devices and FINUFFT configurations. Outputs are not
+    clipped or normalized. Use `Transition` for automatically compiled application.
     """
 
     nodes: jax.Array
@@ -71,8 +85,9 @@ class NUFFT(AbstractTransitionBackend):
 
         **Returns:**
 
-        Selection-independent geometry. The value budget is split equally between
-        spectral error, sampling error, requested NUFFT tolerance and roundoff.
+        `None`. Initializes selection-independent geometry. The value budget is
+        split equally between spectral error, sampling error, requested NUFFT
+        tolerance and roundoff.
         Roundoff and actual NUFFT error must still be measured independently.
 
         **Raises:**
@@ -161,27 +176,24 @@ class NUFFT(AbstractTransitionBackend):
 
     @property
     def stencil_width(self) -> int:
-        """Maximum padded stencil width, including masked off-grid entries."""
+        r"""Padded sampling width `2 * radius + 1`, including masked off-grid entries."""
         return 2 * self.radius + 1
 
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
-        r"""Evaluate expectations using fixed binomial sampling and cosine modes.
+        r"""Compute binomial expectations using Chebyshev sampling and NUFFT.
 
         **Arguments:**
 
-        - `probabilities`: Finite one-dimensional source probabilities in `[0, 1]`.
-        - `values`: Destination vector of length `gene_copies + 1`.
+        - `probabilities`: Float64 vector of finite source probabilities in `[0, 1]`.
+        - `values`: Finite float64 destination vector of length `gene_copies + 1`.
 
         **Returns:**
 
-        Float64 expectations with the same shape as `probabilities`. The map is
-        linear in `values`; its transpose advances mass without renormalization.
+        A float64 vector with the same shape as `probabilities`, linear in `values`.
 
         **Raises:**
 
-        `ValueError` for incompatible shapes, including during JIT tracing.
-        Valid probability ranges are caller preconditions. Accuracy settings
-        bound approximation components, not the complete floating-point error.
+        `ValueError` for incompatible vector shapes, including during JIT tracing.
         """
         if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:
             raise ValueError(

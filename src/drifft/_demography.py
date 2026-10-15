@@ -74,23 +74,28 @@ class Demography(eqx.Module):
 
     @property
     def initial_ne(self) -> int:
-        """Return the initial diploid population size."""
+        r"""Initial diploid effective population size, `ne[0]`, as a Python integer."""
         return self.ne[0]
 
     @property
     def final_ne(self) -> int:
-        """Return the final diploid population size."""
+        r"""Final diploid effective population size, `ne[-1]`, as a Python integer."""
         return self.ne[-1]
 
     @property
     def total_generations(self) -> int:
-        """Return the total number of Wright–Fisher generations evaluated."""
+        r"""Total interval duration as a Python integer; zero for an identity history."""
         return sum(self.generations)
 
 
 @final
 class DemographicTransition(eqx.Module):
     r"""Prepared evolution through a demography under a shared frequency map.
+
+    Let $P_{a,b}$ map population size $a$ to $b$. An interval of $g$ generations
+    has expectation operator $A=P_{a,a}^{g-1}P_{a,b}$: hold the source size, then
+    change size on the final generation. Across intervals, `expect` applies the
+    product of these operators; `advance` applies its transpose to initial mass.
 
     **Arguments:**
 
@@ -116,8 +121,10 @@ class DemographicTransition(eqx.Module):
 
     **Failure Modes:**
 
-    Enable JAX x64. The map must return one finite probability in `[0, 1]` per
-    source frequency. No clipping, renormalization, or equilibrium solve occurs.
+    Enable JAX x64. Input vectors must be finite; the map must return one finite
+    probability in `[0, 1]` per source frequency. These are unchecked value
+    preconditions. Inputs are unchanged; no clipping, renormalization, or
+    equilibrium solve occurs. Roundoff can vary across devices.
     Backend approximation errors can accumulate over generations; derivative
     accuracy retains the chosen backend's limitations. Reverse-mode memory can
     grow with history length. Only the final distribution is returned.
@@ -135,7 +142,23 @@ class DemographicTransition(eqx.Module):
         backend: Callable[[int], AbstractTransitionBackend],
         frequency_map: AbstractFrequencyMap,
     ) -> None:
-        """Prepare each distinct population geometry once, outside transformations."""
+        r"""Prepare the demographic transition outside JIT.
+
+        **Arguments:**
+
+        - `demography`: Validated population history.
+        - `backend`: Factory from a gene-copy count to an `AbstractTransitionBackend`.
+        - `frequency_map`: `AbstractFrequencyMap` shared by all generations.
+
+        **Returns:**
+
+        `None`. Prepares one backend per distinct population size.
+
+        **Raises:**
+
+        `TypeError` for invalid argument or factory-result types; `ValueError` for
+        a backend with the wrong size. Backend construction errors propagate.
+        """
         if not isinstance(demography, Demography):
             raise TypeError("demography must be a Demography")
         if not isinstance(frequency_map, AbstractFrequencyMap):
@@ -167,20 +190,20 @@ class DemographicTransition(eqx.Module):
 
     @eqx.filter_jit
     def advance(self, distribution: jax.Array) -> jax.Array:
-        r"""Propagate initial mass to the final generation boundary.
+        r"""Propagate mass to the final generation boundary.
 
         **Arguments:**
 
-        - `distribution`: Vector of length `2 * demography.initial_ne + 1`.
+        - `distribution`: Finite real vector of length `2 * demography.initial_ne + 1`,
+          converted to float64. Signed entries are supported.
 
         **Returns:**
 
-        Float64 vector of length `2 * demography.final_ne + 1`. Signed mass is
-        supported; the input is neither mutated nor normalized.
+        A float64 vector of length `2 * demography.final_ne + 1`.
 
         **Raises:**
 
-        `ValueError` if the input does not match the initial population grid.
+        `ValueError` for incompatible input or map-output shapes.
         """
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
         if distribution.shape != (2 * self.demography.initial_ne + 1,):
@@ -205,20 +228,20 @@ class DemographicTransition(eqx.Module):
 
     @eqx.filter_jit
     def expect(self, values: jax.Array) -> jax.Array:
-        r"""Evaluate terminal values conditional on each initial allele count.
+        r"""Compute terminal-value expectations at the initial boundary.
 
         **Arguments:**
 
-        - `values`: Vector of length `2 * demography.final_ne + 1`.
+        - `values`: Finite real vector of length `2 * demography.final_ne + 1`,
+          converted to float64. Signed entries are supported.
 
         **Returns:**
 
-        Float64 expectations of length `2 * demography.initial_ne + 1`.
-        This is the adjoint of `advance`, not evolution backward in time.
+        A float64 vector of length `2 * demography.initial_ne + 1`.
 
         **Raises:**
 
-        `ValueError` if the input does not match the final population grid.
+        `ValueError` for incompatible input or map-output shapes.
         """
         values = jnp.asarray(values, dtype=jnp.float64)
         if values.shape != (2 * self.demography.final_ne + 1,):

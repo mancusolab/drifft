@@ -1,6 +1,8 @@
 # Transitions and frequency maps
 
 The [quickstart](quickstart.md) constructs a backend and binds it to a transition.
+The [model guide](model.md) explains the binomial kernel, selection and mutation
+equations, and the relationship between propagation and expectations.
 
 Build the backend once and reuse it across transitions. `Transition` binds the backend
 without rebuilding it. Frequency-map parameters are dynamic array leaves, while

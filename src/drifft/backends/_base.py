@@ -8,33 +8,49 @@ import jax
 
 
 class AbstractTransitionBackend(eqx.Module):
-    """Prepared destination geometry with a linear expectation operation.
+    r"""Interface for prepared geometry with a linear expectation operation.
 
-    Construct concrete backends outside JIT. Array fields remain dynamic leaves;
-    shapes and algorithm choices are static. Probabilities must be finite and in
-    [0, 1]. Implementations must preserve linearity in values and support its
-    transpose, JVPs, VJPs, and batching. No clipping or normalization is allowed.
+    For destination gene-copy count $M$ and values $v_j$, backends evaluate the
+    binomial expectation
+
+    $$B_M[v](q)=\sum_{j=0}^{M}\binom{M}{j}q^j(1-q)^{M-j}v_j.$$
+
+    **Arguments:**
+
+    Concrete constructors define their own geometry controls. Implementations
+    provide `gene_copies`, the integer destination gene-copy count, and `expect`.
+
+    **Returns:**
+
+    A backend implementing expectations linear in destination values, with
+    transposition, JVP, VJP, and batching support. Construct concrete geometry
+    outside JIT; arrays remain dynamic leaves and dimensions remain static.
+
+    **Failure Modes:**
+
+    Finite inputs and probabilities in `[0, 1]` are caller preconditions.
+    Concrete implementations document approximation and derivative limitations.
+    No clipping or normalization is allowed; roundoff can vary across devices.
+    Backend methods are not JIT-decorated; `Transition` provides compiled calls.
     """
 
     gene_copies: eqx.AbstractVar[int]
 
     @abstractmethod
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
-        r"""Map destination values to expectations at arbitrary source probabilities.
+        r"""Compute binomial expectations at the supplied probabilities.
 
         **Arguments:**
 
-        - `probabilities`: A vector of finite probabilities in `[0, 1]`.
-        - `values`: A float64 destination vector of length `gene_copies + 1`.
+        - `probabilities`: Float64 vector of finite source probabilities in `[0, 1]`.
+        - `values`: Finite float64 destination vector of length `gene_copies + 1`.
 
         **Returns:**
 
-        A vector shaped like `probabilities`, linear in `values` and compatible
-        with JAX transposition, differentiation, and batching.
+        A float64 vector with the same shape as `probabilities`, linear in `values`.
 
         **Raises:**
 
-        Implementations reject incompatible shapes with `ValueError`. Numerical
-        probability ranges remain caller preconditions inside traced execution.
+        `ValueError` for incompatible vector shapes, including during JIT tracing.
         """
         ...

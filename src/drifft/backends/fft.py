@@ -121,26 +121,38 @@ class _FFTBucket(eqx.Module):
 
 @final
 class FFT(AbstractTransitionBackend):
-    r"""Immutable PyTree geometry constructed by `FFT`.
+    r"""Binomial expectations through local FFT convolutions.
+
+    The binomial expectation is evaluated on local log-odds grids, then
+    interpolated at the requested probabilities. Near zero and one, direct
+    binomial sums avoid the ill-conditioned log-odds coordinate.
 
     **Arguments:**
 
-    Construct this backend outside JIT. `edges`
-    partitions block cores in log-odds; `eta0` and `variance` define each grid.
-    `rmin` and `offsets` locate block nodes in a flat output array. `buckets`
-    contains the batched factors and cached transforms. Remaining fields record
-    boundary coefficients, configuration and the checked tail-mass diagnostic.
+    See `__init__` for `gene_copies`, `tail_tol`, `interp_order`, `min_mode_count`,
+    `block_spacing`, `balance`, and `dtype`. Construct geometry outside JIT.
 
     **Returns:**
 
     Reusable selection-independent geometry. Arrays are dynamic PyTree leaves;
     configuration and dimensions are static Equinox metadata. The static fields
     are retained for shape decisions and reproducible configuration reporting.
+    `edges` partitions block cores in log-odds; `eta0` and `variance` define
+    each grid. `rmin` and `offsets` locate nodes in the flat output array, and
+    `buckets` contains batched factors and cached transforms.
 
     **Raises:**
 
     `ValueError` if block metadata or boundary dimensions are inconsistent.
     The constructor additionally validates configuration and requires float64.
+
+    **Failure Modes:**
+
+    Finite inputs and probabilities in `[0, 1]` are unchecked preconditions.
+    Tail tolerance excludes interpolation and roundoff error. Interpolation can
+    introduce small negative coefficients, and seams need not be differentiable.
+    Outputs are not clipped or normalized; roundoff can vary across devices.
+    Use `Transition` for automatically compiled application.
     """
 
     buckets: tuple[_FFTBucket, ...]
@@ -185,7 +197,7 @@ class FFT(AbstractTransitionBackend):
 
         **Returns:**
 
-        A `FFT` with host-computed quantile windows and cached kernel FFTs.
+        `None`. Initializes host-computed quantile windows and cached kernel FFTs.
         Construction is not JIT-compatible. Core intervals partition log-odds;
         halos support interpolation. For `gene_copies <= 2*min_mode_count` all rows use the
         direct fallback. Tail tolerance does not bound interpolation or roundoff.
@@ -352,29 +364,20 @@ class FFT(AbstractTransitionBackend):
             raise ValueError("boundary_width must match the boundary coefficient array")
 
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
-        r"""Evaluate binomial expectations for an arbitrary probability map.
+        r"""Compute binomial expectations using local FFTs.
 
         **Arguments:**
 
-        - `probabilities`: One-dimensional success probabilities in `[0, 1]`.
-        - `values`: Finite real input vector of shape `(M+1,)`, cast to float64.
+        - `probabilities`: Float64 vector of finite source probabilities in `[0, 1]`.
+        - `values`: Finite float64 destination vector of length `gene_copies + 1`.
 
         **Returns:**
 
-        A float64 vector shaped like `probabilities`. This is the extension point for other
-        selection models. The map is linear in `values`; outputs are never clipped or
-        renormalized. Wrap in `jax.jit` at the surrounding workflow boundary.
+        A float64 vector with the same shape as `probabilities`, linear in `values`.
 
         **Raises:**
 
-        `ValueError` for incompatible shapes, checked when tracing.
-
-        **Failure Modes:**
-
-        Finite inputs and valid probability ranges are caller preconditions. Tail
-        tolerance excludes interpolation/roundoff error. Polynomial interpolation
-        may yield small negative coefficients, and seams need not be differentiable.
-        Results can differ at roundoff level across devices.
+        `ValueError` for incompatible vector shapes, including during JIT tracing.
         """
         values = jnp.asarray(values, dtype=jnp.float64)
         if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:

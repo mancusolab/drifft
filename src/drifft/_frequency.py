@@ -13,6 +13,11 @@ import jax.numpy as jnp
 class AbstractFrequencyMap(eqx.Module):
     r"""Interface for transforming source frequencies into offspring probabilities.
 
+    A map takes allele frequencies $x$ to offspring probabilities $q(x)$,
+    preserving the input shape. Concrete maps implement `apply`; `__call__`
+    provides shorthand. Shared input assumptions belong to the map's class
+    contract rather than being repeated on each method.
+
     **Arguments:**
 
     Implement `apply(frequencies)` in concrete subclasses. Frequencies lie in
@@ -31,17 +36,39 @@ class AbstractFrequencyMap(eqx.Module):
 
     @abc.abstractmethod
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Return offspring probabilities with the same shape as frequencies."""
+        r"""Transform allele frequencies into offspring probabilities.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        An array of probabilities with the same shape as `frequencies`.
+        """
         raise NotImplementedError
 
     def __call__(self, frequencies: jax.Array) -> jax.Array:
-        """Evaluate this map as shorthand for apply."""
+        r"""Call `apply` using function syntax.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        The result of `self.apply(frequencies)`.
+        """
         return self.apply(frequencies)
 
 
 @final
 class FrequencyMap(AbstractFrequencyMap):
     r"""Wrap a custom JAX-compatible function in the frequency-map interface.
+
+    The wrapped function must be pure, preserve shape, and return finite
+    probabilities in `[0, 1]`. Its parameters stay connected to differentiation;
+    its output is returned without conversion, clipping, or normalization.
 
     **Arguments:**
 
@@ -67,22 +94,60 @@ class FrequencyMap(AbstractFrequencyMap):
             raise TypeError("function must be callable")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the custom function without detaching dynamic parameters."""
+        r"""Apply the wrapped function.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        The function's output, with the same shape as `frequencies`.
+        """
         return self.function(frequencies)
 
 
 @final
 class Neutral(AbstractFrequencyMap):
-    """Identity frequency map, representing neutral reproduction without mutation."""
+    r"""Identity frequency map for neutral reproduction without mutation.
+
+    The offspring probability equals the source frequency: $q(x)=x$.
+
+    **Arguments:**
+
+    None.
+
+    **Returns:**
+
+    A parameter-free Equinox map whose `apply` returns its input unchanged.
+
+    **Failure Modes:**
+
+    Frequency ranges and finiteness are caller preconditions. No runtime checks
+    or random sampling are performed.
+    """
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Return source frequencies unchanged."""
+        r"""Return frequencies unchanged.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        The input array, with its shape and dtype preserved.
+        """
         return frequencies
 
 
 @final
 class Mutation(AbstractFrequencyMap):
     r"""Apply forward and back mutation to an allele frequency.
+
+    For allele-1 frequency $p$, forward rate $u$, and backward rate $v$,
+
+    $$q(p) = p(1-v) + (1-p)u.$$
 
     **Arguments:**
 
@@ -93,9 +158,9 @@ class Mutation(AbstractFrequencyMap):
 
     **Returns:**
 
-    A map computing `p * (1 - backward_rate) + (1 - p) * forward_rate`.
-    Each rate must lie in `[0, 1]`; their sum need not be less than one.
-    Use `Composition` to specify mutation before or after selection.
+    An immutable map with differentiable rates. Each rate lies in `[0, 1]`;
+    their sum need not be less than one. Use `Composition` to specify mutation
+    before or after selection.
 
     **Raises:**
 
@@ -116,7 +181,16 @@ class Mutation(AbstractFrequencyMap):
             raise ValueError("mutation rates must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Return frequencies after mutation in both directions."""
+        r"""Apply forward and back mutation.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        Mutated frequencies with the same shape as the input.
+        """
         return (
             frequencies * (1 - self.backward_rate)
             + (1 - frequencies) * self.forward_rate
@@ -126,6 +200,14 @@ class Mutation(AbstractFrequencyMap):
 @final
 class Composition(AbstractFrequencyMap):
     r"""Apply frequency maps in the supplied left-to-right order.
+
+    For component maps $q_1,\ldots,q_k$, the combined map is
+
+    $$q(x)=q_k(\cdots q_2(q_1(x))\cdots).$$
+
+    Selection and mutation generally do not commute, so their order is part of
+    the model. Each component must preserve shape and return finite probabilities
+    in `[0, 1]`; component failures propagate without additional validation.
 
     **Arguments:**
 
@@ -146,7 +228,20 @@ class Composition(AbstractFrequencyMap):
     maps: tuple[AbstractFrequencyMap, ...]
 
     def __init__(self, *maps: AbstractFrequencyMap) -> None:
-        """Store the ordered components without evaluating their probabilities."""
+        r"""Bind the ordered frequency maps.
+
+        **Arguments:**
+
+        - `*maps`: One or more `AbstractFrequencyMap` instances, applied left to right.
+
+        **Returns:**
+
+        `None`.
+
+        **Raises:**
+
+        `ValueError` for no maps; `TypeError` for a non-map component.
+        """
         self.maps = maps
 
     def __check_init__(self) -> None:
@@ -157,7 +252,16 @@ class Composition(AbstractFrequencyMap):
             raise TypeError("components must be AbstractFrequencyMap instances")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply each component to the preceding component's output."""
+        r"""Apply the component maps from left to right.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        The final component's output, with the same shape as the input.
+        """
         for model in self.maps:
             frequencies = model.apply(frequencies)
         return frequencies
@@ -167,14 +271,24 @@ class Composition(AbstractFrequencyMap):
 class Underdominance(AbstractFrequencyMap):
     r"""Symmetric heterozygote disadvantage, callable on allele frequencies.
 
+    For allele frequency $x$ and heterozygote disadvantage $s$,
+
+    $$q_s(x) = \frac{x-sx(1-x)}{1-2sx(1-x)}.$$
+
     **Arguments:**
 
     - `strength`: Scalar selection coefficient in `[0, 1]`, converted to a
       float64 JAX leaf. Changing its value does not change model structure.
 
+    **Returns:**
+
+    An immutable frequency map whose strength remains differentiable. Both
+    `apply(frequencies)` and callable shorthand evaluate the same selection rule.
+
     **Failure Modes:**
 
-    Frequencies and strength must lie in `[0, 1]`; these are caller preconditions.
+    Frequencies and strength must be finite and lie in `[0, 1]`; these are
+    unchecked caller preconditions, including under JIT and vmap.
     Non-scalar strength raises `ValueError`. Keep x64 enabled.
     """
 
@@ -188,6 +302,15 @@ class Underdominance(AbstractFrequencyMap):
             raise ValueError("strength must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Return offspring probabilities with the same shape as frequencies."""
+        r"""Apply heterozygote disadvantage.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        Selected frequencies with the same shape as the input.
+        """
         disadvantage = self.strength * frequencies * (1 - frequencies)
         return (frequencies - disadvantage) / (1 - 2 * disadvantage)

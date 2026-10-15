@@ -17,6 +17,19 @@ from .backends import AbstractTransitionBackend
 class Transition(eqx.Module):
     r"""A reusable backend combined with a frequency map or explicit probabilities.
 
+    Given source-row probability $q_i$ and destination gene-copy count $M$,
+
+    $$P_{ij} = \binom{M}{j} q_i^j (1-q_i)^{M-j}.$$
+
+    `expect` applies $P$ to destination values; `advance` applies $P^T$ to
+    source mass. The backend evaluates these operations without storing $P$.
+    For a frequency map, $q_i=q(i/M_s)$ where $M_s$ is `source_gene_copies`.
+
+    Segregating operations restrict the kernel to interior allele counts and
+    discard endpoint mass. For a square interior kernel $Q$, `expected_visits`
+    solves $(I-Q^T)g=e_1$, including the initial generation. Finite visits require
+    eventual endpoint hitting; mutation does not restore discarded trajectories.
+
     **Arguments:**
 
     - `backend`: Geometry for the destination population, prepared outside JIT.
@@ -31,6 +44,8 @@ class Transition(eqx.Module):
     An immutable PyTree. Construction binds existing geometry without rebuilding
     it. Offspring probabilities are evaluated during application, so updates and
     differentiation through model parameters cannot use a stale cached vector.
+    For explicit probabilities, build the vector inside the differentiated
+    function to retain gradients through its construction.
 
     **Raises:**
 
@@ -40,9 +55,12 @@ class Transition(eqx.Module):
 
     **Failure Modes:**
 
-    Probabilities must be finite and in `[0, 1]`. No runtime callbacks enforce
-    these value preconditions. Approximation errors are those of the backend; no
-    outputs are clipped or renormalized. Methods are pure and return new arrays.
+    Input vectors must be finite and probabilities must lie in `[0, 1]`.
+    These value preconditions are not checked. Backend approximation and
+    derivative limits apply; roundoff can vary across devices and small negative
+    masses are possible. Methods leave inputs unchanged and never clip or
+    renormalize outputs. `advance` transposes the implemented approximation.
+    Segregating operations and visits require complete ordered allele-count grids.
     Numerical methods compile automatically with `eqx.filter_jit`. Array leaves
     remain dynamic across calls; changing shapes or static configuration can
     trigger recompilation. Methods also compose inside an outer compiled workflow.
@@ -61,7 +79,26 @@ class Transition(eqx.Module):
         source_gene_copies: int | None = None,
         probabilities: jax.Array | None = None,
     ) -> None:
-        """Bind destination geometry and either a frequency map or explicit rows."""
+        r"""Bind a frequency map or explicit probabilities to prepared geometry.
+
+        **Arguments:**
+
+        - `backend`: Prepared destination backend.
+        - `frequency_map`: `AbstractFrequencyMap`; mutually exclusive with `probabilities`.
+        - `source_gene_copies`: Source size, at least two for a map. Defaults to the
+          backend size, or `len(probabilities) - 1` for explicit rows.
+        - `probabilities`: Optional nonempty vector of source probabilities in `[0, 1]`;
+          converted to float64.
+
+        **Returns:**
+
+        `None`. Reuses the backend without rebuilding geometry.
+
+        **Raises:**
+
+        `ValueError` for ambiguous configuration or invalid source dimensions or
+        probability shape; `TypeError` for an invalid frequency-map type.
+        """
         self.backend = backend
         self.frequency_map = frequency_map
         self._probabilities = (
@@ -103,17 +140,32 @@ class Transition(eqx.Module):
     def from_probabilities(
         cls, backend: AbstractTransitionBackend, probabilities: jax.Array
     ) -> "Transition":
-        """Bind one probability per source row; destination size comes from backend.
+        r"""Construct a transition from explicit source-row probabilities.
 
-        Arrays remain dynamic leaves. To differentiate through their construction,
-        evaluate the probability map inside the differentiated function. Rows may
-        represent sampled probabilities rather than a complete allele-count grid.
+        **Arguments:**
+
+        - `backend`: Prepared destination backend.
+        - `probabilities`: Nonempty vector of probabilities in `[0, 1]`. Rows may
+          represent sampled probabilities rather than a complete allele-count grid.
+
+        **Returns:**
+
+        A `Transition` with float64 probability leaves and
+        `source_gene_copies = len(probabilities) - 1`.
+
+        **Raises:**
+
+        `ValueError` if the probability array is empty or not one-dimensional.
         """
         return cls(backend, probabilities=probabilities)
 
     @property
     def probabilities(self) -> jax.Array:
-        """Evaluate the frequency map on the source grid, or return supplied rows."""
+        r"""Current float64 source probabilities, shape `(source_gene_copies + 1,)`.
+
+        Evaluates the bound map on each access, or returns the explicit rows.
+        Raises `ValueError` if the map returns an incompatible shape.
+        """
         if self._probabilities is not None:
             return self._probabilities
         assert self.frequency_map is not None
@@ -132,11 +184,20 @@ class Transition(eqx.Module):
 
     @eqx.filter_jit
     def expect(self, values: jax.Array) -> jax.Array:
-        r"""Compute $Pv$: destination values to expectations at each source state.
+        r"""Compute destination-value expectations at each source state.
 
-        Input length is `backend.gene_copies + 1`; output length is
-        `source_gene_copies + 1`. Signed values are supported. Shape mismatches
-        raise `ValueError`, including when traced under JIT.
+        **Arguments:**
+
+        - `values`: Finite real vector of length `backend.gene_copies + 1`,
+          converted to float64. Signed entries are supported.
+
+        **Returns:**
+
+        A float64 vector of length `source_gene_copies + 1`.
+
+        **Raises:**
+
+        `ValueError` for incompatible input or map-output shapes.
         """
         return self.backend.expect(
             self.probabilities, jnp.asarray(values, dtype=jnp.float64)
@@ -144,11 +205,20 @@ class Transition(eqx.Module):
 
     @eqx.filter_jit
     def advance(self, distribution: jax.Array) -> jax.Array:
-        r"""Compute $P^T\mu$: source mass to next-generation destination mass.
+        r"""Propagate source mass by one generation.
 
-        Input length is `source_gene_copies + 1`; output length is
-        `backend.gene_copies + 1`. This transposes the implemented approximation
-        exactly, including routing. It does not mutate or normalize the input.
+        **Arguments:**
+
+        - `distribution`: Finite real vector of length `source_gene_copies + 1`,
+          converted to float64. Signed entries are supported.
+
+        **Returns:**
+
+        A float64 vector of length `backend.gene_copies + 1`.
+
+        **Raises:**
+
+        `ValueError` for incompatible input or map-output shapes.
         """
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
         if distribution.shape != (self.source_gene_copies + 1,):
@@ -158,11 +228,20 @@ class Transition(eqx.Module):
 
     @eqx.filter_jit
     def expect_segregating(self, values: jax.Array) -> jax.Array:
-        """Expect interior-state values, treating both destination endpoints as zero.
+        r"""Compute interior expectations with endpoint values set to zero.
 
-        Input has `backend.gene_copies - 1` entries; output has
-        `source_gene_copies - 1`. Source and destination rows must represent
-        complete allele-count grids. Endpoint loss is not conditioned away.
+        **Arguments:**
+
+        - `values`: Finite real vector of length `backend.gene_copies - 1`,
+          converted to float64. Signed entries are supported.
+
+        **Returns:**
+
+        A float64 vector of length `source_gene_copies - 1`. No conditioning on survival.
+
+        **Raises:**
+
+        `ValueError` for incompatible input or map-output shapes.
         """
         values = jnp.asarray(values, dtype=jnp.float64)
         if self.source_gene_copies < 2 or values.shape != (
@@ -175,10 +254,20 @@ class Transition(eqx.Module):
 
     @eqx.filter_jit
     def advance_segregating(self, distribution: jax.Array) -> jax.Array:
-        """Advance interior mass, removing trajectories that reach either endpoint.
+        r"""Propagate interior mass, discarding endpoint hits.
 
-        Input has `source_gene_copies - 1` entries; output has
-        `backend.gene_copies - 1`. Total mass may decrease; no renormalization occurs.
+        **Arguments:**
+
+        - `distribution`: Finite real vector of length `source_gene_copies - 1`,
+          converted to float64. Signed entries are supported.
+
+        **Returns:**
+
+        A float64 vector of length `backend.gene_copies - 1`. No renormalization or re-entry from endpoints.
+
+        **Raises:**
+
+        `ValueError` for incompatible input or map-output shapes.
         """
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
         if self.source_gene_copies < 2 or distribution.shape != (
@@ -188,10 +277,21 @@ class Transition(eqx.Module):
         return self.advance(jnp.pad(distribution, (1, 1)))[1:-1]
 
     def as_lineax(self, *, segregating: bool = False) -> lx.FunctionLinearOperator:
-        """Return an expectation operator; its transpose advances distributions.
+        r"""Expose the expectation operation as a Lineax operator.
 
-        `segregating=True` excludes endpoint states. No symmetry or positive
-        definiteness tags are attached. Rectangular operators are supported.
+        **Arguments:**
+
+        - `segregating`: Exclude endpoint states when true; defaults to false.
+
+        **Returns:**
+
+        A rectangular `lineax.FunctionLinearOperator` from destination values to source
+        expectations. Its transpose advances mass. No symmetry or definiteness tags
+        are attached.
+
+        **Raises:**
+
+        `ValueError` for incompatible dimensions or map-output shape.
         """
         size = (
             self.backend.gene_copies - 1
@@ -213,18 +313,32 @@ class Transition(eqx.Module):
         max_steps: int = 2000,
         restart: int = 50,
     ) -> ExpectedVisitsResult:
-        """Solve expected interior visits from one copy, including generation zero.
+        r"""Compute interior visits from one copy, including the initial generation.
 
-        Requires a square, constant-size transition on a complete allele-count
-        grid. Visits end at the first endpoint hit, even if a custom frequency map
-        would otherwise permit leaving endpoints. The chain must eventually
-        hit an endpoint for finite visits to exist.
+        **Arguments:**
 
-        Solver controls and failure diagnostics are preserved in the returned
-        `ExpectedVisitsResult`. Always check `converged`: a small residual only
-        certifies the approximate operator. Invalid static controls raise
-        `ValueError`; numerical nonconvergence is returned without throwing.
-        Global differentiability of solves is not certified.
+        - `solver`: `"gmres"` (default) or `"bicgstab"`.
+        - `rtol`: Nonnegative relative tolerance; default `1e-9`.
+        - `atol`: Nonnegative absolute tolerance; default `1e-11`.
+          Both tolerances must be finite and at least one must be positive.
+        - `max_steps`: Positive iteration limit; default 2000 (outer steps for GMRES).
+        - `restart`: Positive GMRES subspace size; default 50, capped at the number
+          of interior states. Validated but unused for BiCGStab.
+
+        **Returns:**
+
+        An `ExpectedVisitsResult` with float64 `visits` of length
+        `backend.gene_copies - 1`, plus convergence diagnostics.
+
+        **Raises:**
+
+        `ValueError` for a nonsquare transition, invalid solver controls, or map shape.
+
+        **Failure Modes:**
+
+        Numerical failure is returned with `throw=False`. Check `converged` before
+        using visits; under vmap, check each result. Visits stop at the first endpoint
+        hit, even with mutation. Global differentiability of solves is not certified.
         """
         if self.source_gene_copies != self.backend.gene_copies:
             raise ValueError("expected_visits requires a square transition")

@@ -13,6 +13,7 @@ nav = [
         "guide/installation.md",
         "guide/quickstart.md",
         "guide/transitions.md",
+        "guide/model.md",
         "guide/demography.md",
         "guide/backends.md",
         "guide/numerics.md",
@@ -24,20 +25,21 @@ nav = [
 
 [project.theme]
 variant = "classic"
+custom_dir = "docs/_static/overrides"
 features = ["navigation.sections", "toc.integrate", "header.autohide", "content.code.copy"]
 
 [[project.theme.palette]]
 media = "(prefers-color-scheme: light)"
 scheme = "default"
-primary = "indigo"
-accent = "indigo"
+primary = "deep orange"
+accent = "deep orange"
 toggle = { icon = "material/brightness-7", name = "Switch to dark mode" }
 
 [[project.theme.palette]]
 media = "(prefers-color-scheme: dark)"
 scheme = "slate"
-primary = "indigo"
-accent = "indigo"
+primary = "deep orange"
+accent = "deep orange"
 toggle = { icon = "material/brightness-4", name = "Switch to light mode" }
 
 [project.theme.icon]
@@ -56,19 +58,27 @@ toc_depth = 4
 
 [project.plugins.search]
 [project.plugins.autorefs]
+[project.plugins.mkdocstrings]
+custom_templates = "docs/_static/templates"
+
 [project.plugins.mkdocstrings.handlers.python]
 paths = ["src"]
 
 [project.plugins.mkdocstrings.handlers.python.options]
 force_inspection = true
 show_source = false
-heading_level = 2
+heading_level = 4
 show_root_heading = true
 show_symbol_type_heading = true
 show_symbol_type_toc = true
+filters = ["!^_", "^__init__$"]
 inherited_members = true
 members_order = "source"
 docstring_style = "google"
 show_if_no_docstring = true
+line_length = 80
+modernize_annotations = false
 annotations_path = "brief"
+show_overloads = false
 show_signature_annotations = true
+separate_signature = false
