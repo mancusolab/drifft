@@ -4,6 +4,7 @@ drifft is a JAX-based Python library for Wright–Fisher population genetics. It
 propagates allele-count distributions, computes expectations and expected visits
 before absorption, and supports differentiation through selection parameters.
 FFT and Chebyshev/NUFFT backends share the same Equinox interface.
+An experimental rational Krylov backend accelerates constant-size epochs.
 
 [Read the usage and numerical guide](docs/index.md)
 
@@ -50,6 +51,7 @@ generation. Reuse the backend across selection strengths, or substitute
 
 The guide covers [custom selection and the API](docs/guide/transitions.md),
 [demographic histories](docs/guide/demography.md),
+[constant-size epochs and immigration](docs/guide/epochs.md),
 [backend tradeoffs](docs/guide/backends.md),
 [accuracy settings](docs/guide/numerics.md), and
 [expected visits and solver limitations](docs/guide/solves.md).

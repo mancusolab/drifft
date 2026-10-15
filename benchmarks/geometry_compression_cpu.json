@@ -1,0 +1,62 @@
+{
+  "before": {
+    "mode": "before",
+    "jax": "0.11.2",
+    "generations": 55688,
+    "intervals": 53,
+    "unique_sizes": 35,
+    "dimension": 128,
+    "fft_geometry_seconds": 20.2083746669814,
+    "epoch_geometry_seconds": 34.9565952909179,
+    "geometry_bytes": 2673325924,
+    "setup_seconds": 56.25593008403666,
+    "peak_rss_bytes": 3431841792,
+    "elapsed_seconds": 221.54110475000925,
+    "passes": [
+      {
+        "label": "cold",
+        "seconds": 108.39123937510885,
+        "failed_intervals": 0
+      },
+      {
+        "label": "warm",
+        "seconds": 56.86124233296141,
+        "failed_intervals": 0
+      }
+    ]
+  },
+  "after": {
+    "mode": "after",
+    "jax": "0.11.2",
+    "generations": 55688,
+    "intervals": 53,
+    "unique_sizes": 35,
+    "dimension": 128,
+    "fft_geometry_seconds": 19.544374709017575,
+    "epoch_geometry_seconds": 33.300498749827966,
+    "geometry_bytes": 1326243524,
+    "setup_seconds": 54.16555408295244,
+    "peak_rss_bytes": 4292788224,
+    "elapsed_seconds": 222.65795187512413,
+    "passes": [
+      {
+        "label": "cold",
+        "seconds": 109.59024341613986,
+        "failed_intervals": 0
+      },
+      {
+        "label": "warm",
+        "seconds": 58.86842237506062,
+        "failed_intervals": 0
+      }
+    ]
+  },
+  "relative_l1_change": 1.885367179377494e-12,
+  "maximum_absolute_change": 8.944667923005412e-19,
+  "source_sha256": {
+    "src/drifft/_jacobi.py": "8c7fc1b0a907bbd544a3bd67f181158d5bd14e036a925f99b092d2e1711b186e",
+    "src/drifft/_krylov.py": "02bd1bcb79b29963b5fd6319418ea6ec5fa3eb79c968454bc5eaa5092f20199d",
+    "/private/tmp/drifft-geometry-compression/baseline_jacobi.py": "5c1b830d554227cae586095599566932438fb7068deaf6253e2c410e6056d93d",
+    "/private/tmp/drifft-geometry-compression/run.py": "06123f2bc64378f350d3f988faf1015f7835b721d9431aa1feadf5db27a80bfb"
+  }
+}

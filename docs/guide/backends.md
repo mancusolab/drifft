@@ -1,9 +1,13 @@
 # Choosing a backend
 
-Both backends implement `AbstractTransitionBackend`, an abstract Equinox module.
+FFT and NUFFT implement `AbstractTransitionBackend`, an abstract Equinox module.
 `Transition` owns selection, source size, propagation, and solver integration;
 backends own selection-independent geometry and the expectation approximation.
 Choose a backend explicitly and reuse it across selection strengths.
+
+For multiple generations at a fixed size, [epoch backends](epochs.md) provide a
+separate `AbstractEpochBackend` interface: Sequential repeats either transition
+backend, while RationalKrylov approximates the whole epoch.
 
 `FFT` uses local log-odds blocks, cached Fourier coefficients, and interpolation.
 It favors repeated applications at a fixed size, at the cost of larger geometry

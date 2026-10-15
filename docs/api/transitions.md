@@ -49,4 +49,4 @@ See [demographic histories](../guide/demography.md) for interval timing and usag
 
 ::: drifft.DemographicTransition
     options:
-        members: [__init__, advance, expect]
+        members: [__init__, advance, advance_segregating, expect]

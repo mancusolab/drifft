@@ -59,7 +59,7 @@ inspect the schedule.
 
 ## Expectations and selection gradients
 
-`model.expect(values)` maps final-state values to expectations conditional on
+With the default Sequential epochs, `model.expect(values)` maps final-state values to expectations conditional on
 each initial allele count. Its input has `2 * history.final_ne + 1` entries and
 its output has `2 * history.initial_ne + 1` entries. It is the adjoint of
 `.advance()`, not backward population evolution. Both methods accept signed
@@ -98,6 +98,18 @@ spectral_model = drifft.DemographicTransition(
     frequency_map=drifft.Underdominance(0.01),
 )
 ```
+
+For accelerated constant-size portions, supply
+`epoch_backend=drifft.RationalKrylov`. The one-generation `backend` still handles
+size changes. RationalKrylov supports neutral and underdominance maps and
+forward evolution; `model.expect()` requires Sequential epochs. See
+[constant-size epochs](epochs.md) for accuracy controls and limitations.
+
+`model.advance_segregating(initial, mutation_rate=1e-8)` discards absorbing mass
+each generation and adds singleton input equal to the destination gene-copy
+count times the mutation rate. Its input and output contain interior counts
+only (`2 * ne - 1` entries). This source is distinct from recurrent mutation in
+a frequency map. Equilibrium initialization is supplied by the caller.
 
 The current API uses one frequency map throughout the history and returns
 only the final distribution. Use [frequency-map composition](transitions.md#selection-and-mutation)

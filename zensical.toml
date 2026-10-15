@@ -15,6 +15,7 @@ nav = [
         "guide/transitions.md",
         "guide/model.md",
         "guide/demography.md",
+        "guide/epochs.md",
         "guide/backends.md",
         "guide/numerics.md",
         "guide/solves.md",
