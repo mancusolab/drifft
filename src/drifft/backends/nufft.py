@@ -17,32 +17,17 @@ from ._spectral import _evaluate, compute_cosine_coefficients, sample_bernstein
 class NUFFT(AbstractTransitionBackend):
     r"""Binomial expectations through Chebyshev approximation and NUFFT evaluation.
 
-    The binomial expectation is sampled at fixed Chebyshev–Lobatto nodes and
-    expanded in cosine modes. NUFFT evaluation then supplies expectations at
-    arbitrary offspring probabilities without storing the transition matrix.
+    For destination values $v_j$ and gene-copy count $M$, approximate
+    $B_M[v](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}v_j$ by
 
-    **Arguments:**
+    $$B_M[v](q)\approx\sum_{k=0}^L c_kT_k(1-2q)
+      =\sum_{k=0}^L c_k\cos(k\theta),\qquad\theta=\arccos(1-2q).$$
 
-    See `__init__` for `gene_copies`, approximation tolerances, `batch_size`,
-    `derivative_accuracy`, and `dtype`. The destination size and accuracy controls
-    determine the fixed polynomial degree and sampling stencil dimensions.
-
-    **Returns:**
-
-    An immutable PyTree with one dynamic node vector. Dimensions, tolerances and
-    diagnostics are static. No node-by-stencil table is retained. `spectral_bound`
-    bounds value interpolation in exact arithmetic, not derivatives or roundoff.
-    `tail_tol` bounds omitted mass at each sampling node; `sampling_bound`
-    includes normalization and the conservative Lebesgue amplification.
-
-    **Failure Modes:**
-
-    Construct outside JIT. Invalid structural metadata raises `ValueError`. FINUFFT's
-    requested tolerance is not a rigorous operator-norm error certificate.
-    Finite inputs and probabilities in `[0, 1]` are unchecked preconditions.
-    Approximation bounds do not certify derivatives or total floating-point error;
-    results can vary across devices and FINUFFT configurations. Outputs are not
-    clipped or normalized. Use `Transition` for automatically compiled application.
+    Here $T_k$ is the degree-$k$ Chebyshev polynomial and $L$ is the prepared
+    approximation degree. The coefficients $c_k$ come from binomial sampling
+    at fixed Chebyshev–Lobatto nodes followed by a DCT-I. A type-2 NUFFT
+    evaluates the cosine series at arbitrary offspring probabilities.
+    Endpoint expectations are set directly to $v_0$ and $v_M$.
     """
 
     nodes: jax.Array

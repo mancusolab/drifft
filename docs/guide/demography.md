@@ -44,11 +44,13 @@ generation. The example above evaluates:
 | 21–29 | Evolve at Ne = 60 |
 | 30 | Transition from Ne = 60 to Ne = 120 |
 
-The size-changing step includes selection and binomial reproduction. There is
-no additional resampling step and no subsequent evolution at the final size.
-The initial distribution is supplied by the caller; no equilibrium or burn-in
-is assumed. This timing differs from fastDTWF's destination-size intervals,
-which change size at the start of each interval.
+!!! note "Boundary timing"
+
+    The size-changing step includes selection and binomial reproduction. There is
+    no additional resampling step and no subsequent evolution at the final size.
+    The initial distribution is supplied by the caller; no equilibrium or burn-in
+    is assumed. This timing differs from fastDTWF's destination-size intervals,
+    which change size at the start of each interval.
 
 Repeated sizes are valid: `Demography([100, 100], [50])` evaluates 50 generations
 at Ne = 100. `Demography([100], [])` is an identity history. Use
@@ -99,8 +101,12 @@ spectral_model = drifft.DemographicTransition(
 
 The current API uses one frequency map throughout the history and returns
 only the final distribution. Use [frequency-map composition](transitions.md#selection-and-mutation)
-to combine selection and mutation in an explicit order. Each generation inherits the chosen backend's
-approximation and derivative limitations; errors can accumulate over long
-histories. See [numerical accuracy](numerics.md). Small dense-reference tests
-validate timing and gradients; they do not establish accuracy or performance
-for every long demographic history.
+to combine selection and mutation in an explicit order.
+
+!!! warning "Accumulated error"
+
+    Each generation inherits the chosen backend's
+    approximation and derivative limitations; errors can accumulate over long
+    histories. See [numerical accuracy](numerics.md). Small dense-reference tests
+    validate timing and gradients; they do not establish accuracy or performance
+    for every long demographic history.

@@ -29,41 +29,6 @@ class Transition(eqx.Module):
     discard endpoint mass. For a square interior kernel $Q$, `expected_visits`
     solves $(I-Q^T)g=e_1$, including the initial generation. Finite visits require
     eventual endpoint hitting; mutation does not restore discarded trajectories.
-
-    **Arguments:**
-
-    - `backend`: Geometry for the destination population, prepared outside JIT.
-    - `frequency_map`: An `AbstractFrequencyMap` mapping source frequencies to
-      offspring probabilities. Wrap custom functions in `FrequencyMap`.
-    - `source_gene_copies`: Source population size; defaults to the backend's size.
-    - `probabilities`: Alternative to `frequency_map`; normally supplied through
-      `Transition.from_probabilities`. Each entry defines one source row.
-
-    **Returns:**
-
-    An immutable PyTree. Construction binds existing geometry without rebuilding
-    it. Offspring probabilities are evaluated during application, so updates and
-    differentiation through model parameters cannot use a stale cached vector.
-    For explicit probabilities, build the vector inside the differentiated
-    function to retain gradients through its construction.
-
-    **Raises:**
-
-    `ValueError` for ambiguous configuration, invalid source dimensions, or an
-    empty/non-vector probability array; `TypeError` for a map not implementing
-    `AbstractFrequencyMap`.
-
-    **Failure Modes:**
-
-    Input vectors must be finite and probabilities must lie in `[0, 1]`.
-    These value preconditions are not checked. Backend approximation and
-    derivative limits apply; roundoff can vary across devices and small negative
-    masses are possible. Methods leave inputs unchanged and never clip or
-    renormalize outputs. `advance` transposes the implemented approximation.
-    Segregating operations and visits require complete ordered allele-count grids.
-    Numerical methods compile automatically with `eqx.filter_jit`. Array leaves
-    remain dynamic across calls; changing shapes or static configuration can
-    trigger recompilation. Methods also compose inside an outer compiled workflow.
     """
 
     backend: AbstractTransitionBackend
@@ -334,11 +299,11 @@ class Transition(eqx.Module):
 
         `ValueError` for a nonsquare transition, invalid solver controls, or map shape.
 
-        **Failure Modes:**
+        !!! warning "Numerical limitations"
 
-        Numerical failure is returned with `throw=False`. Check `converged` before
-        using visits; under vmap, check each result. Visits stop at the first endpoint
-        hit, even with mutation. Global differentiability of solves is not certified.
+            Numerical failure is returned with `throw=False`. Check `converged` before
+            using visits; under vmap, check each result. Visits stop at the first endpoint
+            hit, even with mutation. Global differentiability of solves is not certified.
         """
         if self.source_gene_copies != self.backend.gene_copies:
             raise ValueError("expected_visits requires a square transition")

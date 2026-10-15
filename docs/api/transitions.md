@@ -8,32 +8,36 @@ probabilities. See [transitions and frequency maps](../guide/transitions.md) for
         members: [__init__, from_probabilities, probabilities, expect, advance, expect_segregating, advance_segregating, as_lineax, expected_visits]
 
 ::: drifft.ExpectedVisitsResult
+    options:
+        members: [__new__]
 
 ## Frequency maps
 
-::: drifft.AbstractFrequencyMap
-    options:
-        members: [apply, __call__]
+??? abstract "`drifft.AbstractFrequencyMap`"
+
+    ::: drifft.AbstractFrequencyMap
+        options:
+            members: [apply, __call__]
 
 ::: drifft.FrequencyMap
     options:
-        members: [apply, __call__]
+        members: [__init__]
 
 ::: drifft.Neutral
     options:
-        members: [apply, __call__]
+        members: [__init__]
 
 ::: drifft.Underdominance
     options:
-        members: [apply, __call__]
+        members: [__init__]
 
 ::: drifft.Mutation
     options:
-        members: [apply, __call__]
+        members: [__init__]
 
 ::: drifft.Composition
     options:
-        members: [__init__, apply, __call__]
+        members: [__init__]
 
 ## Demographic histories
 
@@ -41,7 +45,7 @@ See [demographic histories](../guide/demography.md) for interval timing and usag
 
 ::: drifft.Demography
     options:
-        members: [initial_ne, final_ne, total_generations]
+        members: [__init__, initial_ne, final_ne, total_generations]
 
 ::: drifft.DemographicTransition
     options:

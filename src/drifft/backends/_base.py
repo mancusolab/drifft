@@ -15,23 +15,9 @@ class AbstractTransitionBackend(eqx.Module):
 
     $$B_M[v](q)=\sum_{j=0}^{M}\binom{M}{j}q^j(1-q)^{M-j}v_j.$$
 
-    **Arguments:**
-
-    Concrete constructors define their own geometry controls. Implementations
-    provide `gene_copies`, the integer destination gene-copy count, and `expect`.
-
-    **Returns:**
-
-    A backend implementing expectations linear in destination values, with
-    transposition, JVP, VJP, and batching support. Construct concrete geometry
-    outside JIT; arrays remain dynamic leaves and dimensions remain static.
-
-    **Failure Modes:**
-
-    Finite inputs and probabilities in `[0, 1]` are caller preconditions.
-    Concrete implementations document approximation and derivative limitations.
-    No clipping or normalization is allowed; roundoff can vary across devices.
-    Backend methods are not JIT-decorated; `Transition` provides compiled calls.
+    Implementations provide `gene_copies` and an `expect` operation linear in
+    destination values, supporting transposition, JVP, VJP, and batching.
+    Prepare geometry outside JIT; use `Transition` for compiled application.
     """
 
     gene_copies: eqx.AbstractVar[int]
@@ -52,5 +38,11 @@ class AbstractTransitionBackend(eqx.Module):
         **Raises:**
 
         `ValueError` for incompatible vector shapes, including during JIT tracing.
+
+        !!! warning "Numerical preconditions"
+
+            Finiteness and probability ranges are unchecked. Outputs are not
+            clipped or normalized; approximation and derivative limitations
+            depend on the concrete backend. Roundoff can vary across devices.
         """
         ...

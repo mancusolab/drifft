@@ -92,11 +92,13 @@ rate must be finite and lie in `[0, 1]`; their sum need not be less than one.
 Nonscalar parameters raise `ValueError`, while value ranges remain caller
 preconditions under transformations.
 
-With forward and back mutation, loss and fixation are no longer absorbing under
-`.advance()`. Segregating methods still discard trajectories at their first
-endpoint hit, and `expected_visits()` still ends visits there. Those operations
-do not include later re-entry through mutation or compute a recurrent-mutation
-stationary distribution.
+!!! warning "Mutation and endpoint removal"
+
+    With forward and back mutation, loss and fixation are no longer absorbing under
+    `.advance()`. Segregating methods still discard trajectories at their first
+    endpoint hit, and `expected_visits()` still ends visits there. Those operations
+    do not include later re-entry through mutation or compute a recurrent-mutation
+    stationary distribution.
 
 ## Population grids and validation
 
@@ -109,7 +111,9 @@ ordered allele-count grids; expected visits additionally requires equal source
 and destination sizes. For a sequence of size changes, use
 [`Demography` and `DemographicTransition`](demography.md).
 
-Inputs must have the documented shapes. Frequencies and probabilities must be in
-`[0, 1]`, and `Underdominance.strength` must be scalar and in `[0, 1]`. Shape checks
-raise during construction or tracing; finite values and numerical ranges remain
-caller preconditions to avoid runtime callbacks. Backends require float64.
+!!! warning "Input validation"
+
+    Inputs must have the documented shapes. Frequencies and probabilities must be in
+    `[0, 1]`, and `Underdominance.strength` must be scalar and in `[0, 1]`. Shape checks
+    raise during construction or tracing; finite values and numerical ranges remain
+    caller preconditions to avoid runtime callbacks. Backends require float64.

@@ -15,23 +15,8 @@ class AbstractFrequencyMap(eqx.Module):
 
     A map takes allele frequencies $x$ to offspring probabilities $q(x)$,
     preserving the input shape. Concrete maps implement `apply`; `__call__`
-    provides shorthand. Shared input assumptions belong to the map's class
-    contract rather than being repeated on each method.
-
-    **Arguments:**
-
-    Implement `apply(frequencies)` in concrete subclasses. Frequencies lie in
-    `[0, 1]`; return a JAX array of the same shape with values in `[0, 1]`.
-
-    **Returns:**
-
-    A callable Equinox module. Store differentiable parameters as array leaves.
-    Both `map.apply(frequencies)` and `map(frequencies)` evaluate the same rule.
-
-    **Failure Modes:**
-
-    Range and finiteness are caller preconditions, not runtime checks. Map
-    implementations must be JAX-compatible and deterministic. Use float64.
+    provides shorthand. Implementations must be pure and JAX-compatible;
+    differentiable parameters are stored as array leaves.
     """
 
     @abc.abstractmethod
@@ -44,7 +29,13 @@ class AbstractFrequencyMap(eqx.Module):
 
         **Returns:**
 
-        An array of probabilities with the same shape as `frequencies`.
+        An array of finite probabilities in `[0, 1]` with the same shape as
+        `frequencies`.
+
+        !!! note "Input domain"
+
+            Finiteness and the `[0, 1]` range are caller preconditions. Maps do
+            not clip or normalize their outputs.
         """
         raise NotImplementedError
 
@@ -69,21 +60,6 @@ class FrequencyMap(AbstractFrequencyMap):
     The wrapped function must be pure, preserve shape, and return finite
     probabilities in `[0, 1]`. Its parameters stay connected to differentiation;
     its output is returned without conversion, clipping, or normalization.
-
-    **Arguments:**
-
-    - `function`: Callable returning one probability per input frequency. An
-      Equinox callable can carry dynamic parameters. For closures, construct the
-      function inside the differentiated calculation to retain parameter links.
-
-    **Returns:**
-
-    A map whose `apply` delegates to the supplied function.
-
-    **Raises:**
-
-    `TypeError` for non-callable functions. Output shape and probability ranges
-    follow `AbstractFrequencyMap`'s contract; transitions check output shape.
     """
 
     function: Callable[[jax.Array], jax.Array]
@@ -107,24 +83,31 @@ class FrequencyMap(AbstractFrequencyMap):
         return self.function(frequencies)
 
 
+# Document the generated constructor without replacing its implementation.
+FrequencyMap.__init__.__doc__ = r"""Initialize FrequencyMap.
+
+**Arguments:**
+
+- `function`: Callable returning one probability per input frequency. An
+  Equinox callable can carry dynamic parameters. For closures, construct the
+  function inside the differentiated calculation to retain parameter links.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`TypeError` for non-callable functions. Output shape and probability ranges
+follow `AbstractFrequencyMap`'s contract; transitions check output shape.
+"""
+
+
 @final
 class Neutral(AbstractFrequencyMap):
     r"""Identity frequency map for neutral reproduction without mutation.
 
     The offspring probability equals the source frequency: $q(x)=x$.
-
-    **Arguments:**
-
-    None.
-
-    **Returns:**
-
-    A parameter-free Equinox map whose `apply` returns its input unchanged.
-
-    **Failure Modes:**
-
-    Frequency ranges and finiteness are caller preconditions. No runtime checks
-    or random sampling are performed.
     """
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
@@ -141,6 +124,20 @@ class Neutral(AbstractFrequencyMap):
         return frequencies
 
 
+# Document the generated constructor without replacing its implementation.
+Neutral.__init__.__doc__ = r"""Initialize Neutral.
+
+**Arguments:**
+
+None.
+
+**Returns:**
+
+`None`.
+
+"""
+
+
 @final
 class Mutation(AbstractFrequencyMap):
     r"""Apply forward and back mutation to an allele frequency.
@@ -148,24 +145,6 @@ class Mutation(AbstractFrequencyMap):
     For allele-1 frequency $p$, forward rate $u$, and backward rate $v$,
 
     $$q(p) = p(1-v) + (1-p)u.$$
-
-    **Arguments:**
-
-    - `forward_rate`: Per-generation probability of mutation from allele 0 to 1.
-    - `backward_rate`: Per-generation probability of mutation from allele 1 to 0.
-
-    Both rates default to zero and become dynamic float64 scalar leaves.
-
-    **Returns:**
-
-    An immutable map with differentiable rates. Each rate lies in `[0, 1]`;
-    their sum need not be less than one. Use `Composition` to specify mutation
-    before or after selection.
-
-    **Raises:**
-
-    `ValueError` for nonscalar rates. Finite rates in `[0, 1]` and input
-    frequencies in `[0, 1]` are caller preconditions, including under JIT.
     """
 
     forward_rate: jax.Array = eqx.field(
@@ -197,6 +176,32 @@ class Mutation(AbstractFrequencyMap):
         )
 
 
+# Document the generated constructor without replacing its implementation.
+Mutation.__init__.__doc__ = r"""Initialize Mutation.
+
+**Arguments:**
+
+- `forward_rate`: Per-generation probability of mutation from allele 0 to 1.
+- `backward_rate`: Per-generation probability of mutation from allele 1 to 0.
+
+Both rates default to zero and become dynamic float64 scalar leaves.
+Each rate lies in `[0, 1]`; their sum need not be less than one.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for nonscalar rates.
+
+!!! warning "Parameter domain"
+
+    Rates must be finite and in `[0, 1]`. These value constraints are unchecked,
+    including under JIT. Enable JAX x64 before construction.
+"""
+
+
 @final
 class Composition(AbstractFrequencyMap):
     r"""Apply frequency maps in the supplied left-to-right order.
@@ -208,21 +213,6 @@ class Composition(AbstractFrequencyMap):
     Selection and mutation generally do not commute, so their order is part of
     the model. Each component must preserve shape and return finite probabilities
     in `[0, 1]`; component failures propagate without additional validation.
-
-    **Arguments:**
-
-    - `*maps`: One or more `AbstractFrequencyMap` instances. For example,
-      `Composition(Underdominance(0.1), Mutation(1e-8, 1e-8))` applies selection
-      before mutation. Reverse the arguments to reverse the biological order.
-
-    **Returns:**
-
-    An immutable composition whose component parameters remain dynamic leaves.
-
-    **Raises:**
-
-    `ValueError` for an empty composition; use `Neutral()` for the identity map.
-    `TypeError` for non-map components; wrap custom functions in `FrequencyMap`.
     """
 
     maps: tuple[AbstractFrequencyMap, ...]
@@ -274,22 +264,6 @@ class Underdominance(AbstractFrequencyMap):
     For allele frequency $x$ and heterozygote disadvantage $s$,
 
     $$q_s(x) = \frac{x-sx(1-x)}{1-2sx(1-x)}.$$
-
-    **Arguments:**
-
-    - `strength`: Scalar selection coefficient in `[0, 1]`, converted to a
-      float64 JAX leaf. Changing its value does not change model structure.
-
-    **Returns:**
-
-    An immutable frequency map whose strength remains differentiable. Both
-    `apply(frequencies)` and callable shorthand evaluate the same selection rule.
-
-    **Failure Modes:**
-
-    Frequencies and strength must be finite and lie in `[0, 1]`; these are
-    unchecked caller preconditions, including under JIT and vmap.
-    Non-scalar strength raises `ValueError`. Keep x64 enabled.
     """
 
     strength: jax.Array = eqx.field(
@@ -314,3 +288,26 @@ class Underdominance(AbstractFrequencyMap):
         """
         disadvantage = self.strength * frequencies * (1 - frequencies)
         return (frequencies - disadvantage) / (1 - 2 * disadvantage)
+
+
+# Document the generated constructor without replacing its implementation.
+Underdominance.__init__.__doc__ = r"""Initialize Underdominance.
+
+**Arguments:**
+
+- `strength`: Scalar selection coefficient in `[0, 1]`, converted to a
+  float64 JAX leaf. Changing its value does not change model structure.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for nonscalar strength.
+
+!!! warning "Parameter domain"
+
+    Strength must be finite and in `[0, 1]`. This value constraint is unchecked,
+    including under JIT and vmap. Enable JAX x64 before construction.
+"""

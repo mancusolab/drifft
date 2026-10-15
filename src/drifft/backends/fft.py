@@ -123,36 +123,17 @@ class _FFTBucket(eqx.Module):
 class FFT(AbstractTransitionBackend):
     r"""Binomial expectations through local FFT convolutions.
 
-    The binomial expectation is evaluated on local log-odds grids, then
-    interpolated at the requested probabilities. Near zero and one, direct
-    binomial sums avoid the ill-conditioned log-odds coordinate.
+    For destination values $v_j$ and gene-copy count $M$, approximate
+    $B_M[v](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}v_j$.
+    On each local log-odds grid, the retained binomial kernel factors as
 
-    **Arguments:**
+    $$y_r=a_r\sum_j e^{-h(r-(j-j_0))^2/2}\,b_jv_j.$$
 
-    See `__init__` for `gene_copies`, `tail_tol`, `interp_order`, `min_mode_count`,
-    `block_spacing`, `balance`, and `dtype`. Construct geometry outside JIT.
-
-    **Returns:**
-
-    Reusable selection-independent geometry. Arrays are dynamic PyTree leaves;
-    configuration and dimensions are static Equinox metadata. The static fields
-    are retained for shape decisions and reproducible configuration reporting.
-    `edges` partitions block cores in log-odds; `eta0` and `variance` define
-    each grid. `rmin` and `offsets` locate nodes in the flat output array, and
-    `buckets` contains batched factors and cached transforms.
-
-    **Raises:**
-
-    `ValueError` if block metadata or boundary dimensions are inconsistent.
-    The constructor additionally validates configuration and requires float64.
-
-    **Failure Modes:**
-
-    Finite inputs and probabilities in `[0, 1]` are unchecked preconditions.
-    Tail tolerance excludes interpolation and roundoff error. Interpolation can
-    introduce small negative coefficients, and seams need not be differentiable.
-    Outputs are not clipped or normalized; roundoff can vary across devices.
-    Use `Transition` for automatically compiled application.
+    Here $j_0$ is the reference allele count, $h$ is the log-odds spacing,
+    and $a_r,b_j$ are diagonal scaling weights. The sum is a convolution,
+    evaluated by zero-padded FFTs; local polynomial interpolation supplies
+    expectations at arbitrary $q$. Near zero and one, direct binomial sums
+    replace log-odds interpolation.
     """
 
     buckets: tuple[_FFTBucket, ...]

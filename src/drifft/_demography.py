@@ -37,25 +37,10 @@ def _integer_schedule(values: Iterable[int] | jax.Array) -> tuple[int, ...]:
 class Demography(eqx.Module):
     r"""A population history specified at successive generation boundaries.
 
-    **Arguments:**
-
-    - `ne`: Nonempty sequence of positive integer diploid effective population
-      sizes, ordered oldest to newest. Each size represents `2 * ne` gene copies.
-    - `generations`: Positive integer durations between successive sizes, with
-      exactly one fewer entry than `ne`.
-
-    **Returns:**
-
-    An immutable history with host tuples. Lists and concrete one-dimensional
-    integer arrays are accepted; construct outside JIT. For each interval, hold
-    the source size for `generations[i] - 1` generations, then change size on the
-    final generation. Repeated sizes are valid. A single size and no durations
-    describe zero generations. No equilibrium initialization is implied.
-
-    **Raises:**
-
-    `ValueError` for invalid lengths, noninteger entries, or nonpositive entries.
-    Population sizes and durations are structural, not differentiable parameters.
+    Sizes run from oldest to newest. Each interval holds the source size for
+    `generations[i] - 1` generations, then changes size on the final generation.
+    Repeated sizes are valid; a single size with no durations is an identity
+    history. No equilibrium initialization is implied.
     """
 
     ne: tuple[int, ...] = eqx.field(converter=_integer_schedule)
@@ -88,6 +73,30 @@ class Demography(eqx.Module):
         return sum(self.generations)
 
 
+# Document the generated constructor without replacing its implementation.
+Demography.__init__.__doc__ = r"""Initialize Demography.
+
+**Arguments:**
+
+- `ne`: Nonempty sequence of positive integer diploid effective population
+  sizes, ordered oldest to newest. Each size represents `2 * ne` gene copies.
+- `generations`: Positive integer durations between successive sizes, with
+  exactly one fewer entry than `ne`.
+
+Lists and concrete one-dimensional integer arrays are converted to host
+tuples. Construct outside JIT.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for invalid lengths, noninteger entries, or nonpositive entries.
+Population sizes and durations are structural, not differentiable parameters.
+"""
+
+
 @final
 class DemographicTransition(eqx.Module):
     r"""Prepared evolution through a demography under a shared frequency map.
@@ -96,38 +105,6 @@ class DemographicTransition(eqx.Module):
     has expectation operator $A=P_{a,a}^{g-1}P_{a,b}$: hold the source size, then
     change size on the final generation. Across intervals, `expect` applies the
     product of these operators; `advance` applies its transpose to initial mass.
-
-    **Arguments:**
-
-    - `demography`: Population history with size changes at interval endpoints.
-    - `backend`: Callable taking a gene-copy count and returning prepared geometry,
-      such as `FFT`, `NUFFT`, or `functools.partial(NUFFT, accuracy=1e-11)`.
-    - `frequency_map`: An `AbstractFrequencyMap` used at every generation.
-      Its Equinox array parameters remain differentiable. Wrap custom functions
-      in `FrequencyMap`, and combine processes with `Composition`.
-
-    **Returns:**
-
-    An immutable PyTree. Construct outside JIT: one backend is built per distinct
-    population size. Geometry is independent of the frequency map. Public numerical
-    methods compile automatically, and fixed-length loops support reverse-mode
-    differentiation through its parameters. Changing the schedule may recompile.
-
-    **Raises:**
-
-    `TypeError` for invalid history, frequency map, or backend factory results;
-    `ValueError` if a factory returns geometry with the wrong gene-copy count.
-    Backend construction can also raise its documented configuration errors.
-
-    **Failure Modes:**
-
-    Enable JAX x64. Input vectors must be finite; the map must return one finite
-    probability in `[0, 1]` per source frequency. These are unchecked value
-    preconditions. Inputs are unchanged; no clipping, renormalization, or
-    equilibrium solve occurs. Roundoff can vary across devices.
-    Backend approximation errors can accumulate over generations; derivative
-    accuracy retains the chosen backend's limitations. Reverse-mode memory can
-    grow with history length. Only the final distribution is returned.
     """
 
     demography: Demography

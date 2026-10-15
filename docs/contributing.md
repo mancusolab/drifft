@@ -36,10 +36,14 @@ purpose. Ruff checks missing docstrings; comments explain numerical identities,
 JAX transform boundaries, and memory choices rather than restating operations.
 
 Use raw docstrings (`r"""..."""`) for public numerical APIs. Class docstrings
-explain the model, its defining mathematics, and shared numerical assumptions.
+explain the model and its defining mathematics. Put constructor arguments,
+returns, and checked errors on `__init__`, never on the class. Document generated
+Equinox constructors by assigning their `__doc__`, preserving initialization
+behavior. Named-tuple constructors use `__new__` instead.
 Child methods stay concise: a purpose sentence, `**Arguments:**`, and
-`**Returns:**`. Add `**Raises:**` or `**Failure Modes:**` for operation-specific
-failures; do not repeat the class's shared preconditions on every method.
+`**Returns:**`. Add `**Raises:**` for checked errors. Use `!!! warning`,
+`!!! note`, or `!!! tip` admonitions for limitations and practical guidance;
+do not repeat the same caveats on every method.
 Leave a blank line after each heading and between sections. Constructor methods
 return `None`; properties can use a short description of the returned value.
 Private helpers and internal validation hooks may use concise purpose-only
@@ -76,7 +80,10 @@ uv run --group docs zensical serve
 
 Open the local URL printed by the server. Markdown pages live in `docs/`;
 `zensical.toml` controls navigation and theme settings. API pages render the
-public Python docstrings with mkdocstrings.
+public Python docstrings with mkdocstrings. Present abstract interfaces in
+`??? abstract` blocks with all public methods. Concrete implementations show
+`__init__` without repeating interface methods; classes without an abstract
+interface retain their own operation documentation.
 
 Build the site locally with:
 

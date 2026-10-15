@@ -12,24 +12,9 @@ import lineax as lx
 class ExpectedVisitsResult(NamedTuple):
     r"""Occupation counts and convergence diagnostics for the approximate operator.
 
-    **Arguments:**
-
-    - `visits`: Candidate float64 expected visits of length `gene_copies-1`,
-      including generation zero. Index zero represents one mutant copy.
-    - `status`: Unmodified Lineax result code.
-    - `stats`: Unmodified Lineax iteration diagnostics.
-    - `residual_norm`: Infinity norm of $(I-Q^T)g-e_1$.
-    - `converged`: Successful status, finite candidate and acceptable residual.
-
-    **Returns:**
-
-    An immutable PyTree with the five fields above.
-
-    **Failure Modes:**
-
-    Use `visits` only when `converged` is true. Inspect `status`, `stats` and the
-    residual otherwise; increase iteration limits or revisit tolerances before
-    retrying. Even a small residual is not an exact-model error certificate.
+    The candidate occupation vector solves $(I-Q^T)g=e_1$, including generation
+    zero. The convergence flag combines solver status, finiteness, and a residual
+    check against the approximate operator.
     """
 
     visits: jax.Array
@@ -37,6 +22,32 @@ class ExpectedVisitsResult(NamedTuple):
     stats: dict[str, jax.Array | int | None]
     residual_norm: jax.Array
     converged: jax.Array
+
+
+# Name the defining module so runtime documentation can resolve the generated method.
+ExpectedVisitsResult.__new__.__module__ = __name__
+# Document the generated constructor without replacing its implementation.
+ExpectedVisitsResult.__new__.__doc__ = r"""Construct the result container without numerical validation.
+
+**Arguments:**
+
+- `visits`: Candidate float64 expected visits of length `gene_copies-1`,
+  including generation zero. Index zero represents one mutant copy.
+- `status`: Unmodified Lineax result code.
+- `stats`: Unmodified Lineax iteration diagnostics.
+- `residual_norm`: Infinity norm of $(I-Q^T)g-e_1$.
+- `converged`: Successful status, finite candidate and acceptable residual.
+
+**Returns:**
+
+An immutable result with the supplied fields.
+
+!!! warning "Usage preconditions"
+
+    Use `visits` only when `converged` is true. Inspect `status`, `stats` and the
+    residual otherwise; increase iteration limits or revisit tolerances before
+    retrying. Even a small residual is not an exact-model error certificate.
+"""
 
 
 def _solve_expected_visits(
@@ -71,12 +82,12 @@ def _solve_expected_visits(
 
     `ValueError` for invalid static solver configuration, checked during tracing.
 
-    **Failure Modes:**
+    !!! warning "Numerical limitations"
 
-    Lineax runs with `throw=False`: numerical failure is returned, not raised.
-    Under `vmap`, inspect each result's `converged` flag. Static configuration
-    errors reject the whole call. Floating-point paths and iteration counts can
-    differ across backends. Global differentiability of solves is not certified.
+        Lineax runs with `throw=False`: numerical failure is returned, not raised.
+        Under `vmap`, inspect each result's `converged` flag. Static configuration
+        errors reject the whole call. Floating-point paths and iteration counts can
+        differ across backends. Global differentiability of solves is not certified.
     """
     if not (math.isfinite(rtol) and math.isfinite(atol)):
         raise ValueError("rtol and atol must be finite")
