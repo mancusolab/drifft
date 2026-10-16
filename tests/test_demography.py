@@ -154,3 +154,23 @@ def test_demographic_methods_reject_wrong_shape(method, size):
     )
     with pytest.raises(ValueError):
         getattr(model, method)(jnp.ones(size))
+
+
+def test_expect_transposes_custom_sequential_hold_backend():
+    """Transpose the configured hold operator even when boundary geometry differs."""
+    model = drifft.DemographicTransition(
+        drifft.Demography([200, 200], [5]),
+        backend=drifft.FFT,
+        epoch_backend=lambda n: drifft.Sequential(
+            drifft.FFT(n, interp_order=2, min_mode_count=8, block_spacing=4)
+        ),
+        frequency_map=drifft.Underdominance(0.03),
+    )
+    distribution = jnp.zeros(401).at[170].set(1)
+    values = jnp.sin(jnp.arange(401) * 0.13)
+    assert jnp.allclose(
+        model.advance(distribution) @ values,
+        distribution @ model.expect(values),
+        rtol=1e-10,
+        atol=1e-12,
+    )

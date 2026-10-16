@@ -320,7 +320,10 @@ class DemographicTransition(eqx.Module):
         ):
             values = self._transition(source, destination).expect(values)
             if duration > 1:
-                transition = self._transition(source, source)
+                epoch = self._epochs[self._sizes.index(source)]
+                assert isinstance(epoch, Sequential)
+                # Holds may use different geometry from the boundary factory.
+                transition = Transition(epoch.backend, self.frequency_map)
                 values = jax.lax.fori_loop(
                     0,
                     duration - 1,

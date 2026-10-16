@@ -1,4 +1,7 @@
-"""Measure setup and actual successive generations in isolated CPU workers."""
+"""Measure setup and actual successive generations in isolated CPU workers.
+
+For changing-size histories with RationalKrylov, use compare_demography.py.
+"""
 
 # pattern: Imperative Shell
 # Backend imports remain inside workers. NumPy is used only for host-side

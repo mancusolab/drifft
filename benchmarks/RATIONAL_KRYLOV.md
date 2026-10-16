@@ -53,3 +53,25 @@ A separate compilation-only probe at 28,896 gene copies (1,000 generations, 128 
 - Ruff, ty, and the documentation build passed.
 - Aggregate measurements and source hashes: [geometry_compression_cpu.json](geometry_compression_cpu.json).
 - Raw paired-worker logs, final vectors, reconstructed reference and driver are retained locally in `/private/tmp/drifft-geometry-compression/`.
+
+## Run a new comparison
+
+The tracked driver compares the current Sequential FFT and RationalKrylov implementations:
+
+```bash
+uv run python benchmarks/compare_demography.py /path/to/history.tsv \
+  --cutoff 252 --initialization equilibrium --mutation-rate 1e-8 \
+  --krylov-dimension 128 --rtol 1e-8 --atol 1e-12 \
+  --equilibrium-rtol 1e-10 --equilibrium-atol 1e-12 \
+  --equilibrium-max-steps 4000 --output /tmp/demography-benchmark.json
+```
+
+The tab-separated input requires integer `Ne` (diploid population size) and `T_gen` (generations ago) columns, ordered from oldest to youngest with strictly decreasing times. Extra columns are ignored. The cutoff retains boundaries with `T_gen >= cutoff`; it does not interpolate a boundary at the cutoff. At least two boundaries must remain. Each interval applies `duration - 1` generations at its source size, then one FFT step to its destination size. The input is supplied by the user and is not copied into the repository.
+
+The driver uses neutral selection and singleton immigration. `--initialization zero` starts with no segregating mass; the default computes FFT equilibrium once and shares that vector with both workers. `--rank` optionally overrides the Krylov rank. The other flags above expose solver tolerances and limits; FFT geometry uses package defaults, captured by the source hashes.
+
+Each backend runs in a fresh, serial CPU process with float64, persistent compilation caching disabled, and one BLAS/OpenMP thread. JAX CPU threading uses its default. Setup, initialization and propagation are timed separately; imports and process startup are excluded from these timers. One cold and one warm pass restart from the same initial vector. Outputs are synchronized after each hold and boundary. Full-pass timers include Python orchestration and interval diagnostics. This measures public per-epoch calls across changing shapes, not a single compiled `DemographicTransition` call.
+
+The JSON records effective settings, retained history, input and source hashes, Git revision, package versions, devices, peak process RSS, interval diagnostics, final vectors and final FFT/Krylov differences. Output may therefore disclose the supplied demographic history; choose an appropriate destination. A successful converged run exits 0; runtime or convergence failure exits 1, and invalid input exits 2. Nonconvergence still writes measurements with `converged: false`, and those timings should not be treated as an accepted accuracy comparison. Nonfinite output aborts the run. The small synthetic history in `tests/test_demography_benchmark.py` exercises the complete command.
+
+This driver produces new measurements of the current backends. It does not reconstruct the original uncompressed Jacobi implementation or regenerate the historical full-table versus compact-table comparison above.
