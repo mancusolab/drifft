@@ -9,9 +9,37 @@ import pytest
 from test_demography import dense_transition
 
 import drifft
+from drifft import _krylov
 from drifft._epochs import _PowerProblem
 
 jax.config.update("jax_enable_x64", True)
+
+
+@pytest.mark.parametrize("steps", [0, 1, 2, 3, 8, 19, 500])
+def test_reduced_power_action_and_derivatives(steps):
+    """Check signed, nonnormal powers and their derivatives against recurrence."""
+    matrix = jnp.array([[0.97, 0.08, -0.03], [0.0, 0.91, 0.05], [0.0, 0.0, 0.83]])
+    seed = jnp.array([0.3, -0.5, 0.7])
+
+    def reference(a, x):
+        return jax.lax.fori_loop(0, steps, lambda _, v: a @ v, x)
+
+    action = jax.jit(lambda a, x: _krylov._matrix_power_matvec(a, x, steps))
+    direction = (jnp.ones_like(matrix) * 0.001, -seed * 0.1)
+    actual, tangent = jax.jvp(action, (matrix, seed), direction)
+    expected, expected_tangent = jax.jvp(reference, (matrix, seed), direction)
+    assert jnp.allclose(actual, expected, rtol=1e-11, atol=1e-13)
+    assert jnp.allclose(tangent, expected_tangent, rtol=1e-10, atol=1e-13)
+    weights = jnp.array([1.0, -0.7, 0.2])
+    actual_grad = jax.grad(lambda a: weights @ action(a, seed))(matrix)
+    expected_grad = jax.grad(lambda a: weights @ reference(a, seed))(matrix)
+    assert jnp.allclose(actual_grad, expected_grad, rtol=1e-10, atol=1e-13)
+    assert jnp.allclose(
+        jax.vmap(action, in_axes=(None, 0))(matrix, jnp.stack((seed, -seed))),
+        jnp.stack((expected, -expected)),
+        rtol=1e-11,
+        atol=1e-13,
+    )
 
 
 @pytest.mark.parametrize("backend_type", [drifft.FFT, drifft.NUFFT, drifft.Jacobi])

@@ -21,6 +21,22 @@ from ._jacobi import Jacobi
 from .backends import AbstractTransitionBackend
 
 
+def _matrix_power_matvec(matrix: jax.Array, vector: jax.Array, steps: int):
+    """Apply a nonnegative static power without assembling the powered matrix.
+
+    Square the reduced matrix, but accumulate set bits into a vector. This
+    replaces the matrix-matrix products used to combine powers with matvecs.
+    The Python loop stages only O(log steps) operations and supports reverse AD.
+    """
+    while steps:
+        if steps & 1:
+            vector = matrix @ vector
+        steps >>= 1
+        if steps:
+            matrix = matrix @ matrix
+    return vector
+
+
 def _power_action_with_status(
     matrix: jax.Array, seed: jax.Array, steps: int, dimension: int
 ):
@@ -64,18 +80,20 @@ def _power_action_with_status(
     )
     # Project A itself: inverting the projected resolvent gives a different,
     # potentially unstable power approximation for this nonnormal operator.
-    projected = basis.T @ matrix @ basis
+    images = matrix @ basis
+    projected = basis.T @ images
     coordinates = basis.T @ seed
-    result = basis @ (jnp.linalg.matrix_power(projected, steps) @ coordinates)
-    defect = matrix @ basis - basis @ projected
+    result = basis @ _matrix_power_matvec(projected, coordinates, steps)
+    defect = images - basis @ projected
     if dimension == size:
         # A complete basis (or invariant-subspace breakdown) needs no truncation
         # estimate. Finiteness is still checked by the public result contract.
         return result, result, defect, projected, coordinates, success
     coarse_dimension = max(1, dimension // 2)
-    coarse = basis[:, :coarse_dimension] @ (
-        jnp.linalg.matrix_power(projected[:coarse_dimension, :coarse_dimension], steps)
-        @ coordinates[:coarse_dimension]
+    coarse = basis[:, :coarse_dimension] @ _matrix_power_matvec(
+        projected[:coarse_dimension, :coarse_dimension],
+        coordinates[:coarse_dimension],
+        steps,
     )
     return result, coarse, defect, projected, coordinates, success
 
@@ -173,15 +191,14 @@ def _gmres_power_action(
     images = jax.lax.map(problem.operator.mv, basis.T).T
     projected = basis.T @ images
     coordinates = basis.T @ seed
-    fine = basis @ (jnp.linalg.matrix_power(projected, problem.steps) @ coordinates)
+    fine = basis @ _matrix_power_matvec(projected, coordinates, problem.steps)
     defect = images - basis @ projected
     if dimension == seed.size:
         coarse = fine
     else:
         half = max(1, dimension // 2)
-        coarse = basis[:, :half] @ (
-            jnp.linalg.matrix_power(projected[:half, :half], problem.steps)
-            @ coordinates[:half]
+        coarse = basis[:, :half] @ _matrix_power_matvec(
+            projected[:half, :half], coordinates[:half], problem.steps
         )
     return (fine, coarse, defect, projected, coordinates, success), {
         "num_steps": num_steps,
@@ -205,7 +222,9 @@ def _projected_result(
     defect, projected, coordinates = jax.tree.map(
         jax.lax.stop_gradient, (defect, projected, coordinates)
     )
-    weights = jax.lax.map(problem.error_norm, defect.T)
+    # Batch a few columns to amortize decoding/reduction overhead without
+    # materializing every decoded population-sized defect at once.
+    weights = jax.lax.map(problem.error_norm, defect.T, batch_size=8)
 
     def accumulate(_, carry):
         state, total = carry
@@ -374,7 +393,7 @@ def _polynomial_power_action(problem: _PowerProblem, dimension: int):
     images = images.at[:, -1].set(problem.operator.mv(basis[:, -1]))
     projected = basis.T @ images
     coordinates = basis.T @ seed
-    fine = basis @ (jnp.linalg.matrix_power(projected, problem.steps) @ coordinates)
+    fine = basis @ _matrix_power_matvec(projected, coordinates, problem.steps)
     defect = images - basis @ projected
     if dimension == seed.size or dimension > problem.steps:
         # The space can represent the requested polynomial exactly; recurrence
@@ -382,9 +401,8 @@ def _polynomial_power_action(problem: _PowerProblem, dimension: int):
         coarse = fine
     else:
         half = max(1, dimension // 2)
-        coarse = basis[:, :half] @ (
-            jnp.linalg.matrix_power(projected[:half, :half], problem.steps)
-            @ coordinates[:half]
+        coarse = basis[:, :half] @ _matrix_power_matvec(
+            projected[:half, :half], coordinates[:half], problem.steps
         )
     return fine, coarse, defect, projected, coordinates
 
