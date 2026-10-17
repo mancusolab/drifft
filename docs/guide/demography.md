@@ -124,9 +124,11 @@ factory defaults to `backend`. Jacobi requires an explicit boundary factory.
 The method defaults to `Sequential()`. Factories receive **gene-copy counts**,
 even though the history uses diploid Ne.
 
-Jacobi currently supports neutral and underdominance maps. RationalKrylov
-supports forward evolution; `model.expect()` requires matched Sequential
-transitions. See [constant-size methods](epochs.md) for accuracy controls,
+Both `PolynomialKrylov` and `RationalKrylov` support FFT, NUFFT, and Jacobi.
+RationalKrylov uses iterative shifted solves for FFT/NUFFT and dense solves for
+Jacobi. Both Krylov methods support forward evolution; `model.expect()` requires matched Sequential
+transitions. Jacobi supports only neutral and underdominance maps.
+See [constant-size methods](epochs.md) for accuracy controls,
 supported combinations, and migration from the earlier API.
 
 ## Segregating mass and mutation input

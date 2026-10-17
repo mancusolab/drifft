@@ -203,7 +203,7 @@ def _prepare_transition(
         _identity,
         jnp.zeros_like(distribution),
         augmented,
-        jnp.asarray(1.0),
+        1 + generations * jnp.sum(jnp.abs(source)) if augmented else jnp.asarray(1.0),
     )
 
 

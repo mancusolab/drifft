@@ -6,6 +6,38 @@ Neutral selection, segregating-site equilibrium, singleton mutation input at rat
 
 Float64 CPU JAX 0.11.2 on macOS arm64. Fresh worker per backend/geometry version, persistent compilation cache disabled, BLAS/OpenMP thread limits of one with default JAX CPU threading. Workers run sequentially. Timings synchronize outputs and use public per-epoch operations with Python orchestration across changing shapes; they do not measure one monolithic DemographicTransition JIT. FFT handles each interval boundary.
 
+## Backend/method API rerun
+
+Rerun at revision `69040c0` on the same 53-interval pre-expansion workload,
+with equilibrium initialization and 128 Krylov vectors. All cold and warm
+interval checks passed. Initialization took 22.93 s and was shared by both
+workers.
+
+| Measurement | Sequential FFT | Jacobi + RationalKrylov |
+| --- | ---: | ---: |
+| Setup | 19.91 s | 53.86 s |
+| Cold propagation | 514.13 s | 110.16 s |
+| Warm propagation | 456.20 s | 58.04 s |
+| First evaluation, including shared initialization | 556.97 s | 186.95 s |
+| Peak RSS | 1.486 GB | 2.294 GB |
+
+Jacobi + RationalKrylov was **2.98× faster for the first evaluation** and
+**7.86× faster warm**. Its final relative L1 difference from FFT was
+**5.70e-10**, with maximum entrywise difference **2.66e-14**. FFT remains an
+approximate reference. Krylov's warm time is close to the earlier compact-table
+measurement of 58.87 s; this single run does not establish a small performance
+change. Peak RSS is process-wide and has varied substantially across prior runs.
+
+Aggregate timings, settings, dependency versions, and source hashes are in
+[demography_cpu.json](demography_cpu.json). Full local results, including the
+private history and final vectors, are in
+`/private/tmp/drifft-schiffels-durbin-69040c0/comparison.json`.
+Recent expansion rows were excluded before parsing; retained integer boundaries
+were unchanged. The input preparation and original input hash are recorded in
+the aggregate artifact. This run measures public per-method calls, not a single
+compiled `DemographicTransition` call, and contains one cold and one warm pass
+per backend.
+
 ## Original FFT versus Krylov comparison
 
 These measurements preceded geometry compression. Both methods shared the same equilibrium initial vector.
@@ -73,9 +105,9 @@ The driver uses neutral selection and singleton immigration. `--initialization z
 Each backend runs in a fresh, serial CPU process with float64, persistent compilation caching disabled, and one BLAS/OpenMP thread. JAX CPU threading uses its default. Setup, initialization and propagation are timed separately; imports and process startup are excluded from these timers. One cold and one warm pass restart from the same initial vector. Outputs are synchronized after each hold and boundary. Full-pass timers include Python orchestration and interval diagnostics. This measures public per-method calls across changing shapes, not a single compiled `DemographicTransition` call.
 
 The driver has been migrated to separate geometry and method construction.
-The measurements above predate that API refactor and its use of Lineax for
-shifted solves; they have not been regenerated. Rerun the driver to measure
-the current implementation.
+The original and geometry-compression measurements predate that API refactor
+and its use of Lineax for shifted solves. The backend/method rerun above
+measures the refactored implementation.
 
 The JSON records effective settings, retained history, input and source hashes, Git revision, package versions, devices, peak process RSS, interval diagnostics, final vectors and final FFT/Krylov differences. Output may therefore disclose the supplied demographic history; choose an appropriate destination. A successful converged run exits 0; runtime or convergence failure exits 1, and invalid input exits 2. Nonconvergence still writes measurements with `converged: false`, and those timings should not be treated as an accepted accuracy comparison. Nonfinite output aborts the run. The small synthetic history in `tests/test_demography_benchmark.py` exercises the complete command.
 

@@ -6,9 +6,9 @@ Prepare backends outside JIT and reuse them across selection strengths.
 
 | Backend | How it works | Use with |
 | --- | --- | --- |
-| `FFT` | Local FFT convolutions with interpolation | `Transition`, or `DemographicTransition` with `Sequential` |
-| `NUFFT` | A global polynomial evaluated by a nonuniform FFT | `Transition`, or `DemographicTransition` with `Sequential` |
-| `Jacobi` | A reduced polynomial representation for repeated evolution | `DemographicTransition` with `RationalKrylov` |
+| `FFT` | Local FFT convolutions with interpolation | `Transition`, or `DemographicTransition` with Sequential or either Krylov method |
+| `NUFFT` | A global polynomial evaluated by a nonuniform FFT | `Transition`, or `DemographicTransition` with Sequential or either Krylov method |
+| `Jacobi` | A reduced polynomial representation for repeated evolution | `DemographicTransition` with `PolynomialKrylov` or `RationalKrylov` |
 
 ## FFT or NUFFT
 
@@ -32,7 +32,7 @@ for your workload, especially near probability endpoints or over long histories.
 
 Jacobi compresses evolution into a smaller polynomial representation.
 `RationalKrylov` then approximates many generations within that representation.
-This combination is experimental and currently supports only `Neutral` and
+This combination currently supports only `Neutral` and
 `Underdominance`. It supports forward evolution, but not `model.expect()`.
 
 Use `backend=Jacobi`, `method=RationalKrylov()`, and an explicit FFT or NUFFT
@@ -41,7 +41,22 @@ representation; the method's `dimension` controls the power approximation.
 Increasing one does not remove errors from the other.
 
 See [constant-size methods](epochs.md) for examples and convergence checks.
-RationalKrylov currently requires Jacobi; it cannot be paired with FFT or NUFFT.
+RationalKrylov also accepts FFT and NUFFT. Those backends use internal,
+unpreconditioned GMRES shifted solves instead of Jacobi's dense LU. Each basis
+vector can require many transition applications, so this is not automatically
+faster than Sequential. Failed inner solves are reported in the result status.
+
+## Polynomial Krylov across backends
+
+`PolynomialKrylov` works with FFT, NUFFT, or Jacobi using only applications of
+the prepared operator. It avoids shifted linear solves, but its basis can need
+more vectors than RationalKrylov for long intervals. With FFT/NUFFT, basis
+storage grows with population size times Krylov dimension.
+
+Use `method=PolynomialKrylov(dimension=64)` in a demographic model. Check
+convergence and compare against Sequential before relying on a speedup.
+Frequency-map support follows the backend; Jacobi retains its restrictions.
+Like RationalKrylov, this method supports forward evolution only.
 
 ## Mathematical and API details
 

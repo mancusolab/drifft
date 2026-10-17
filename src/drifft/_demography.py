@@ -141,8 +141,8 @@ class DemographicTransition(eqx.Module):
 
     An interval of g generations holds its source size for g-1 generations,
     then changes size on its last generation. FFT/NUFFT with Sequential provide
-    a matched expectation transpose. Jacobi with RationalKrylov supports forward
-    evolution only. Frequency-map parameters remain differentiable array leaves.
+    a matched expectation transpose. Both Krylov methods support all three
+    backends for forward evolution only. Frequency-map parameters remain differentiable array leaves.
     """
 
     demography: Demography
@@ -180,8 +180,8 @@ class DemographicTransition(eqx.Module):
         **Raises:**
 
         `TypeError` for unsupported combinations, including histories without holds;
-        `ValueError` for incorrect backend sizes. No iterative rational solve or
-        population-sized matrix materialization is selected implicitly.
+        `ValueError` for incorrect backend sizes. RationalKrylov selects internal
+        GMRES for FFT/NUFFT; no dense population matrix is materialized.
         """
         if not isinstance(demography, Demography):
             raise TypeError("demography must be a Demography")

@@ -17,7 +17,7 @@ from ._frequency import (
     Underdominance,
 )
 from ._jacobi import Jacobi
-from ._krylov import RationalKrylov
+from ._krylov import PolynomialKrylov, RationalKrylov
 from ._operator import Transition
 from ._solve import ExpectedVisitsResult
 from .backends import FFT, NUFFT, AbstractTransitionBackend
@@ -40,6 +40,7 @@ __all__ = [
     "Mutation",
     "NUFFT",
     "Neutral",
+    "PolynomialKrylov",
     "RationalKrylov",
     "Sequential",
     "Transition",

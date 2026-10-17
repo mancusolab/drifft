@@ -37,6 +37,10 @@ approximation diagnostics, and differentiation limits.
     options:
         members: [__init__, advance]
 
+::: drifft.PolynomialKrylov
+    options:
+        members: [__init__, advance]
+
 ::: drifft.RationalKrylov
     options:
         members: [__init__, advance]

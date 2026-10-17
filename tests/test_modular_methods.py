@@ -58,13 +58,6 @@ def test_method_reuses_settings_across_population_sizes():
 )
 def test_unsupported_combinations_rejected_without_holds(history):
     """Reject invalid combinations even when no hold would execute."""
-    with pytest.raises(TypeError, match="Jacobi"):
-        drifft.DemographicTransition(
-            history,
-            backend=drifft.FFT,
-            method=drifft.RationalKrylov(),
-            frequency_map=drifft.Neutral(),
-        )
     with pytest.raises(TypeError, match="boundary_backend"):
         drifft.DemographicTransition(
             history,

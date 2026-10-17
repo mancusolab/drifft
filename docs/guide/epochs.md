@@ -3,8 +3,9 @@
 An epoch holds population size and the frequency map fixed for several
 generations. A backend supplies the numerical representation; a method computes
 the multi-generation evolution. `Sequential()` repeats FFT or NUFFT transitions.
-`RationalKrylov()` uses a reduced operator supplied by `Jacobi` to approximate
-the whole epoch. Compose them through `DemographicTransition`:
+`PolynomialKrylov()` uses operator applications from any backend.
+`RationalKrylov()` builds its basis using shifted linear solves: dense LU for
+Jacobi, or matrix-free GMRES for FFT/NUFFT. Compose them through `DemographicTransition`:
 
 ```python
 import jax
@@ -32,6 +33,40 @@ Use `backend=drifft.FFT` and `method=drifft.Sequential()` to evaluate the
 recurrence generation by generation. Methods implement `AbstractEpochMethod`
 and contain no population geometry. Geometry is prepared outside JIT and reused
 across selection strengths; numerical methods compile automatically.
+
+## Choosing a method
+
+| Method | Backends | Computation |
+| --- | --- | --- |
+| `Sequential` | FFT, NUFFT | Apply one generation at a time |
+| `PolynomialKrylov` | FFT, NUFFT, Jacobi | Build a polynomial basis using operator applications |
+| `RationalKrylov` | FFT, NUFFT, Jacobi | Build a basis using shifted linear solves |
+
+For example, use polynomial Krylov with FFT geometry:
+
+```python
+polynomial_model = drifft.DemographicTransition(
+    drifft.Demography(ne=[8, 8], generations=[30]),
+    backend=drifft.FFT,
+    method=drifft.PolynomialKrylov(dimension=32),
+    frequency_map=drifft.Underdominance(0.02),
+)
+polynomial_result = polynomial_model.advance(jnp.zeros(17).at[1].set(1.0))
+```
+
+Polynomial Krylov builds a basis from the initial state and repeated operator
+applications, then powers the projected matrix. It needs no shifted solves and
+never constructs a dense population transition. Its basis requires storage
+proportional to working-state size times `dimension`. Long intervals may need a
+larger basis; no automatic restart or Sequential fallback is performed.
+
+To try rational Krylov with the same FFT model, set
+`method=drifft.RationalKrylov(dimension=64)`. FFT and NUFFT use unpreconditioned
+Lineax GMRES internally. Each inner solve has its own iteration limit and
+residual check; failure produces `status=EvolutionStatus.linear_solve_failed`.
+Increasing the outer basis dimension does not fix an unsuccessful inner solve.
+Jacobi retains its reusable LU factorization. Solver selection is internal.
+
 
 ## Direct method calls
 
@@ -83,14 +118,14 @@ one-step tail bound. `max_strength` controls assembly padding and is checked at
 runtime; raise it when preparing geometry for stronger selection. Neither
 setting certifies the final demographic result.
 
-RationalKrylov's `dimension` controls the power approximation. The reported
+Both Krylov methods use `dimension` to control the power approximation. The reported
 absolute `error_estimate` measures differences in the output distribution using
 the sum of absolute values. It combines a comparison with a smaller Krylov basis
 and a check of how closely the reduced trajectory follows the recurrence.
 
 !!! warning "Estimate, not certificate"
 
-    These diagnostics assess the power approximation, not errors in the Jacobi
+    These diagnostics assess the power approximation, not errors in the backend
     representation itself. `converged=True` does not certify total accuracy.
     Validate a new regime against FFT/NUFFT with Sequential, and increase Jacobi
     rank and Krylov dimension independently.
@@ -107,14 +142,16 @@ estimate does not cover.
 
 ## Differentiation and demographic integration
 
-JAX differentiates the assembled matrix and the input-dependent Krylov basis.
+JAX differentiates the operator applications and the input-dependent Krylov basis.
 Selection, initial mass, and immigration are dynamic arrays; dimensions and
 generation counts are static. Derivatives at zero seeds or changes in Arnoldi
 breakdown are not guaranteed. Differentiation can require substantially more
 memory than forward evaluation.
-Error diagnostics are not differentiated.
+The accumulated recurrence-defect diagnostic is excluded from differentiation.
+RationalKrylov differentiates GMRES solves implicitly through Lineax. A failed
+tangent or transpose solve raises even when the primal call uses `throw=False`.
 
-Because its basis depends on the input, RationalKrylov does not provide a
+Because their bases depend on the input, neither Krylov method provides a
 matched expectation transpose. Use Sequential when you need `model.expect()`.
 
 ```python

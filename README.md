@@ -3,9 +3,18 @@
 drifft is a JAX-based Python library for Wright–Fisher population genetics. It
 propagates allele-count distributions, computes expectations and expected visits
 before absorption, and supports differentiation through selection parameters.
-FFT and Chebyshev/NUFFT backends share the same Equinox interface.
-An experimental Jacobi backend with a rational Krylov method accelerates
-constant-size portions of demographic histories.
+Its Equinox models separate reusable backend geometry from evolution methods.
+
+| Backend | Computation | Supported frequency maps |
+| --- | --- | --- |
+| `FFT` | One-generation transitions; `Sequential`, `PolynomialKrylov`, or `RationalKrylov` | Built-in and custom maps |
+| `NUFFT` | Chebyshev/NUFFT transitions; `Sequential`, `PolynomialKrylov`, or `RationalKrylov` | Built-in and custom maps |
+| `Jacobi` | Reduced evolution with `PolynomialKrylov` or `RationalKrylov` | Neutral and underdominance |
+
+`DemographicTransition` combines a population history, backend, and method.
+Jacobi handles constant-size portions, with an explicit FFT or NUFFT backend
+for interval boundaries. Its rank and the Krylov dimension control separate
+approximations; check convergence and accuracy for the intended workload.
 
 [Read the usage and numerical guide](docs/index.md)
 
@@ -69,7 +78,8 @@ uv run pre-commit run --all-files
 
 See [validation and benchmarks](docs/benchmarks.md) for
 benchmark commands and [epoch comparisons](benchmarks/EPOCHS.md) for results
-against fastDTWF.
+against fastDTWF. The [demographic timing report](benchmarks/RATIONAL_KRYLOV.md)
+compares Sequential FFT with Jacobi + RationalKrylov on a human population history.
 
 Preview the documentation with `uv run --group docs zensical serve`; see
 [documentation development](docs/contributing.md#documentation) for build instructions.

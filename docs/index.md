@@ -21,8 +21,8 @@ changes. Read [backend tradeoffs](guide/backends.md) to choose a representation,
 
 For multiple generations and changing population sizes, use
 [demographic histories](guide/demography.md). FFT and NUFFT support sequential
-evolution; experimental Jacobi geometry with RationalKrylov targets long
-constant-size intervals.
+evolution or either Krylov method. Jacobi provides a reduced representation
+for either polynomial or rational Krylov powering.
 
 ## Performance and accuracy
 
