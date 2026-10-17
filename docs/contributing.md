@@ -17,12 +17,14 @@ Keep names aligned with the direction of the transition:
 
 | Name | Meaning |
 | --- | --- |
-| `backend` | Prepared destination geometry (`FFT` or `NUFFT`) |
-| `selection` | Frequency-to-probability model |
+| `backend` | Prepared geometry (`FFT`, `NUFFT`, or reduced `Jacobi`) |
+| `method` | Geometry-free epoch algorithm (`Sequential` or `RationalKrylov`) |
+| `boundary_backend` | FFT/NUFFT factory for demographic size changes |
+| `frequency_map` | Selection, mutation, or a composition of both |
 | `transition` | Backend bound to selection or explicit source probabilities |
 | `probabilities`, `stencil_width` | Computed quantities exposed as properties |
 | `expect(values)` | Destination values to source expectations |
-| `advance(distribution)` | Source mass to destination mass |
+| `advance(distribution)` | Source mass to destination mass; demographic calls return a result |
 | `as_lineax()` | Convert to the linear-operator interface |
 | `expected_visits()` | Domain-named solve returning values and convergence diagnostics |
 
@@ -30,6 +32,17 @@ Private helpers use verbs such as `build`, `compute`, `evaluate`, `sample`, and
 `solve`. Benchmark entrypoints use `run`; timing functions use `measure`.
 Published benchmark JSON retains historical `plan_*` field names so reports
 remain comparable; live code calls the prepared object a backend.
+
+`DemographicTransition` composes geometry, frequency maps, and epoch methods.
+Do not introduce a public epoch wrapper. Internal prepared problems describe
+the working-coordinate operator, initial state, reconstruction, and physical
+error measurements. The method computes a power action without knowing the
+biological observation likelihood. Shifted linear solves use Lineax internally;
+their solver selection is not a public configuration option.
+
+Keep population geometry on backends and algorithm controls on methods. Bind
+parameter-dependent operators and factors during evaluation so selection remains
+differentiable. Do not retain factors or Krylov bases in demographic results.
 
 Every class, method, and function needs a docstring describing its contract or
 purpose. Ruff checks missing docstrings; comments explain numerical identities,
@@ -82,8 +95,8 @@ Open the local URL printed by the server. Markdown pages live in `docs/`;
 `zensical.toml` controls navigation and theme settings. API pages render the
 public Python docstrings with mkdocstrings. Present abstract interfaces in
 `??? abstract` blocks with all public methods. Concrete implementations show
-`__init__` without repeating interface methods; classes without an abstract
-interface retain their own operation documentation.
+`__init__` and operations with implementation-specific guidance. Avoid repeating
+full interface contracts on each implementation.
 
 Build the site locally with:
 

@@ -64,7 +64,7 @@ def test_demographic_mutation_gradients(backend):
             model,
             (rates[0], rates[1]),
         )
-        return updated.advance(initial) @ frequencies
+        return updated.advance(initial).distribution @ frequencies
 
     def reference(rates):
         """Propagate the exact expected frequency under neutral mutation."""

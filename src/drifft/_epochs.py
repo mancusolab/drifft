@@ -1,47 +1,88 @@
-"""Common contracts for constant-size forward evolution."""
+"""Representation-independent contracts for constant-size forward evolution."""
 
 # pattern: Functional Core
 from abc import abstractmethod
+from collections.abc import Callable
+from functools import singledispatch
 from typing import NamedTuple, final
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import lineax as lx
 
 from ._frequency import AbstractFrequencyMap
 from ._operator import Transition
 from .backends import AbstractTransitionBackend
 
 
-class EpochResult(NamedTuple):
-    r"""Epoch output and an a posteriori power-action error estimate.
+class EvolutionStatus(eqx.Enumeration):
+    r"""Numerical outcomes; successful power checks do not certify backend accuracy."""
 
-    `distribution` is the evolved mass; `error_estimate` is an absolute L1
-    estimate for the power approximation only. `converged` indicates a finite
-    output satisfying the backend's stopping criterion. It does not certify
-    the underlying one-generation approximation.
+    successful = ""
+    nonfinite = "Nonfinite evolution output; check input mass and numerical settings."
+    unconverged = "Power action did not converge; increase dimension or use FFT/NUFFT with Sequential."
+    linear_solve_failed = "Shifted linear solve failed; check the reduced operator."
+
+
+class EpochResult(NamedTuple):
+    r"""Evolved mass, power-action L1 error estimate, convergence and status.
+
+    The estimate excludes one-generation approximation and representation error.
+    With `throw=False`, use the distribution only after inspecting convergence.
     """
 
     distribution: jax.Array
     error_estimate: jax.Array
     converged: jax.Array
+    status: EvolutionStatus
 
 
-class AbstractEpochBackend(eqx.Module):
-    r"""Interface for forward evolution at a fixed population size.
+@final
+class _PowerProblem(eqx.Module):
+    """A linear power in working coordinates with an affine output reconstruction."""
 
-    An epoch evaluates $p_{t+1}=P^T p_t+b$ for a fixed frequency map and
-    immigration vector $b$. In segregating mode, $P$ is restricted to interior
-    counts and boundary mass is discarded each generation. Approximate epoch
-    actions may depend on the input vector; no linear-transpose contract is
-    imposed on this interface.
-    """
+    operator: lx.AbstractLinearOperator
+    initial: jax.Array
+    steps: int
+    output_map: Callable[[jax.Array], jax.Array]
+    output_offset: jax.Array
+    augmented: bool
+    defect_scale: jax.Array
 
-    gene_copies: eqx.AbstractVar[int]
+    def decode(self, state: jax.Array) -> jax.Array:
+        """Apply only the linear physical-space output map, excluding the offset."""
+        return self.output_map(state[:-1] if self.augmented else state)
+
+    def reconstruct(self, state: jax.Array) -> jax.Array:
+        """Recover final population mass, including the last immigration event."""
+        return self.decode(state) + self.output_offset
+
+    def error_norm(self, delta: jax.Array) -> jax.Array:
+        """Measure physical and auxiliary-coordinate recurrence defects."""
+        auxiliary = jnp.abs(delta[-1]) if self.augmented else 0.0
+        return jnp.sum(jnp.abs(self.decode(delta))) + auxiliary
+
+
+class AbstractEpochMethod(eqx.Module):
+    r"""An algorithm for a prepared linear power action, independent of geometry."""
+
+    @abstractmethod
+    def validate(
+        self, backend: eqx.Module, frequency_map: AbstractFrequencyMap
+    ) -> None:
+        """Reject unsupported representation and process combinations before execution."""
+        ...
+
+    @abstractmethod
+    def solve(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
+        """Evaluate a prepared problem; preparation is internal to drifft."""
+        ...
 
     @abstractmethod
     def advance(
         self,
+        backend: eqx.Module,
         distribution: jax.Array,
         *,
         frequency_map: AbstractFrequencyMap,
@@ -50,40 +91,32 @@ class AbstractEpochBackend(eqx.Module):
         immigration: jax.Array | None = None,
         throw: bool = True,
     ) -> EpochResult:
-        r"""Advance through a constant-size epoch.
+        r"""Bind geometry and evolve a constant-size interval.
 
         **Arguments:**
 
-        - `distribution`: Finite real mass vector, converted to float64; length
-          `gene_copies + 1`, or `gene_copies - 1` in segregating mode.
+        - `backend`: Prepared geometry compatible with this method.
+        - `distribution`: Real mass, converted to float64; full or interior counts.
         - `frequency_map`: Process shared by every generation.
-        - `generations`: Nonnegative Python integer; static under JIT.
-        - `segregating`: Discard absorbing endpoints at every step.
-        - `immigration`: Optional mass vector added after each step, same shape
-          as `distribution`. Zero generations leaves the input unchanged.
-        - `throw`: Raise on nonfinite output or failed power approximation.
-          Under vmap, a failing member may fail the whole batch.
+        - `generations`: Nonnegative Python integer, static under JIT.
+        - `segregating`: Discard endpoint mass at each generation.
+        - `immigration`: Mass added after every generation, matching the input shape.
+        - `throw`: Raise on numerical failure; under vmap this may fail the whole batch.
 
         **Returns:**
 
-        `EpochResult` with evolved mass, an error estimate, and convergence flag.
+        `EpochResult`; zero generations preserves the input without immigration.
 
         **Raises:**
 
-        `ValueError` for invalid shapes or static configuration; `TypeError` for
-        unsupported frequency maps. Runtime failures use `equinox.error_if`.
-
-        !!! note "Transforms"
-
-            Enable JAX x64. Geometry is prepared outside JIT; numerical methods
-            support JIT and batching. Derivatives follow the concrete algorithm,
-            with limitations described by each backend.
+        `TypeError` for unsupported combinations; `ValueError` for static input errors.
+        Runtime domain checks remain active even with `throw=False`.
         """
         ...
 
 
 def _epoch_inputs(distribution, immigration, gene_copies, generations, segregating):
-    """Normalize shared epoch inputs and enforce their static shape contract."""
+    """Normalize shared inputs and enforce static shape contracts."""
     if (
         isinstance(generations, bool)
         or not isinstance(generations, int)
@@ -106,56 +139,102 @@ def _epoch_inputs(distribution, immigration, gene_copies, generations, segregati
     return distribution, immigration
 
 
-def _epoch_result(distribution, error, tolerance, throw):
-    """Apply the common finite-output and approximation-failure policy."""
-    converged = (
-        jnp.all(jnp.isfinite(distribution)) & jnp.isfinite(error) & (error <= tolerance)
+def _epoch_result(distribution, error, tolerance, throw, solve_success=True):
+    """Apply the finite-output, inner-solve and power-approximation failure policy."""
+    finite = jnp.all(jnp.isfinite(distribution)) & jnp.isfinite(error)
+    status = EvolutionStatus.where(
+        error <= tolerance, EvolutionStatus.successful, EvolutionStatus.unconverged
     )
+    status = EvolutionStatus.where(finite, status, EvolutionStatus.nonfinite)
+    status = EvolutionStatus.where(
+        solve_success, status, EvolutionStatus.linear_solve_failed
+    )
+    converged = status == EvolutionStatus.successful
     if throw:
         distribution = eqx.error_if(
             distribution,
             ~converged,
-            "epoch failed: nonfinite output or unconverged power action; check inputs "
-            "and increase krylov_dimension or use Sequential",
+            "epoch failed: nonfinite output, failed shifted solve or unconverged power action; "
+            "check inputs and increase dimension or use FFT/NUFFT with Sequential",
         )
-    return EpochResult(distribution, error, converged)
+    return EpochResult(distribution, error, converged, status)
+
+
+@singledispatch
+def _prepare_epoch(
+    backend, distribution, frequency_map, generations, segregating, immigration
+):
+    """Prepare a representation without requiring algorithm methods on every backend."""
+    raise TypeError("unsupported epoch backend")
+
+
+def _identity(value):
+    return value
+
+
+@_prepare_epoch.register(AbstractTransitionBackend)
+def _prepare_transition(
+    backend, distribution, frequency_map, generations, segregating, immigration
+):
+    distribution, source = _epoch_inputs(
+        distribution, immigration, backend.gene_copies, generations, segregating
+    )
+    transition = Transition(backend, frequency_map)
+    operation = transition.advance_segregating if segregating else transition.advance
+    augmented = immigration is not None and generations > 0
+    initial = (
+        jnp.concatenate((distribution, jnp.ones(1))) if augmented else distribution
+    )
+
+    def action(state):
+        if augmented:
+            return jnp.concatenate(
+                (operation(state[:-1]) + source * state[-1], state[-1:])
+            )
+        return operation(state)
+
+    operator = lx.FunctionLinearOperator(
+        action, jax.ShapeDtypeStruct(initial.shape, initial.dtype)
+    )
+    return _PowerProblem(
+        operator,
+        initial,
+        generations,
+        _identity,
+        jnp.zeros_like(distribution),
+        augmented,
+        jnp.asarray(1.0),
+    )
 
 
 @final
-class Sequential(AbstractEpochBackend):
-    r"""Evaluate an epoch by repeated FFT or NUFFT transitions.
+class Sequential(AbstractEpochMethod):
+    r"""Repeat FFT or NUFFT transitions without an additional power approximation.
 
-    This applies the prepared one-generation operator once per generation.
-    There is no additional power approximation, so the reported error estimate
-    is zero. The underlying transition's numerical errors still apply.
+    Construct as `Sequential()`. Geometry is supplied separately to `advance` or
+    through `DemographicTransition`. The reported power-action error is zero.
     """
 
-    backend: AbstractTransitionBackend
-    gene_copies: int = eqx.field(static=True)
-
-    def __init__(self, backend: AbstractTransitionBackend) -> None:
-        r"""Prepare sequential evolution from reusable transition geometry.
-
-        **Arguments:**
-
-        - `backend`: Prepared FFT or NUFFT one-generation backend.
-
-        **Returns:**
-
-        `None`.
-
-        **Raises:**
-
-        `TypeError` if `backend` does not implement `AbstractTransitionBackend`.
-        """
+    def validate(
+        self, backend: eqx.Module, frequency_map: AbstractFrequencyMap
+    ) -> None:
+        """Require a one-generation transition backend and frequency map."""
         if not isinstance(backend, AbstractTransitionBackend):
-            raise TypeError("backend must be an AbstractTransitionBackend")
-        self.backend = backend
-        self.gene_copies = backend.gene_copies
+            raise TypeError("Sequential requires an FFT or NUFFT transition backend")
+        if not isinstance(frequency_map, AbstractFrequencyMap):
+            raise TypeError("frequency_map must be an AbstractFrequencyMap")
+
+    def solve(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
+        """Iterate in the prepared problem's working coordinates."""
+        state = jax.lax.fori_loop(
+            0, problem.steps, lambda _, mass: problem.operator.mv(mass), problem.initial
+        )
+        return _epoch_result(problem.reconstruct(state), jnp.asarray(0.0), 0.0, throw)
 
     @eqx.filter_jit
     def advance(
         self,
+        backend: eqx.Module,
         distribution: jax.Array,
         *,
         frequency_map: AbstractFrequencyMap,
@@ -164,15 +243,21 @@ class Sequential(AbstractEpochBackend):
         immigration: jax.Array | None = None,
         throw: bool = True,
     ) -> EpochResult:
-        r"""Advance with the input and result contracts of `AbstractEpochBackend.advance`."""
-        distribution, immigration = _epoch_inputs(
-            distribution, immigration, self.gene_copies, generations, segregating
+        r"""Evolve with the contracts of `AbstractEpochMethod.advance`."""
+        self.validate(backend, frequency_map)
+        problem = _prepare_epoch(
+            backend, distribution, frequency_map, generations, segregating, immigration
         )
-        transition = Transition(self.backend, frequency_map)
-        operation = (
-            transition.advance_segregating if segregating else transition.advance
-        )
-        distribution = jax.lax.fori_loop(
-            0, generations, lambda _, mass: operation(mass) + immigration, distribution
-        )
-        return _epoch_result(distribution, jnp.asarray(0.0), 0.0, throw)
+        return self.solve(problem, throw=throw)
+
+
+Sequential.__init__.__doc__ = r"""Configure repeated one-generation evolution.
+
+**Arguments:**
+
+No arguments. Supply geometry separately to `advance` or `DemographicTransition`.
+
+**Returns:**
+
+`None`.
+"""

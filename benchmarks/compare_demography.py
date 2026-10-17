@@ -60,20 +60,20 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
 
     initial = jnp.asarray(json.loads((directory / "initial.json").read_text()))
     fft = {size: drifft.FFT(2 * size) for size in dict.fromkeys(sizes)}
-    epochs = {
-        size: (
-            drifft.Sequential(backend)
-            if mode == "fft"
-            else drifft.RationalKrylov(
-                2 * size,
-                krylov_dimension=settings["krylov_dimension"],
-                rank=settings["rank"],
-                rtol=settings["rtol"],
-                atol=settings["atol"],
-            )
+    epochs = (
+        fft
+        if mode == "fft"
+        else {size: drifft.Jacobi(2 * size, rank=settings["rank"]) for size in fft}
+    )
+    method = (
+        drifft.Sequential()
+        if mode == "fft"
+        else drifft.RationalKrylov(
+            dimension=settings["krylov_dimension"],
+            rtol=settings["rtol"],
+            atol=settings["atol"],
         )
-        for size, backend in fft.items()
-    }
+    )
     jax.block_until_ready((initial, fft, epochs))
     report: dict[str, Any] = {
         "setup_seconds": time.perf_counter() - start,
@@ -95,7 +95,8 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
             immigration = (
                 jnp.zeros(2 * source - 1).at[0].set(2 * source * mutation_rate)
             )
-            result = epochs[source].advance(
+            result = method.advance(
+                epochs[source],
                 distribution,
                 frequency_map=frequency_map,
                 generations=duration - 1,

@@ -54,7 +54,7 @@ def test_demographic_evaluation_matches_dense_boundary_history(
     distribution = jnp.arange(1, 2 * sizes[0] + 2, dtype=jnp.float64)
     distribution /= distribution.sum()
     values = jnp.sin(jnp.arange(2 * sizes[-1] + 1))
-    actual = model.advance(distribution)
+    actual = model.advance(distribution).distribution
     expected = model.expect(values)
     assert jnp.allclose(actual, distribution @ matrix, atol=2e-10, rtol=0)
     assert jnp.allclose(expected, matrix @ values, atol=2e-10, rtol=0)
@@ -76,7 +76,7 @@ def test_demographic_selection_gradient_and_batching(backend):
     def objective(strength):
         """Replace selection while reusing the prepared geometry."""
         updated = eqx.tree_at(lambda m: m.frequency_map.strength, model, strength)
-        return updated.advance(initial) @ values
+        return updated.advance(initial).distribution @ values
 
     def reference(strength):
         """Evaluate the same five-generation history using dense binomial matrices."""
@@ -105,9 +105,11 @@ def test_demographic_selection_gradient_and_batching(backend):
     )
     assert jnp.allclose(jax.grad(objective)(strength), difference, atol=2e-8, rtol=2e-6)
     batch = jnp.stack([initial, jnp.roll(initial, 1)])
-    actual = eqx.filter_jit(eqx.filter_vmap(model.advance))(batch)
+    actual = eqx.filter_jit(eqx.filter_vmap(model.advance))(batch).distribution
     assert jnp.allclose(
-        actual, jnp.stack([model.advance(row) for row in batch]), atol=1e-12
+        actual,
+        jnp.stack([model.advance(row).distribution for row in batch]),
+        atol=1e-12,
     )
 
 
@@ -160,16 +162,16 @@ def test_expect_transposes_custom_sequential_hold_backend():
     """Transpose the configured hold operator even when boundary geometry differs."""
     model = drifft.DemographicTransition(
         drifft.Demography([200, 200], [5]),
-        backend=drifft.FFT,
-        epoch_backend=lambda n: drifft.Sequential(
-            drifft.FFT(n, interp_order=2, min_mode_count=8, block_spacing=4)
+        boundary_backend=drifft.FFT,
+        backend=lambda n: drifft.FFT(
+            n, interp_order=2, min_mode_count=8, block_spacing=4
         ),
         frequency_map=drifft.Underdominance(0.03),
     )
     distribution = jnp.zeros(401).at[170].set(1)
     values = jnp.sin(jnp.arange(401) * 0.13)
     assert jnp.allclose(
-        model.advance(distribution) @ values,
+        model.advance(distribution).distribution @ values,
         distribution @ model.expect(values),
         rtol=1e-10,
         atol=1e-12,

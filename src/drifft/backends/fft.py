@@ -134,6 +134,12 @@ class FFT(AbstractTransitionBackend):
     evaluated by zero-padded FFTs; local polynomial interpolation supplies
     expectations at arbitrary $q$. Near zero and one, direct binomial sums
     replace log-odds interpolation.
+
+    For offspring probabilities $q_i$, `Transition` uses
+    $(Pv)_i=B_M[v](q_i)$ for expectations and the transpose $P^Tp$ for forward
+    mass. The approximation comes from tail truncation and interpolation;
+    the Gaussian-shaped convolution above is a factorization of the binomial
+    kernel, not a normal approximation to it.
     """
 
     buckets: tuple[_FFTBucket, ...]

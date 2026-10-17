@@ -20,8 +20,12 @@ transitions, and `--derivative-accuracy` to evaluate the larger-degree policy.
 Multiple RHS use `jax.vmap`; this processes independent vectors rather than
 claiming a shared batched NUFFT speedup.
 
-Use `benchmarks/compare_backends.py` to compare both installed backends.
-`compare_startup.py` and `compare_epochs.py` also compare both against fastDTWF.
+Use `benchmarks/compare_backends.py` to compare FFT and NUFFT.
+`compare_startup.py` and `compare_epochs.py` also compare these against fastDTWF.
+
+Use `benchmarks/compare_demography.py` for demographic comparisons, including
+Jacobi with RationalKrylov. Historical reports predate the backend/method API
+separation and are not performance measurements of the current refactor.
 
 See [historical replacement results](https://github.com/mancusolab/drifft/blob/main/benchmarks/BERNSTEIN.md) for measured limitations.
 The older [CPU report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RESULTS.md) and

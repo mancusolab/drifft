@@ -4,22 +4,17 @@ The [quickstart](quickstart.md) constructs a backend and binds it to a transitio
 The [model guide](model.md) explains the binomial kernel, selection and mutation
 equations, and the relationship between propagation and expectations.
 
-Build the backend once and reuse it across transitions. `Transition` binds the backend
-without rebuilding it. Frequency-map parameters are dynamic array leaves, while
-shape/configuration metadata are static. For another selection strength, construct
-`Transition(backend, Underdominance(new_strength))` and call its methods directly.
-Scalar strengths are normalized to float64 automatically.
+Build the backend once and reuse it across transitions. To change selection,
+construct `Transition(backend, Underdominance(new_strength))`; this reuses the
+geometry and keeps selection differentiable.
 
-`expect`, `advance`, their segregating variants, and `expected_visits` compile
-automatically. Call them directly on the transition. JAX compiles on the first
-call for each shape/static configuration and reuses the executable when array
-values change. For a whole simulation or inference objective, an outer
-`eqx.filter_jit` can still combine multiple method calls into one workflow.
+Numerical methods compile automatically on their first call. JAX reuses the
+compiled operation when parameter values change, but new shapes or configuration
+settings can require recompilation. Construct backends outside JIT.
 
 | API | Contract |
 | --- | --- |
 | `FFT(gene_copies, **options)` / `NUFFT(gene_copies, **options)` | Prepare destination geometry outside JIT |
-| `AbstractTransitionBackend` | Equinox abstract base; implement linear `expect(probabilities, values)` |
 | `Transition(backend, frequency_map=...)` | Bind an `AbstractFrequencyMap` describing selection, mutation, or both |
 | `Transition.from_probabilities(backend, probabilities)` | Bind explicit probabilities, one per source row |
 | `transition.expect(values)` | Destination values to source expectations: `P @ values` |
@@ -29,11 +24,8 @@ values change. For a whole simulation or inference objective, an outer
 | `transition.as_lineax(segregating=False)` | Expectation operator; `.T` advances mass |
 | `transition.expected_visits(**options)` | Square-transition visits from one copy, with convergence diagnostics |
 
-`expect` and `advance` have different directions and are intentionally named
-explicitly. Neither changes the input, clips outputs, nor normalizes probability
-mass. Segregating operations remove endpoint contributions; they do not condition
-on survival. Repeated operations remain JIT-compatible; NUFFTs use FINUFFT’s compiled FFI
-rather than Python host callbacks.
+Neither operation changes the input, clips outputs, or normalizes mass.
+Segregating operations discard endpoint mass; they do not condition on survival.
 
 ## Custom frequency maps
 

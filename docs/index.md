@@ -3,7 +3,7 @@
 drifft is a JAX-based Python library for Wright–Fisher population genetics. It
 propagates allele-count distributions, computes expectations and expected visits
 before absorption, and supports differentiation through selection parameters.
-FFT and Chebyshev/NUFFT backends share an Equinox interface.
+Its Equinox models separate reusable backend geometry from evolution methods.
 
 [Try the quickstart](guide/quickstart.md){ .md-button .md-button--primary }
 [Install drifft](guide/installation.md){ .md-button }
@@ -16,8 +16,13 @@ Prepare a backend for the destination population, bind a selection function with
 for a diploid population of size `N`.
 
 The [user guide](guide/transitions.md) covers custom selection and population-size
-changes. Read [backend tradeoffs](guide/backends.md) to choose FFT or NUFFT, and
+changes. Read [backend tradeoffs](guide/backends.md) to choose a representation, and
 [expected visits](guide/solves.md) for absorption calculations and solver checks.
+
+For multiple generations and changing population sizes, use
+[demographic histories](guide/demography.md). FFT and NUFFT support sequential
+evolution; experimental Jacobi geometry with RationalKrylov targets long
+constant-size intervals.
 
 ## Performance and accuracy
 

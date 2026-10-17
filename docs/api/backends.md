@@ -18,25 +18,33 @@ See [backend tradeoffs](../guide/backends.md) and
     options:
         members: [__init__]
 
-## Epoch backends
+::: drifft.Jacobi
+    options:
+        members: [__init__]
+
+## Epoch methods
 
 See [constant-size epochs](../guide/epochs.md) for timing, immigration,
 approximation diagnostics, and differentiation limits.
 
-??? abstract "`drifft.AbstractEpochBackend`"
+??? abstract "`drifft.AbstractEpochMethod`"
 
-    ::: drifft.AbstractEpochBackend
+    ::: drifft.AbstractEpochMethod
         options:
-            members: [advance]
+            members: [validate, solve, advance]
 
 ::: drifft.Sequential
     options:
-        members: [__init__]
+        members: [__init__, advance]
 
 ::: drifft.RationalKrylov
     options:
-        members: [__init__]
+        members: [__init__, advance]
 
 ::: drifft.EpochResult
+    options:
+        members: []
+
+::: drifft.EvolutionStatus
     options:
         members: []

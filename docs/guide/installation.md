@@ -8,16 +8,14 @@ cd drifft
 uv sync
 ```
 
-Run Python scripts with `uv run python`. Both backends require float64;
+Run Python scripts with `uv run python`. All backends require float64;
 enable `jax_enable_x64` before constructing a backend, as shown in the
 [quickstart](quickstart.md).
 
 ## Dependencies and hardware
 
-
-`jax-finufft` remains a core dependency for the NUFFT implementation. The dependency follows upstream `jax-finufft` `main`; `uv.lock` records the exact
-commit. This includes batching fixes absent from release 1.3.1 and permits the
-latest JAX on supported Python versions. Installing from Git builds the native
+`jax-finufft` is a core dependency for NUFFT. The project uses its Git version,
+with the exact commit recorded in `uv.lock`. Installing from Git builds the native
 extension and requires a C++ toolchain. The build uses installed FFTW development
 libraries when available; otherwise it downloads and builds FFTW automatically
 (OpenMP is optional). Ubuntu CI installs `libfftw3-dev` to avoid that extra build.

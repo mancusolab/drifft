@@ -1,8 +1,8 @@
 # Demographic histories
 
 `Demography` describes population sizes and timing. `DemographicTransition`
-combines that history with a numerical backend and a shared frequency map.
-It evaluates allele-count distributions deterministically.
+combines that history with a numerical backend, an epoch method, and a shared
+frequency map. It evaluates allele-count distributions deterministically.
 
 ```python
 import equinox as eqx
@@ -22,7 +22,8 @@ model = drifft.DemographicTransition(
     frequency_map=drifft.Underdominance(0.01),
 )
 initial = jnp.zeros(2 * history.initial_ne + 1).at[1].set(1.0)
-final = model.advance(initial)
+result = model.advance(initial)
+final = result.distribution
 ```
 
 ## Timing and units
@@ -59,11 +60,13 @@ inspect the schedule.
 
 ## Expectations and selection gradients
 
-With the default Sequential epochs, `model.expect(values)` maps final-state values to expectations conditional on
-each initial allele count. Its input has `2 * history.final_ne + 1` entries and
+With the default Sequential method, `model.expect(values)` maps final-state
+values to expectations conditional on each initial allele count. Its input has
+`2 * history.final_ne + 1` entries and
 its output has `2 * history.initial_ne + 1` entries. It is the adjoint of
-`.advance()`, not backward population evolution. Both methods accept signed
-vectors and leave inputs unchanged; neither clips nor renormalizes outputs.
+the distribution returned by `.advance()`, not backward population evolution.
+Both methods accept signed vectors and leave inputs unchanged; neither clips
+nor renormalizes outputs.
 
 The frequency map applies on the source grid at every generation, including
 size changes. Update an Equinox selection model without rebuilding geometry:
@@ -73,16 +76,15 @@ terminal_frequency = jnp.linspace(0.0, 1.0, 2 * history.final_ne + 1)
 
 def expected_frequency(strength):
     updated = eqx.tree_at(lambda m: m.frequency_map.strength, model, strength)
-    return updated.advance(initial) @ terminal_frequency
+    return updated.advance(initial).distribution @ terminal_frequency
 
 gradient = jax.grad(expected_frequency)(jnp.asarray(0.01))
 ```
 
-Construct histories and prepared models outside JIT. Both numerical methods
-compile automatically. Sizes and durations are fixed metadata, not differentiable
-parameters; changing them can trigger recompilation. Constant-size portions use
-fixed-length loops supporting reverse-mode differentiation. Shapes change only
-between intervals. Reverse-mode memory can grow with the number of generations.
+Construct histories and prepared models outside JIT. Numerical methods compile
+automatically. Sizes and durations are fixed, not differentiable parameters;
+changing them can trigger recompilation. Gradient memory use can grow with the
+number of generations.
 
 ## Backend configuration and limits
 
@@ -99,11 +101,35 @@ spectral_model = drifft.DemographicTransition(
 )
 ```
 
-For accelerated constant-size portions, supply
-`epoch_backend=drifft.RationalKrylov`. The one-generation `backend` still handles
-size changes. RationalKrylov supports neutral and underdominance maps and
-forward evolution; `model.expect()` requires Sequential epochs. See
-[constant-size epochs](epochs.md) for accuracy controls and limitations.
+For accelerated constant-size portions, select Jacobi geometry and a rational
+Krylov method separately:
+
+```python
+accelerated = drifft.DemographicTransition(
+    history,
+    backend=partial(drifft.Jacobi, max_strength=0.1),
+    boundary_backend=drifft.FFT,
+    method=drifft.RationalKrylov(dimension=64, rtol=1e-8),
+    frequency_map=drifft.Underdominance(0.01),
+)
+result = accelerated.advance(initial, throw=False)
+if not bool(result.converged):
+    raise RuntimeError(f"demographic evolution failed: {result.status}")
+final = result.distribution
+```
+
+`backend` prepares constant-size geometry; `boundary_backend` prepares the
+one-generation size-changing transitions. With FFT or NUFFT, the boundary
+factory defaults to `backend`. Jacobi requires an explicit boundary factory.
+The method defaults to `Sequential()`. Factories receive **gene-copy counts**,
+even though the history uses diploid Ne.
+
+Jacobi currently supports neutral and underdominance maps. RationalKrylov
+supports forward evolution; `model.expect()` requires matched Sequential
+transitions. See [constant-size methods](epochs.md) for accuracy controls,
+supported combinations, and migration from the earlier API.
+
+## Segregating mass and mutation input
 
 `model.advance_segregating(initial, mutation_rate=1e-8)` discards absorbing mass
 each generation and adds singleton input equal to the destination gene-copy
@@ -111,14 +137,23 @@ count times the mutation rate. Its input and output contain interior counts
 only (`2 * ne - 1` entries). This source is distinct from recurrent mutation in
 a frequency map. Equilibrium initialization is supplied by the caller.
 
-The current API uses one frequency map throughout the history and returns
-only the final distribution. Use [frequency-map composition](transitions.md#selection-and-mutation)
+## Results and failures
+
+The current API uses one frequency map throughout the history. Forward methods
+return a `DemographicResult` containing `distribution`, `converged`, `status`,
+and per-interval `diagnostics`. No intermediate distributions or solver
+factorizations are retained in the result. With `throw=True` (the default), a
+numerical failure raises; with `throw=False`, inspect the result before using
+the distribution. Domain errors still raise. A failing member under `vmap`
+may fail the whole batch when throwing is enabled.
+
+Interval error estimates describe the power approximation, not total
+demographic error. Use [frequency-map composition](transitions.md#selection-and-mutation)
 to combine selection and mutation in an explicit order.
 
 !!! warning "Accumulated error"
 
     Each generation inherits the chosen backend's
     approximation and derivative limitations; errors can accumulate over long
-    histories. See [numerical accuracy](numerics.md). Small dense-reference tests
-    validate timing and gradients; they do not establish accuracy or performance
-    for every long demographic history.
+    histories. Compare results with tighter backend settings and, for Jacobi, larger rank
+    and Krylov dimension. Validate gradients separately from distribution values.

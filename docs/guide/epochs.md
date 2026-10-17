@@ -1,8 +1,10 @@
-# Constant-size epochs
+# Constant-size methods
 
 An epoch holds population size and the frequency map fixed for several
-generations. `Sequential` repeats FFT or NUFFT transitions. `RationalKrylov`
-uses a reduced Jacobi operator to approximate the whole epoch.
+generations. A backend supplies the numerical representation; a method computes
+the multi-generation evolution. `Sequential()` repeats FFT or NUFFT transitions.
+`RationalKrylov()` uses a reduced operator supplied by `Jacobi` to approximate
+the whole epoch. Compose them through `DemographicTransition`:
 
 ```python
 import jax
@@ -11,10 +13,37 @@ import drifft
 
 jax.config.update("jax_enable_x64", True)
 
-epoch = drifft.RationalKrylov(128, krylov_dimension=40)
+model = drifft.DemographicTransition(
+    drifft.Demography(ne=[64, 64], generations=[250]),
+    backend=drifft.Jacobi,
+    boundary_backend=drifft.FFT,
+    method=drifft.RationalKrylov(dimension=40),
+    frequency_map=drifft.Neutral(),
+)
 initial = jnp.zeros(127).at[0].set(1.0)
+result = model.advance_segregating(
+    initial,
+    mutation_rate=1e-8,
+)
+final = result.distribution
+```
+
+Use `backend=drifft.FFT` and `method=drifft.Sequential()` to evaluate the
+recurrence generation by generation. Methods implement `AbstractEpochMethod`
+and contain no population geometry. Geometry is prepared outside JIT and reused
+across selection strengths; numerical methods compile automatically.
+
+## Direct method calls
+
+For numerical experiments or custom history orchestration, a method can also
+advance a prepared backend directly, including arbitrary immigration vectors:
+
+```python
+backend = drifft.Jacobi(128)
+method = drifft.RationalKrylov(dimension=40)
 source = jnp.zeros_like(initial).at[0].set(128 * 1e-8)
-result = epoch.advance(
+result = method.advance(
+    backend,
     initial,
     frequency_map=drifft.Neutral(),
     generations=250,
@@ -24,10 +53,11 @@ result = epoch.advance(
 final = result.distribution
 ```
 
-Replace the constructor with `drifft.Sequential(drifft.FFT(128))` to evaluate
-the same recurrence generation by generation. Both implement
-`AbstractEpochBackend`. Geometry is prepared outside JIT and reused across
-selection strengths; `.advance()` compiles automatically.
+This applies the hold backend for all 250 generations. The demographic example
+instead uses 249 hold generations and one FFT boundary generation, following
+the history's interval convention even when the sizes are equal. They use
+different approximations to the same biological recurrence and can produce
+different results.
 
 ## Mass and immigration
 
@@ -42,8 +72,68 @@ renormalized.
 
     Singleton immigration is an infinite-sites source of new segregating mass.
     It does not apply recurrent mutation or backmutation to existing alleles.
-    RationalKrylov currently accepts only `Neutral` and `Underdominance`.
-    Use Sequential with a composed frequency map for recurrent mutation.
+    Jacobi currently accepts only `Neutral` and `Underdominance`.
+    Use FFT or NUFFT with Sequential and a composed frequency map for
+    recurrent mutation.
+
+## Accuracy and failures
+
+Jacobi's `rank` controls polynomial truncation. Its default uses an ideal
+one-step tail bound. `max_strength` controls assembly padding and is checked at
+runtime; raise it when preparing geometry for stronger selection. Neither
+setting certifies the final demographic result.
+
+RationalKrylov's `dimension` controls the power approximation. The reported
+absolute `error_estimate` measures differences in the output distribution using
+the sum of absolute values. It combines a comparison with a smaller Krylov basis
+and a check of how closely the reduced trajectory follows the recurrence.
+
+!!! warning "Estimate, not certificate"
+
+    These diagnostics assess the power approximation, not errors in the Jacobi
+    representation itself. `converged=True` does not certify total accuracy.
+    Validate a new regime against FFT/NUFFT with Sequential, and increase Jacobi
+    rank and Krylov dimension independently.
+
+By default, a nonfinite output or an estimate above
+`atol + rtol * sum(abs(distribution))` raises a runtime error. For direct method
+calls, use `throw=False`
+to inspect `result.converged` and `result.error_estimate`. Demographic calls
+report these estimates in `result.diagnostics`. Domain errors still
+raise, and a failure under `vmap` may fail the whole batch. Increase the Krylov
+dimension or use FFT/NUFFT with Sequential after nonconvergence. A sequential
+FFT/NUFFT reference also checks errors in the Jacobi reduction that the power
+estimate does not cover.
+
+## Differentiation and demographic integration
+
+JAX differentiates the assembled matrix and the input-dependent Krylov basis.
+Selection, initial mass, and immigration are dynamic arrays; dimensions and
+generation counts are static. Derivatives at zero seeds or changes in Arnoldi
+breakdown are not guaranteed. Differentiation can require substantially more
+memory than forward evaluation.
+Error diagnostics are not differentiated.
+
+Because its basis depends on the input, RationalKrylov does not provide a
+matched expectation transpose. Use Sequential when you need `model.expect()`.
+
+```python
+history = drifft.Demography(ne=[64, 40, 80], generations=[250, 100])
+model = drifft.DemographicTransition(
+    history,
+    backend=drifft.Jacobi,
+    boundary_backend=drifft.FFT,
+    method=drifft.RationalKrylov(),
+    frequency_map=drifft.Neutral(),
+)
+final = model.advance_segregating(initial, mutation_rate=1e-8).distribution
+```
+
+Constant-size portions use the selected backend and method; the final, possibly
+rectangular step of each interval uses FFT/NUFFT. Immigration on that step uses the
+destination gene-copy count. `model.expect()` is available only with Sequential
+epochs. Equilibrium initialization remains explicit: use
+`Transition.expected_visits()` and scale its visits by the singleton input.
 
 ## Reduced operator and power action
 
@@ -70,74 +160,27 @@ orthonormal basis from $(I+\tau(I-A))^{-1}$ with $\tau=k/8$ and two rounds of
 reorthogonalization. It projects the **original** matrix, $B=V^TAV$, then
 evaluates $VB^kV^Ty_0$ by binary powering the small matrix.
 
-The Jacobi assembly uses parity-separated tridiagonal solves and polynomial
-recurrences. The reduced matrix and its LU factors are dense: storage is
-$O(r^2)$ and factorization is $O(r^3)$ for polynomial rank $r$. Grid encoding
-streams polynomials using $O(M+r)$ working storage and $O(Mr)$ work.
-Quadrature and binomial-stencil geometry are also retained. Only half the
-Gauss–Jacobi nodes are stored: paired nodes have equal weights and polynomial
-values related by $p_n(-z)=(-1)^n p_n(z)$. Even and odd polynomial contributions
-recover both halves for arbitrary distributions. A central node, when present,
-has half weight in each reflected contribution. Stencil indices are generated
-from one int32 starting index per row. These storage changes preserve the
-polynomial rank, quadrature order, float64 weights, and truncation tolerance.
-This backend does not use HODLR compression.
+Jacobi assembles a dense reduced matrix without constructing the full
+population transition. Storage grows quadratically with rank, and the internal
+LU factorization grows cubically. RationalKrylov reuses that factorization
+throughout basis construction. Increasing rank therefore has a different cost
+from increasing Krylov dimension.
 
-## Accuracy and failures
+## Migration from the combined epoch backend
 
-`rank` controls polynomial truncation. Its default uses an ideal one-step tail
-bound. `max_strength` controls assembly padding and is checked at runtime;
-raise it when preparing geometry for stronger selection. Neither setting
-certifies the final demographic result.
+The experimental epoch API now separates geometry from algorithms. There is no
+public `Epoch` wrapper.
 
-`krylov_dimension` controls the power approximation. The reported absolute L1
-`error_estimate` takes the maximum of two diagnostics:
+| Earlier API | Current API |
+| --- | --- |
+| `RationalKrylov(n, rank=r, krylov_dimension=k)` | `Jacobi(n, rank=r)` and `RationalKrylov(dimension=k)` |
+| `Sequential(backend)` | `Sequential()` with backend passed to `advance` |
+| `epoch.advance(mass, ...)` | `method.advance(backend, mass, ...)` |
+| `epoch_backend=RationalKrylov` | `backend=Jacobi, boundary_backend=FFT, method=RationalKrylov()` |
+| `final = model.advance(initial)` | `final = model.advance(initial).distribution` |
 
-- The difference between the full Krylov space and its leading half. A complete
-  reduced basis does not need this comparison.
-- Accumulated decoded recurrence defects $R=AV-VB$, weighted along the
-  projected trajectory. This catches cases where both nested approximations
-  decay prematurely. Accumulation costs $O(gm^2)$ for Krylov dimension $m$.
-
-!!! warning "Estimate, not certificate"
-
-    The defect estimate uses contractivity of the ideal population transition;
-    the approximate reduction and codec need not satisfy that property exactly.
-    These diagnostics exclude polynomial truncation, quadrature, assembly, and
-    floating-point errors. `converged=True` does not certify total accuracy.
-    Validate a new regime against Sequential and increased rank/dimension.
-
-By default, a nonfinite output or an estimate above
-`atol + rtol * sum(abs(distribution))` raises a runtime error. Use `throw=False`
-to inspect `result.converged` and `result.error_estimate`. Domain errors still
-raise, and a failure under `vmap` may fail the whole batch. Increase the Krylov
-dimension or use Sequential after nonconvergence.
-
-## Differentiation and demographic integration
-
-JAX differentiates the assembled matrix and the input-dependent Krylov basis.
-Selection, initial mass, and immigration are dynamic arrays; dimensions and
-generation counts are static. Derivatives at zero seeds or changes in Arnoldi
-breakdown are not guaranteed. Reverse-mode encoding may retain $O(Mr)$ state.
-The diagnostic defect accumulation is excluded from differentiation.
-
-Because its basis depends on the input, RationalKrylov is not a fixed linear
-operator with a matched transpose. It does not implement
-`AbstractTransitionBackend.expect` or a Lineax operator.
-
-```python
-history = drifft.Demography(ne=[64, 40, 80], generations=[250, 100])
-model = drifft.DemographicTransition(
-    history,
-    backend=drifft.FFT,
-    epoch_backend=drifft.RationalKrylov,
-    frequency_map=drifft.Neutral(),
-)
-final = model.advance_segregating(initial, mutation_rate=1e-8)
-```
-
-Constant-size portions use the epoch backend; the final, possibly rectangular
-step of each interval uses FFT/NUFFT. Immigration on that step uses the
-destination gene-copy count. `model.expect()` is available only with Sequential
-epochs. Equilibrium initialization remains explicit: use
-`Transition.expected_visits()` and scale its visits by the singleton input.
+Move `rank`, `max_strength`, and `one_step_tolerance` to Jacobi construction.
+Keep `rtol` and `atol` on RationalKrylov. `AbstractEpochMethod` replaces
+`AbstractEpochBackend`. Demographic forward methods return convergence status
+and interval diagnostics alongside the distribution. Single-generation
+`Transition` methods and expected-visits results retain their existing API.

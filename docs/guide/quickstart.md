@@ -22,7 +22,7 @@ next_distribution = transition.advance(distribution)
 ```
 
 `next_distribution[i]` is the probability of `i` mutant copies next generation.
-Indices zero and `gene_copies` represent loss and fixation. To simulate another
+Indices zero and `gene_copies` represent loss and fixation. To advance another
 generation, pass `next_distribution` to `transition.advance`.
 
 `transition.expect(values)` computes expected destination values at each source
@@ -32,3 +32,6 @@ renormalizes its output.
 Reuse the backend across selection strengths. Substitute `drifft.NUFFT(2000)`
 for the Chebyshev/NUFFT implementation; see [backend tradeoffs](backends.md).
 For custom selection or population-size changes, see [transitions and selection](transitions.md).
+
+For several generations or a changing population size, continue with
+[demographic histories](demography.md).

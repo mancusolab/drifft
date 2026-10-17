@@ -28,6 +28,11 @@ class NUFFT(AbstractTransitionBackend):
     at fixed Chebyshev–Lobatto nodes followed by a DCT-I. A type-2 NUFFT
     evaluates the cosine series at arbitrary offspring probabilities.
     Endpoint expectations are set directly to $v_0$ and $v_M$.
+
+    For offspring probabilities $q_i$, `Transition` uses
+    $(Pv)_i=B_M[v](q_i)$ for expectations and the transpose $P^Tp$ for forward
+    mass. Polynomial truncation, truncated binomial sampling, and NUFFT
+    evaluation each contribute approximation error.
     """
 
     nodes: jax.Array

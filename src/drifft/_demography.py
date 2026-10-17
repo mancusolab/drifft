@@ -3,14 +3,21 @@
 # pattern: Functional Core
 import operator
 from collections.abc import Callable, Iterable
-from typing import final
+from typing import NamedTuple, cast, final
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from ._epochs import AbstractEpochBackend, Sequential
+from ._epochs import (
+    AbstractEpochMethod,
+    EvolutionStatus,
+    Sequential,
+    _epoch_result,
+    _prepare_epoch,
+)
 from ._frequency import AbstractFrequencyMap
+from ._jacobi import Jacobi
 from ._operator import Transition
 from .backends import AbstractTransitionBackend
 
@@ -98,51 +105,83 @@ Population sizes and durations are structural, not differentiable parameters.
 """
 
 
+class IntervalDiagnostics(NamedTuple):
+    r"""Numerical outcome for one complete demographic interval.
+
+    `source_ne` and `destination_ne` are diploid population sizes; `generations`
+    includes both the hold and final boundary generation. `error_estimate`
+    covers only the hold power approximation, while `converged` and `status`
+    also account for nonfinite boundary output.
+    """
+
+    source_ne: int
+    destination_ne: int
+    generations: int
+    error_estimate: jax.Array
+    converged: jax.Array
+    status: EvolutionStatus
+
+
+class DemographicResult(NamedTuple):
+    r"""Final mass and per-interval numerical outcomes, without a total error certificate.
+
+    `status` retains the first numerical failure. Identity histories have empty
+    `diagnostics` and still check mass finiteness. No factorization or basis is retained.
+    """
+
+    distribution: jax.Array
+    converged: jax.Array
+    status: EvolutionStatus
+    diagnostics: tuple[IntervalDiagnostics, ...]
+
+
 @final
 class DemographicTransition(eqx.Module):
-    r"""Prepared evolution through a demography under a shared frequency map.
+    r"""Compose constant-size evolution and rectangular boundary transitions.
 
-    Let $P_{a,b}$ map population size $a$ to $b$. An interval of $g$ generations
-    has expectation operator $A=P_{a,a}^{g-1}P_{a,b}$: hold the source size, then
-    change size on the final generation. Across intervals, `expect` applies the
-    product of these operators; `advance` applies its transpose to initial mass
-    with the default Sequential epochs. Adaptive epoch backends approximate
-    forward evolution only; `expect` is unavailable for those backends.
+    An interval of g generations holds its source size for g-1 generations,
+    then changes size on its last generation. FFT/NUFFT with Sequential provide
+    a matched expectation transpose. Jacobi with RationalKrylov supports forward
+    evolution only. Frequency-map parameters remain differentiable array leaves.
     """
 
     demography: Demography
     frequency_map: AbstractFrequencyMap
+    method: AbstractEpochMethod
     _sizes: tuple[int, ...]
-    _backends: tuple[AbstractTransitionBackend, ...]
-    _epochs: tuple[AbstractEpochBackend, ...]
+    _backends: tuple[AbstractTransitionBackend | Jacobi, ...]
+    _boundary_backends: tuple[AbstractTransitionBackend, ...]
 
     def __init__(
         self,
         demography: Demography,
         *,
-        backend: Callable[[int], AbstractTransitionBackend],
+        backend: Callable[[int], AbstractTransitionBackend | Jacobi],
         frequency_map: AbstractFrequencyMap,
-        epoch_backend: Callable[[int], AbstractEpochBackend] | None = None,
+        boundary_backend: Callable[[int], AbstractTransitionBackend] | None = None,
+        method: AbstractEpochMethod | None = None,
     ) -> None:
-        r"""Prepare the demographic transition outside JIT.
+        r"""Prepare reusable geometry outside JIT.
 
         **Arguments:**
 
-        - `demography`: Validated population history.
-        - `backend`: Factory from a gene-copy count to an `AbstractTransitionBackend`.
-        - `frequency_map`: `AbstractFrequencyMap` shared by all generations.
-        - `epoch_backend`: Optional factory for constant-size epoch geometry.
-          Defaults to Sequential using the prepared one-generation backends.
-          Size changes always use `backend`.
+        - `demography`: Population history, oldest to newest.
+        - `backend`: Factory receiving a gene-copy count for constant-size geometry.
+        - `frequency_map`: Process shared by every generation.
+        - `boundary_backend`: Factory for rectangular transitions; defaults to the
+          hold geometry for FFT/NUFFT. Required explicitly for Jacobi.
+        - `method`: Geometry-free epoch algorithm; defaults to `Sequential()`.
 
         **Returns:**
 
-        `None`. Prepares one backend per distinct population size.
+        `None`. Prepares one geometry per distinct size, sharing hold and boundary
+        geometry when the same factory is used.
 
         **Raises:**
 
-        `TypeError` for invalid argument or factory-result types; `ValueError` for
-        a backend with the wrong size. Backend construction errors propagate.
+        `TypeError` for unsupported combinations, including histories without holds;
+        `ValueError` for incorrect backend sizes. No iterative rational solve or
+        population-sized matrix materialization is selected implicitly.
         """
         if not isinstance(demography, Demography):
             raise TypeError("demography must be a Demography")
@@ -152,58 +191,79 @@ class DemographicTransition(eqx.Module):
             )
         if not callable(backend):
             raise TypeError("backend must be callable")
+        if boundary_backend is not None and not callable(boundary_backend):
+            raise TypeError("boundary_backend must be callable")
         self.demography = demography
         self.frequency_map = frequency_map
+        self.method = Sequential() if method is None else method
+        if not isinstance(self.method, AbstractEpochMethod):
+            raise TypeError("method must be an AbstractEpochMethod")
         self._sizes = tuple(dict.fromkeys(demography.ne))
         self._backends = tuple(backend(2 * size) for size in self._sizes)
-        self._epochs = (
-            tuple(Sequential(item) for item in self._backends)
-            if epoch_backend is None
-            else tuple(epoch_backend(2 * size) for size in self._sizes)
-        )
+        for size, geometry in zip(self._sizes, self._backends, strict=True):
+            if not isinstance(geometry, (AbstractTransitionBackend, Jacobi)):
+                raise TypeError("backend must return transition or Jacobi geometry")
+            if geometry.gene_copies != 2 * size:
+                raise ValueError("backend must preserve the requested gene-copy count")
+            self.method.validate(geometry, frequency_map)
+        if boundary_backend is None or boundary_backend is backend:
+            if not all(
+                isinstance(item, AbstractTransitionBackend) for item in self._backends
+            ):
+                raise TypeError(
+                    "Jacobi requires an explicit FFT or NUFFT boundary_backend"
+                )
+            self._boundary_backends = cast(
+                tuple[AbstractTransitionBackend, ...], self._backends
+            )
+        else:
+            self._boundary_backends = tuple(
+                boundary_backend(2 * size) for size in self._sizes
+            )
 
     def __check_init__(self) -> None:
-        """Require valid destination geometry from the backend factory."""
-        for size, backend in zip(self._sizes, self._backends, strict=True):
+        """Require rectangular transition geometry at all boundaries."""
+        for size, backend in zip(self._sizes, self._boundary_backends, strict=True):
             if not isinstance(backend, AbstractTransitionBackend):
-                raise TypeError("backend must return an AbstractTransitionBackend")
+                raise TypeError(
+                    "boundary_backend must return an AbstractTransitionBackend"
+                )
             if backend.gene_copies != 2 * size:
-                raise ValueError("backend must preserve the requested gene-copy count")
-        for size, epoch in zip(self._sizes, self._epochs, strict=True):
-            if not isinstance(epoch, AbstractEpochBackend):
-                raise TypeError("epoch_backend must return an AbstractEpochBackend")
-            if epoch.gene_copies != 2 * size:
                 raise ValueError(
-                    "epoch_backend must preserve the requested gene-copy count"
+                    "boundary_backend must preserve the requested gene-copy count"
                 )
 
     def _transition(self, source_ne: int, destination_ne: int) -> Transition:
-        """Bind the current frequency map to existing geometry without caching probabilities."""
         return Transition(
-            self._backends[self._sizes.index(destination_ne)],
+            self._boundary_backends[self._sizes.index(destination_ne)],
             self.frequency_map,
             source_gene_copies=2 * source_ne,
         )
 
     @eqx.filter_jit
-    def advance(self, distribution: jax.Array) -> jax.Array:
-        r"""Propagate mass to the final generation boundary.
+    def advance(
+        self, distribution: jax.Array, *, throw: bool = True
+    ) -> DemographicResult:
+        r"""Propagate full population mass to the final generation boundary.
 
         **Arguments:**
 
-        - `distribution`: Finite real vector of length `2 * demography.initial_ne + 1`,
-          converted to float64. Signed entries are supported.
+        - `distribution`: Real vector of length `2 * initial_ne + 1`, converted to float64.
+        - `throw`: Raise on numerical failure; False returns status and diagnostics.
+          Under vmap a failure with True may fail the whole batch.
 
         **Returns:**
 
-        A float64 vector of length `2 * demography.final_ne + 1`.
+        `DemographicResult` containing final mass and each interval's outcome.
 
         **Raises:**
 
-        `ValueError` for incompatible input or map-output shapes. Failed epoch
-        approximations raise runtime errors; no mass is clipped or normalized.
+        `ValueError` for incompatible shapes; runtime errors for invalid process
+        domains or, with `throw=True`, numerical failure. No mass normalization occurs.
         """
-        return self._advance(distribution, segregating=False, mutation_rate=None)
+        return self._advance(
+            distribution, segregating=False, mutation_rate=None, throw=throw
+        )
 
     @eqx.filter_jit
     def advance_segregating(
@@ -211,67 +271,79 @@ class DemographicTransition(eqx.Module):
         distribution: jax.Array,
         *,
         mutation_rate: float | jax.Array = 0.0,
-    ) -> jax.Array:
-        r"""Evolve segregating mass with singleton input after every generation.
+        throw: bool = True,
+    ) -> DemographicResult:
+        r"""Evolve interior mass with singleton immigration after every generation.
 
         **Arguments:**
 
-        - `distribution`: Finite interior mass of length `2 * initial_ne - 1`.
-        - `mutation_rate`: Finite nonnegative scalar per-copy mutation rate.
-          Each generation adds `2 * destination_ne * mutation_rate` at count one.
-          This is infinite-sites immigration, not recurrent mutation.
+        - `distribution`: Real interior mass of length `2 * initial_ne - 1`.
+        - `mutation_rate`: Finite nonnegative scalar per-copy rate. Each generation
+          adds `2 * destination_ne * mutation_rate` at count one.
+        - `throw`: Raise on numerical failure; under vmap may fail the whole batch.
 
         **Returns:**
 
-        Float64 segregating mass of length `2 * final_ne - 1`.
+        `DemographicResult`; the distribution has length `2 * final_ne - 1`.
 
         **Raises:**
 
-        `ValueError` for invalid shapes; runtime errors for invalid mutation rate
-        or failed epoch approximation. No clipping or normalization occurs.
+        `ValueError` for invalid shapes. Invalid mutation rates and process domains
+        raise even with `throw=False`; numerical failures otherwise return status.
         """
         rate = jnp.asarray(mutation_rate, dtype=jnp.float64)
         if rate.shape != ():
             raise ValueError("mutation_rate must be scalar")
-        # Identity histories still validate the rate even without immigration.
         distribution = eqx.error_if(
             jnp.asarray(distribution, dtype=jnp.float64),
             ~jnp.isfinite(rate) | (rate < 0),
             "mutation_rate must be finite and nonnegative",
         )
-        return self._advance(distribution, segregating=True, mutation_rate=rate)
+        return self._advance(
+            distribution, segregating=True, mutation_rate=rate, throw=throw
+        )
 
-    def _advance(self, distribution, *, segregating, mutation_rate):
-        """Share interval timing across full-state and segregating evolution."""
+    def _advance(self, distribution, *, segregating, mutation_rate, throw):
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
         size = 2 * self.demography.initial_ne + (-1 if segregating else 1)
         if distribution.shape != (size,):
             raise ValueError(f"distribution must have {size} entries")
-        # Rectangular boundary steps always use the one-generation backend.
+        # Validate every prepared Jacobi domain even for identity/boundary-only histories.
+        for backend in self._backends:
+            if isinstance(backend, Jacobi):
+                distribution, _ = backend._validate_mass(
+                    distribution, self.frequency_map
+                )
+        initial_result = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
+        status = initial_result.status
+        diagnostics = []
         for source, destination, duration in zip(
             self.demography.ne[:-1],
             self.demography.ne[1:],
             self.demography.generations,
             strict=True,
         ):
+            error = jnp.asarray(0.0)
+            interval_status = EvolutionStatus.successful
             if duration > 1:
-                immigration = None
-                if segregating:
-                    immigration = (
-                        jnp.zeros_like(distribution)
-                        .at[0]
-                        .set(2 * source * mutation_rate)
-                    )
-                distribution = (
-                    self._epochs[self._sizes.index(source)]
-                    .advance(
-                        distribution,
-                        frequency_map=self.frequency_map,
-                        generations=duration - 1,
-                        segregating=segregating,
-                        immigration=immigration,
-                    )
-                    .distribution
+                immigration = (
+                    (jnp.zeros_like(distribution).at[0].set(2 * source * mutation_rate))
+                    if segregating
+                    else None
+                )
+                problem = _prepare_epoch(
+                    self._backends[self._sizes.index(source)],
+                    distribution,
+                    self.frequency_map,
+                    duration - 1,
+                    segregating,
+                    immigration,
+                )
+                result = self.method.solve(problem, throw=False)
+                distribution, error, interval_status = (
+                    result.distribution,
+                    result.error_estimate,
+                    result.status,
                 )
             transition = self._transition(source, destination)
             if segregating:
@@ -279,35 +351,59 @@ class DemographicTransition(eqx.Module):
                 distribution = distribution.at[0].add(2 * destination * mutation_rate)
             else:
                 distribution = transition.advance(distribution)
-        return distribution
+            boundary = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
+            interval_status = EvolutionStatus.where(
+                interval_status == EvolutionStatus.successful,
+                boundary.status,
+                interval_status,
+            )
+            status = EvolutionStatus.where(
+                status == EvolutionStatus.successful, interval_status, status
+            )
+            diagnostics.append(
+                IntervalDiagnostics(
+                    source,
+                    destination,
+                    duration,
+                    error,
+                    interval_status == EvolutionStatus.successful,
+                    interval_status,
+                )
+            )
+        converged = status == EvolutionStatus.successful
+        if throw:
+            distribution = eqx.error_if(
+                distribution,
+                ~converged,
+                "demographic evolution failed: inspect interval diagnostics with throw=False; "
+                "check input mass and increase dimension or use FFT/NUFFT with Sequential",
+            )
+        return DemographicResult(distribution, converged, status, tuple(diagnostics))
 
     @eqx.filter_jit
     def expect(self, values: jax.Array) -> jax.Array:
-        r"""Compute terminal-value expectations at the initial boundary.
+        r"""Compute the matched expectation transpose for Sequential histories.
 
         **Arguments:**
 
-        - `values`: Finite real vector of length `2 * demography.final_ne + 1`,
-          converted to float64. Signed entries are supported.
+        - `values`: Real vector of length `2 * final_ne + 1`, converted to float64.
 
         **Returns:**
 
-        A float64 vector of length `2 * demography.initial_ne + 1`.
+        Float64 expectations of length `2 * initial_ne + 1`.
 
         **Raises:**
 
-        `ValueError` for incompatible input or map-output shapes, or if an
-        adaptive epoch backend is configured. Only Sequential epochs provide
-        the matched transpose required by this operation.
+        `ValueError` for incompatible shapes or a non-Sequential method, which
+        does not provide a matched transpose of its input-dependent approximation.
         """
-        if any(not isinstance(epoch, Sequential) for epoch in self._epochs):
+        if not isinstance(self.method, Sequential):
             raise ValueError(
-                "expect requires Sequential epochs; adaptive epoch actions have no matched transpose"
+                "expect requires Sequential; adaptive epoch actions have no matched transpose"
             )
         values = jnp.asarray(values, dtype=jnp.float64)
         if values.shape != (2 * self.demography.final_ne + 1,):
             raise ValueError("values must have 2 * final_ne + 1 entries")
-        # Apply adjoints in reverse order: size change first, then the hold.
         for source, destination, duration in reversed(
             tuple(
                 zip(
@@ -320,10 +416,9 @@ class DemographicTransition(eqx.Module):
         ):
             values = self._transition(source, destination).expect(values)
             if duration > 1:
-                epoch = self._epochs[self._sizes.index(source)]
-                assert isinstance(epoch, Sequential)
-                # Holds may use different geometry from the boundary factory.
-                transition = Transition(epoch.backend, self.frequency_map)
+                backend = self._backends[self._sizes.index(source)]
+                assert isinstance(backend, AbstractTransitionBackend)
+                transition = Transition(backend, self.frequency_map)
                 values = jax.lax.fori_loop(
                     0,
                     duration - 1,

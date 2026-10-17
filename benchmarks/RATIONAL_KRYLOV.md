@@ -56,7 +56,7 @@ A separate compilation-only probe at 28,896 gene copies (1,000 generations, 128 
 
 ## Run a new comparison
 
-The tracked driver compares the current Sequential FFT and RationalKrylov implementations:
+The tracked driver compares Sequential FFT with Jacobi + RationalKrylov:
 
 ```bash
 uv run python benchmarks/compare_demography.py /path/to/history.tsv \
@@ -70,7 +70,12 @@ The tab-separated input requires integer `Ne` (diploid population size) and `T_g
 
 The driver uses neutral selection and singleton immigration. `--initialization zero` starts with no segregating mass; the default computes FFT equilibrium once and shares that vector with both workers. `--rank` optionally overrides the Krylov rank. The other flags above expose solver tolerances and limits; FFT geometry uses package defaults, captured by the source hashes.
 
-Each backend runs in a fresh, serial CPU process with float64, persistent compilation caching disabled, and one BLAS/OpenMP thread. JAX CPU threading uses its default. Setup, initialization and propagation are timed separately; imports and process startup are excluded from these timers. One cold and one warm pass restart from the same initial vector. Outputs are synchronized after each hold and boundary. Full-pass timers include Python orchestration and interval diagnostics. This measures public per-epoch calls across changing shapes, not a single compiled `DemographicTransition` call.
+Each backend runs in a fresh, serial CPU process with float64, persistent compilation caching disabled, and one BLAS/OpenMP thread. JAX CPU threading uses its default. Setup, initialization and propagation are timed separately; imports and process startup are excluded from these timers. One cold and one warm pass restart from the same initial vector. Outputs are synchronized after each hold and boundary. Full-pass timers include Python orchestration and interval diagnostics. This measures public per-method calls across changing shapes, not a single compiled `DemographicTransition` call.
+
+The driver has been migrated to separate geometry and method construction.
+The measurements above predate that API refactor and its use of Lineax for
+shifted solves; they have not been regenerated. Rerun the driver to measure
+the current implementation.
 
 The JSON records effective settings, retained history, input and source hashes, Git revision, package versions, devices, peak process RSS, interval diagnostics, final vectors and final FFT/Krylov differences. Output may therefore disclose the supplied demographic history; choose an appropriate destination. A successful converged run exits 0; runtime or convergence failure exits 1, and invalid input exits 2. Nonconvergence still writes measurements with `converged: false`, and those timings should not be treated as an accepted accuracy comparison. Nonfinite output aborts the run. The small synthetic history in `tests/test_demography_benchmark.py` exercises the complete command.
 
