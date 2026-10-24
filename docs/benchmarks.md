@@ -23,6 +23,38 @@ claiming a shared batched NUFFT speedup.
 Use `benchmarks/compare_backends.py` to compare FFT and NUFFT.
 `compare_startup.py` and `compare_epochs.py` also compare these against fastDTWF.
 
+Compare NUFFT encodings with:
+
+```sh
+uv run python benchmarks/compare_encodings.py --diagnostics \
+  --output benchmarks/encoding_cpu.json
+```
+
+Each size, accuracy, encoding, operation and cold repetition gets a fresh
+process with persistent compilation caching disabled. The report separates
+imports, setup, compilation, first execution, launch-to-first-result and warm
+calls. It records every timing sample, geometry size, and XLA temporary memory
+(which excludes native FINUFFT workspace). Processes run sequentially, with
+encoding order reversed on alternate trials.
+
+`legacy` uses the current execution machinery with the previous degree planner;
+`lobatto` uses the sharper interpolation bound; `filtered` adds tapering and
+polynomial endpoint correction. An optional `--variants lobatto filtered-matched`
+comparison matches polynomial degree except at exact-fallback boundaries; check
+the reported degrees. `--derivative-accuracy` enables the larger-degree heuristic.
+These planner overrides exist only inside benchmark construction.
+
+`--diagnostics` checks full rows and probability derivatives at a finite set of
+boundary-heavy and seeded interior probabilities after timing. It also compares
+1, 10 and 100 generations against dense references for sizes up to 1,024,
+using singleton and uniform inputs. Sampled maxima are empirical measurements,
+not uniform error certificates; default timing inputs are a sinusoidal observable
+and uniform mass, at selection strength 0.1.
+
+The [encoding comparison report](https://github.com/mancusolab/drifft/blob/main/benchmarks/ENCODINGS.md)
+records the CPU measurements and numerical tradeoffs for the filtered option,
+including matched-degree and larger-degree derivative experiments.
+
 Use `benchmarks/compare_demography.py` for demographic comparisons, including
 Jacobi with RationalKrylov. Historical reports predate the backend/method API
 separation and are not performance measurements of the current refactor.

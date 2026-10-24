@@ -28,6 +28,14 @@ interpolation. NUFFT's `accuracy` sets a nominal value-error budget; see
 clips negative coefficients or renormalizes outputs. Check accuracy and gradients
 for your workload, especially near probability endpoints or over long histories.
 
+NUFFT offers `encoding="lobatto"` (the default) and `encoding="filtered"`.
+The filtered variant tapers cosine coefficients and restores endpoints with a
+linear polynomial correction. Its tighter spectral certificate can reduce the
+number of samples, but does not guarantee a faster transform or more accurate
+derivatives. Compare both with `benchmarks/compare_encodings.py`; this measures
+fresh-process and warm costs separately and can check rows and repeated steps
+against binomial references.
+
 ## Jacobi for long constant-size intervals
 
 Jacobi compresses evolution into a smaller polynomial representation.

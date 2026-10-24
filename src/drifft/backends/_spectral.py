@@ -1,6 +1,7 @@
 """Batched Bernstein sampling and endpoint-safe cosine-series evaluation."""
 
-# Functional Core: linear array maps, with no cached dense sampling matrix.
+# pattern: Functional Core
+# Linear array maps, with no cached dense sampling matrix.
 from typing import TYPE_CHECKING, cast
 
 import jax
@@ -158,6 +159,29 @@ def compute_cosine_coefficients(samples: jax.Array) -> jax.Array:
     extended = jnp.concatenate((samples, samples[-2:0:-1]))
     coefficients = jnp.fft.rfft(extended).real / degree
     return coefficients.at[0].multiply(0.5).at[-1].multiply(0.5)
+
+
+def filter_cosine_coefficients(
+    coefficients: jax.Array, width: int, endpoints: jax.Array
+) -> jax.Array:
+    """Taper DCT-I modes and restore endpoints by a global linear correction.
+
+    Drop the terminal (zero-weight) mode. For x=1-2q, endpoint residuals
+    e0,e1 add (e0+e1)/2 to c0 and (e0-e1)/2 to c1. Differentiation and
+    transposition therefore see the same corrected polynomial everywhere.
+    """
+    modes = coefficients.size - 1
+    taper = jnp.minimum(1.0, (modes - jnp.arange(modes)) / width)
+    filtered = coefficients[:-1] * taper
+    residual = endpoints - jnp.stack(
+        (filtered.sum(), filtered @ ((-1.0) ** jnp.arange(modes)))
+    )
+    return (
+        filtered.at[0]
+        .add((residual[0] + residual[1]) / 2)
+        .at[1]
+        .add((residual[0] - residual[1]) / 2)
+    )
 
 
 def _differentiate_coefficients(coefficients: jax.Array) -> jax.Array:
