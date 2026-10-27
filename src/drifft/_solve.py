@@ -89,6 +89,8 @@ def _solve_expected_visits(
         errors reject the whole call. Floating-point paths and iteration counts can
         differ across backends. Global differentiability of solves is not certified.
     """
+    # Tolerances are static Python configuration, so math validates them at
+    # tracing time; operator parameters and solve vectors stay in JAX.
     if not (math.isfinite(rtol) and math.isfinite(atol)):
         raise ValueError("rtol and atol must be finite")
     if any(

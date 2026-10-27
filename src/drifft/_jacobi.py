@@ -17,7 +17,8 @@ from ._frequency import AbstractFrequencyMap, Neutral, Underdominance
 
 def _choose_rank(copies: int, tolerance: float) -> int:
     """Bound the ideal one-step polynomial tail, excluding quadrature and roundoff."""
-    # Host scalar planning avoids storing population-sized arrays on the device.
+    # Counts/tolerance are host configuration; math computes a concrete rank
+    # without storing population-sized planning arrays on the device.
     log_scale = 0.0
     weights = []
     for degree in range(copies - 1):
@@ -43,6 +44,8 @@ def _choose_rank(copies: int, tolerance: float) -> int:
 
 def _padded_rank(copies: int, rank: int, max_strength: float, tolerance: float) -> int:
     """Choose Jacobi padding using a Bernstein-ellipse assembly bound."""
+    # math operates on fixed geometry and the configured strength bound, not
+    # the dynamic selection strength differentiated by _assemble.
     ratio = max_strength / (2 - max_strength)
     radius, major, minor = 1.5, 13 / 12, 5 / 12
     image = major * math.sqrt(1 + ratio**2 * minor**2) / (1 - ratio * minor**2)
@@ -200,6 +203,8 @@ class _JacobiGeometry(eqx.Module):
         self.polynomials = _polynomials(nodes, rank)
         probability = (nodes + 1) / 2
         trials = copies - 2
+        # trials is a host count: math produces the fixed stencil width, while
+        # the node-dependent stencil values below are computed with JAX.
         radius = min(trials, math.ceil(math.sqrt(trials * math.log(2e15) / 2)) + 2)
         mode = jnp.floor((trials + 1) * probability).astype(jnp.int32)
         self.starts = mode - radius
@@ -371,6 +376,8 @@ class Jacobi(eqx.Module):
             or gene_copies < 4
         ):
             raise ValueError("gene_copies must be a Python integer >= 4")
+        # Validate host planning limits with math; the actual model strength is
+        # a dynamic JAX value checked separately when assembling the operator.
         if not math.isfinite(max_strength) or not 0 <= max_strength < 1:
             raise ValueError("max_strength must lie in [0, 1)")
         if not math.isfinite(one_step_tolerance) or not 0 < one_step_tolerance < 1:

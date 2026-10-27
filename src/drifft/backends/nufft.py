@@ -2,6 +2,9 @@
 
 # pattern: Functional Core
 # Deterministic host-side dimensions and JAX sampling nodes.
+# math is intentional for constructor budgets and the degree/bound planners:
+# counts and tolerances are host configuration that determines array shapes.
+# Runtime probabilities, values, and coefficients use JAX operations instead.
 import math
 from typing import Literal, final
 
@@ -118,6 +121,8 @@ class NUFFT(AbstractTransitionBackend):
             raise ValueError("derivative_accuracy must be bool")
         if encoding not in ("lobatto", "filtered"):
             raise ValueError('encoding must be "lobatto" or "filtered"')
+        # Validate and plan with Python scalars before allocating JAX geometry;
+        # these tolerances and dimensions are not differentiable model inputs.
         if not math.isfinite(accuracy) or not 1e-13 <= accuracy < 0.1:
             raise ValueError("accuracy must be finite and in [1e-13, 0.1)")
         if jnp.dtype(dtype) != jnp.dtype(jnp.float64) or not jax.config.read(
@@ -256,6 +261,8 @@ class NUFFT(AbstractTransitionBackend):
 
 def _choose_degree(size: int, tolerance: float) -> int:
     """Find the least degree certified by either Lobatto interpolation bound."""
+    # This and the bound helpers below are host-only scalar planners. Keeping
+    # math/Python arithmetic here yields concrete integer dimensions, not tracers.
     # The sharper certificate stops at M-2, so the combined bound can rise
     # at M-1. Search only its monotone prefix, handling the last two degrees
     # separately instead of allowing that rise to hide a valid smaller degree.

@@ -28,6 +28,10 @@ def _matrix_power_matvec(matrix: jax.Array, vector: jax.Array, steps: int):
     replaces the matrix-matrix products used to combine powers with matvecs.
     The Python loop stages only O(log steps) operations and supports reverse AD.
     """
+    # `steps` is static: this short loop unrolls during tracing and supports
+    # both forward and reverse AD. CPU benchmarks found rolled lax.scan slower
+    # for gradients; fully unrolled scan matched warm speed but compiled slower.
+    # Keep Python here; see benchmarks/POWER_LOOPS.md for the unrolling sweep.
     while steps:
         if steps & 1:
             vector = matrix @ vector
@@ -272,6 +276,8 @@ class RationalKrylov(AbstractEpochMethod):
             or self.dimension < 2
         ):
             raise ValueError("dimension must be a Python integer >= 2")
+        # math validates Python configuration at construction; tolerances are
+        # not traced model parameters or differentiable numerical inputs.
         if not all(
             math.isfinite(value) and value >= 0 for value in (self.rtol, self.atol)
         ):
@@ -437,6 +443,8 @@ class PolynomialKrylov(AbstractEpochMethod):
             or self.dimension < 2
         ):
             raise ValueError("dimension must be a Python integer >= 2")
+        # math validates Python configuration at construction; tolerances are
+        # not traced model parameters or differentiable numerical inputs.
         if not all(
             math.isfinite(value) and value >= 0 for value in (self.rtol, self.atol)
         ):

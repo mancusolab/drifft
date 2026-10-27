@@ -39,6 +39,7 @@ class _FFTBlock(eqx.Module):
 
 def _stirling_correction(n: int) -> float:
     """Return the log-factorial correction beyond leading Stirling terms."""
+    # n is a host geometry count; math computes constants before JAX application.
     if n < 16:
         return (
             math.lgamma(n + 1)
@@ -61,6 +62,8 @@ def _build_block(
     """Construct exact DTD factors with recurrence and stable modal normalization."""
     if not (0 < j0 < M and 0 <= lo <= hi <= M and rlo <= rhi):
         raise ValueError("Invalid block intervals or reference count")
+    # Build variable-sized blocks on the host, using NumPy's longdouble where
+    # available for cancellation-sensitive recurrences; store float64 JAX arrays.
     p = np.longdouble(j0) / M
     eta = np.log(p) - np.log1p(-p)
     h = 1 / (M * p * (1 - p))
@@ -201,6 +204,8 @@ class FFT(AbstractTransitionBackend):
             or gene_copies < 2
         ):
             raise ValueError("gene_copies must be an integer >= 2")
+        # These are host configuration checks, not operations on traced values.
+        # NumPy also handles dtype inspection before geometry becomes JAX arrays.
         if not (np.isfinite(tail_tol) and 1e-15 <= tail_tol < 0.1):
             raise ValueError("tail_tol must be finite and in [1e-15, 0.1)")
         if (
@@ -471,6 +476,8 @@ def _binomial_weights_jvp(size, primals, tangents):
     else:
         # d B[n,j]/dp = n*(B[n-1,j-1] - B[n-1,j]). Reusing this
         # rule recursively also gives finite, matched higher derivatives.
+        # size is a static nondifferentiable integer, so math.log supplies a
+        # trace-time constant; counts/logchoose/probabilities remain JAX values.
         left_logchoose = logchoose + jnp.log(jnp.maximum(counts, 1)) - math.log(size)
         right_logchoose = (
             logchoose + jnp.log(jnp.maximum(size - counts, 1)) - math.log(size)
