@@ -1,0 +1,81 @@
+name: Documentation
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release-ref:
+        description: Git release tag to document (for example, v0.4.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  RELEASE_REF: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release-ref }}
+  # Keep cached FINUFFT builds portable across hosted-runner CPUs.
+  CMAKE_ARGS: "-DFINUFFT_ARCH_FLAGS="
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/configure-pages@v6.0.0
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.11.24"
+          enable-cache: true
+          cache-suffix: finufft-portable-v1
+
+      - name: Check tag and package version
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import tomllib
+
+          tag = os.environ["RELEASE_REF"].removeprefix("refs/tags/")
+          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          if tag != f"v{version}":
+              raise SystemExit(f"tag {tag!r} does not match package version {version!r}")
+          print(f"validated documentation release {tag}")
+          PY
+
+      - name: Install FFTW development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfftw3-dev
+
+      - name: Install package and documentation dependencies
+        run: uv sync --locked --group docs
+
+      - name: Build docs
+        run: uv run --locked --group docs zensical build --strict --clean
+
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v5.0.0
+        id: deployment

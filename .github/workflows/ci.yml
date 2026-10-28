@@ -10,7 +10,12 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    env:
+      # Cached FINUFFT builds must run on different hosted-runner CPUs.
+      # Match jax-finufft's portable wheel builds instead of -march=native.
+      CMAKE_ARGS: "-DFINUFFT_ARCH_FLAGS="
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
     steps:
@@ -19,11 +24,13 @@ jobs:
         with:
           version: "0.11.24"
           python-version: ${{ matrix.python-version }}
+          # Do not restore wheels previously compiled for a runner's native CPU.
+          cache-suffix: finufft-portable-v1
       - name: Install FFTW development libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y libfftw3-dev
       - run: uv sync --locked
       - run: uv run pre-commit run --all-files
-      - run: uv run pytest -p no:capture
+      - run: uv run pytest -p no:capture -v
       - run: uv build
