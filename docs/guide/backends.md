@@ -69,6 +69,7 @@ Like RationalKrylov, this method supports forward evolution only.
 ## Mathematical and API details
 
 The [model guide](model.md) defines the shared binomial transition. The
-[backend API reference](../api/backends.md) explains each representation's
-mathematics and constructor settings. FFT and NUFFT implement
+backend API pages for [FFT](../api/backends.md#drifft.FFT), [NUFFT](../api/backends.md#drifft.NUFFT), and
+[Jacobi](../api/backends.md#drifft.Jacobi) explain each representation's mathematics and
+constructor settings. FFT and NUFFT implement
 `AbstractTransitionBackend`; computation methods implement `AbstractEpochMethod`.

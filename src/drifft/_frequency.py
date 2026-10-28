@@ -366,9 +366,17 @@ class Composition(AbstractFrequencyMap):
 class Underdominance(AbstractFrequencyMap):
     r"""Symmetric heterozygote disadvantage, callable on allele frequencies.
 
+    Genotypes 0/0, 0/1, and 1/1 have fitnesses $1$, $1-s$, and $1$.
+    This is the constrained diploid rule `DiploidSelection(s_het=s, s_hom=0)`;
+    both homozygotes have equal fitness. `AdditiveSelection(s_het=s)` instead
+    assigns derived homozygotes fitness $1-2s$.
+
     For allele frequency $x$ and heterozygote disadvantage $s$,
 
     $$q_s(x) = \frac{x-sx(1-x)}{1-2sx(1-x)}.$$
+
+    Uses the shared diploid numerical function. The named class also selects
+    the specialized underdominance assembly supported by the Jacobi backend.
     """
 
     strength: jax.Array = eqx.field(
@@ -399,7 +407,7 @@ Underdominance.__init__.__doc__ = r"""Initialize Underdominance.
 
 **Arguments:**
 
-- `strength`: Scalar selection coefficient in `[0, 1]`, converted to a
+- `strength`: Heterozygote fitness reduction in `[0, 1]`, converted to a
   float64 JAX leaf. Changing its value does not change model structure.
 
 **Returns:**

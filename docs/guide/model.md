@@ -62,6 +62,12 @@ $$
 q_s(x)=\frac{x-sx(1-x)}{1-2sx(1-x)}.
 $$
 
+Thus `Underdominance(strength=s)` is equivalent to
+`DiploidSelection(s_het=s, s_hom=0)`. It uses the shared diploid numerical
+rule and retains the specialized Jacobi assembly. For Jacobi, use the named
+`Underdominance` class; an equivalent general `DiploidSelection` instance is
+not currently accepted.
+
 For `Mutation`, let $u$ be the 0 → 1 rate and $v$ the 1 → 0 rate. An allele-1
 copy persists with probability $1-v$; an allele-0 copy changes with probability
 $u$. The resulting frequency is

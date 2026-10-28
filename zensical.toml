@@ -10,6 +10,7 @@ extra_javascript = ["_static/mathjax.js", "https://cdn.jsdelivr.net/npm/mathjax@
 nav = [
     "index.md",
     { "User guide" = [
+        "guide/overview.md",
         "guide/installation.md",
         "guide/quickstart.md",
         "guide/transitions.md",
@@ -20,7 +21,13 @@ nav = [
         "guide/numerics.md",
         "guide/solves.md",
     ] },
-    { "Python API reference" = ["api/transitions.md", "api/backends.md"] },
+    { "Python API reference" = [
+        "api/transitions.md",
+        "api/demography.md",
+        "api/frequency_maps.md",
+        "api/backends.md",
+        "api/methods.md",
+    ] },
     { "Project" = ["benchmarks.md", "contributing.md"] },
 ]
 

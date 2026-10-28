@@ -1,54 +1,39 @@
-# Backends
+# Numerical backends
 
-Construct backends outside JIT and reuse them across selection strengths.
-See [backend tradeoffs](../guide/backends.md) and
-[NUFFT accuracy settings](../guide/numerics.md).
+`AbstractTransitionBackend` defines the expectation operation used by
+`Transition`. Concrete implementations are `FFT` and `NUFFT`.
+`Jacobi` supplies a separate reduced representation for demographic
+evolution. See [backend tradeoffs](../guide/backends.md) for choosing a backend.
 
-??? abstract "`drifft.AbstractTransitionBackend`"
+::: drifft.AbstractTransitionBackend
+    options:
+        members: [expect]
 
-    ::: drifft.AbstractTransitionBackend
-        options:
-            members: [expect]
+## FFT
+
+Local FFT convolutions with interpolation. Construct geometry outside JIT
+and reuse it across selection parameters. See [backend tradeoffs](../guide/backends.md).
 
 ::: drifft.FFT
     options:
         members: [__init__]
 
+## NUFFT
+
+Global polynomial evaluation using a nonuniform FFT. See
+[backend tradeoffs](../guide/backends.md) and [accuracy controls](../guide/numerics.md).
+
 ::: drifft.NUFFT
     options:
         members: [__init__]
 
+## Jacobi
+
+Reduced Jacobi polynomial geometry for repeated evolution. Use with
+`DemographicTransition` and a Krylov method; supported frequency maps are
+`Neutral` and `Underdominance`. See [backend tradeoffs](../guide/backends.md)
+and [constant-size epochs](../guide/epochs.md).
+
 ::: drifft.Jacobi
     options:
         members: [__init__]
-
-## Epoch methods
-
-See [constant-size epochs](../guide/epochs.md) for timing, immigration,
-approximation diagnostics, and differentiation limits.
-
-??? abstract "`drifft.AbstractEpochMethod`"
-
-    ::: drifft.AbstractEpochMethod
-        options:
-            members: [validate, solve, advance]
-
-::: drifft.Sequential
-    options:
-        members: [__init__, advance]
-
-::: drifft.PolynomialKrylov
-    options:
-        members: [__init__, advance]
-
-::: drifft.RationalKrylov
-    options:
-        members: [__init__, advance]
-
-::: drifft.EpochResult
-    options:
-        members: []
-
-::: drifft.EvolutionStatus
-    options:
-        members: []
