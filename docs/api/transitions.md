@@ -27,6 +27,34 @@ probabilities. See [transitions and frequency maps](../guide/transitions.md) for
     options:
         members: [__init__]
 
+::: drifft.DiploidSelection
+    options:
+        members: [__init__]
+
+::: drifft.DominanceSelection
+    options:
+        members: [__init__]
+
+::: drifft.AdditiveSelection
+    options:
+        members: [__init__]
+
+::: drifft.RecessiveSelection
+    options:
+        members: [__init__]
+
+::: drifft.DominantSelection
+    options:
+        members: [__init__]
+
+::: drifft.Overdominance
+    options:
+        members: [__init__]
+
+::: drifft.MultiplicativeSelection
+    options:
+        members: [__init__]
+
 ::: drifft.Underdominance
     options:
         members: [__init__]

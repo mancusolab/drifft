@@ -29,6 +29,30 @@ matrix-free approximations to the same binomial operation.
 
 ## Selection and mutation
 
+`DiploidSelection(s_het, s_hom)` assigns genotype fitnesses $1$,
+$1-s_{\mathrm{het}}$, and $1-s_{\mathrm{hom}}$ to 0/0, 0/1, and 1/1.
+Under random mating, weighting genotype frequencies by survival gives
+
+$$
+q(x)=\frac{(1-s_{\mathrm{hom}})x^2+(1-s_{\mathrm{het}})x(1-x)}
+{(1-x)^2+2(1-s_{\mathrm{het}})x(1-x)+(1-s_{\mathrm{hom}})x^2}.
+$$
+
+Both coefficients are required. Negative values give fitness advantages.
+The parameter domain is $s_{\mathrm{het}}\le1$ and $s_{\mathrm{hom}}<1$,
+with finite coefficients. The strict homozygote bound ensures positive mean
+fitness at fixation. Lethal derived homozygotes are outside this map's domain;
+parameters are not clipped or capped.
+
+`DominanceSelection(s, h)` sets $s_{\mathrm{het}}=hs$ and
+$s_{\mathrm{hom}}=s$. `AdditiveSelection(s_het)` sets
+$s_{\mathrm{hom}}=2s_{\mathrm{het}}$, so it requires
+$s_{\mathrm{het}}<1/2$. This is the uncapped additive model, not fastDTWF's
+capped default. The derived coefficients $hs$ and $2s_{\mathrm{het}}$ must
+also be finite. `MultiplicativeSelection(r)` instead uses fitnesses
+$(1,r,r^2)$ and gives $q(x)=rx/(1-x+rx)$ for $r>0$. Additive and
+multiplicative fitness produce different exact discrete-time updates.
+
 `Neutral` uses $q(x)=x$. For `Underdominance`, the genotype fitnesses of
 0/0, 0/1, and 1/1 are $1$, $1-s$, and $1$. Under random mating, mean fitness is
 $1-2sx(1-x)$ and the fitness-weighted allele-1 contribution is $x-sx(1-x)$.

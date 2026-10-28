@@ -57,8 +57,42 @@ Python values in fresh lambdas.
 
 ## Selection and mutation
 
-`Neutral()` leaves frequencies unchanged. `Underdominance(strength)` applies
-symmetric heterozygote disadvantage. `Mutation(forward_rate, backward_rate)`
+`DiploidSelection(s_het, s_hom)` provides the general diploid selection rule.
+Its two required coefficients set heterozygote and derived-homozygote fitness
+reductions, respectively. The named models use these constraints:
+
+| Map | Genotype fitnesses (0/0, 0/1, 1/1) | Parameter domain |
+| --- | --- | --- |
+| `Neutral()` | $(1,1,1)$ | No parameters |
+| `DiploidSelection(s_het, s_hom)` | $(1,1-s_{\mathrm{het}},1-s_{\mathrm{hom}})$ | $s_{\mathrm{het}}\le1$, $s_{\mathrm{hom}}<1$ |
+| `DominanceSelection(s, h)` | $(1,1-hs,1-s)$ | $s<1$, $hs\le1$ |
+| `AdditiveSelection(s_het)` | $(1,1-s_{\mathrm{het}},1-2s_{\mathrm{het}})$ | $s_{\mathrm{het}}<1/2$ |
+| `RecessiveSelection(s)` | $(1,1,1-s)$ | $s<1$ |
+| `DominantSelection(s)` | $(1,1-s,1-s)$ | $s<1$ |
+| `Underdominance(strength)` | $(1,1-s,1)$ | $0\le s\le1$ |
+| `Overdominance(strength)` | $(1,1+s,1)$ | $s\ge0$ |
+| `MultiplicativeSelection(r)` | $(1,r,r^2)$ | $r>0$ |
+
+All parameters must be finite. Additive and dominance selection also require
+finite derived coefficients: `2 * s_het` and `h * s`, respectively. Negative fitness reductions are allowed for
+beneficial effects. Scalar shapes are checked at construction; value ranges
+are caller preconditions, including under JIT. There is no automatic clipping.
+The maps preserve frequency-array shape, and their float64 parameter leaves
+support JIT, differentiation, batching, and `eqx.tree_at` updates. Named models
+recompute their coefficient relationships when parameters change.
+
+FFT and NUFFT accept all these maps. Jacobi still accepts only `Neutral` and
+`Underdominance`; it does not recognize equivalent `DiploidSelection` parameter
+values as supported special cases.
+
+```python
+selection = drifft.DiploidSelection(s_het=0.01, s_hom=0.02)
+# The same fitnesses, with one free parameter:
+additive = drifft.AdditiveSelection(s_het=0.01)
+transition = drifft.Transition(drifft.FFT(64), frequency_map=additive)
+```
+
+`Mutation(forward_rate, backward_rate)`
 transforms an allele-1 frequency `p` into
 `p * (1 - backward_rate) + (1 - p) * forward_rate`. Rates are per-generation
 probabilities of 0 → 1 and 1 → 0 mutation, respectively; both default to zero.
@@ -106,6 +140,7 @@ and destination sizes. For a sequence of size changes, use
 !!! warning "Input validation"
 
     Inputs must have the documented shapes. Frequencies and probabilities must be in
-    `[0, 1]`, and `Underdominance.strength` must be scalar and in `[0, 1]`. Shape checks
-    raise during construction or tracing; finite values and numerical ranges remain
+    `[0, 1]`, and selection parameters must satisfy the scalar and value domains
+    above. Shape checks raise during construction or tracing; finite values and
+    numerical ranges remain
     caller preconditions to avoid runtime callbacks. Backends require float64.

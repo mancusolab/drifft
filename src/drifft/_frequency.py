@@ -103,11 +103,116 @@ follow `AbstractFrequencyMap`'s contract; transitions check output shape.
 """
 
 
+@jax.custom_jvp
+def _diploid_selection(
+    s_het: jax.Array | float, s_hom: jax.Array | float, frequencies: jax.Array
+) -> jax.Array:
+    """Evaluate diploid survival without forming large squared fitnesses."""
+    ancestral = (1 - frequencies) * ((1 - frequencies) + (1 - s_het) * frequencies)
+    derived = frequencies * (
+        (1 - s_het) * (1 - frequencies) + (1 - s_hom) * frequencies
+    )
+    return derived / (ancestral + derived)
+
+
+@_diploid_selection.defjvp
+def _diploid_selection_jvp(primals, tangents):
+    """Factor analytic partials to avoid overflow and quotient cancellation."""
+    s_het, s_hom, x = primals
+    ds_het, ds_hom, dx = tangents
+    u = 1 - x
+    het, hom = 1 - s_het, 1 - s_hom
+    ancestral = u * (u + het * x)
+    derived = x * (het * u + hom * x)
+    mean_fitness = ancestral + derived
+    u_over_mean = u / mean_fitness
+    hom_x_over_mean = hom * x / mean_fitness
+    # dq/dx = (het*u**2 + 2*hom*x*u + het*hom*x**2) / mean_fitness**2.
+    # Divide factors separately; neither the fitness products nor D**2 need
+    # be representable when the derivative itself is finite.
+    partial_x = (
+        (het * u / mean_fitness) * u_over_mean
+        + 2 * hom_x_over_mean * u_over_mean
+        + (het * x / mean_fitness) * hom_x_over_mean
+    )
+    partial_het = (x * u / mean_fitness) * (hom_x_over_mean * x - u_over_mean * u)
+    partial_hom = -(x * x / mean_fitness) * (ancestral / mean_fitness)
+    return _diploid_selection(*primals), (
+        partial_het * ds_het + partial_hom * ds_hom + partial_x * dx
+    )
+
+
+@final
+class DiploidSelection(AbstractFrequencyMap):
+    r"""Diploid viability selection with independent genotype fitness reductions.
+
+    Genotypes 0/0, 0/1, and 1/1 have fitnesses $1$, $1-s_{\mathrm{het}}$,
+    and $1-s_{\mathrm{hom}}$. Under random mating, offspring allele frequency is
+
+    $$q(x)=\frac{(1-s_{\mathrm{hom}})x^2+(1-s_{\mathrm{het}})x(1-x)}
+    {(1-x)^2+2(1-s_{\mathrm{het}})x(1-x)+(1-s_{\mathrm{hom}})x^2}.$$
+
+    Both coefficients are explicit; there is no default dominance relationship
+    or clipping. Negative coefficients represent fitness advantages. Mutation
+    is a separate map, applied in the order specified by `Composition`.
+    """
+
+    s_het: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+    s_hom: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+
+    def __check_init__(self) -> None:
+        """Require scalar coefficients without inspecting traced values."""
+        if self.s_het.ndim != 0 or self.s_hom.ndim != 0:
+            raise ValueError("selection coefficients must be scalar")
+
+    def apply(self, frequencies: jax.Array) -> jax.Array:
+        r"""Return the fitness-weighted offspring allele frequencies.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele-1 frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        Selected frequencies with the same shape as the input.
+        """
+        return _diploid_selection(self.s_het, self.s_hom, frequencies)
+
+
+# Document the generated constructor without replacing its implementation.
+DiploidSelection.__init__.__doc__ = r"""Initialize DiploidSelection.
+
+**Arguments:**
+
+- `s_het`: Heterozygote fitness reduction, finite and at most one.
+- `s_hom`: Derived-homozygote fitness reduction, finite and strictly below one.
+
+Both parameters become dynamic float64 scalar leaves. Enable JAX x64 before
+construction. The strict homozygote bound keeps mean fitness positive at
+fixation; a lethal derived homozygote is outside this map's domain.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for nonscalar coefficients.
+
+!!! warning "Parameter domain"
+
+    Value constraints are caller preconditions, including under JIT and vmap.
+    Outputs and parameters are not clipped. FFT and NUFFT support this map;
+    the specialized Jacobi backend does not.
+"""
+
+
 @final
 class Neutral(AbstractFrequencyMap):
     r"""Identity frequency map for neutral reproduction without mutation.
 
-    The offspring probability equals the source frequency: $q(x)=x$.
+    This is `DiploidSelection(0, 0)`, simplified to $q(x)=x$ to preserve
+    the input dtype and avoid unnecessary arithmetic.
     """
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
@@ -286,8 +391,7 @@ class Underdominance(AbstractFrequencyMap):
 
         Selected frequencies with the same shape as the input.
         """
-        disadvantage = self.strength * frequencies * (1 - frequencies)
-        return (frequencies - disadvantage) / (1 - 2 * disadvantage)
+        return _diploid_selection(self.strength, 0.0, frequencies)
 
 
 # Document the generated constructor without replacing its implementation.
@@ -310,4 +414,333 @@ Underdominance.__init__.__doc__ = r"""Initialize Underdominance.
 
     Strength must be finite and in `[0, 1]`. This value constraint is unchecked,
     including under JIT and vmap. Enable JAX x64 before construction.
+"""
+
+
+@final
+class AdditiveSelection(AbstractFrequencyMap):
+    r"""Additive diploid fitness effects.
+
+    Genotype fitnesses are $1$, $1-s_{\mathrm{het}}$, and $1-2s_{\mathrm{het}}$.
+
+    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    the current parameter leaves on every call.
+    """
+
+    s_het: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+
+    def __check_init__(self) -> None:
+        """Require scalar parameters without inspecting traced values."""
+        if self.s_het.ndim != 0:
+            raise ValueError("selection parameters must be scalar")
+
+    def apply(self, frequencies: jax.Array) -> jax.Array:
+        """Apply the constrained diploid selection rule.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele-1 frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        Selected frequencies with the same shape as the input.
+        """
+        return _diploid_selection(self.s_het, 2 * self.s_het, frequencies)
+
+
+# Document the generated constructor without replacing its implementation.
+AdditiveSelection.__init__.__doc__ = r"""Initialize AdditiveSelection.
+
+**Arguments:**
+
+- `s_het`: Heterozygote fitness reduction, finite and strictly below `0.5`,
+  with finite derived coefficient `2 * s_het`.
+
+Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
+construction. Value constraints are caller preconditions, including under JIT
+and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for nonscalar parameters.
+"""
+
+
+@final
+class DominanceSelection(AbstractFrequencyMap):
+    r"""Diploid selection with fitnesses $1$, $1-hs$, and $1-s$.
+
+    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    the current parameter leaves on every call.
+    """
+
+    s: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+
+    h: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+
+    def __check_init__(self) -> None:
+        """Require scalar parameters without inspecting traced values."""
+        if self.s.ndim != 0 or self.h.ndim != 0:
+            raise ValueError("selection parameters must be scalar")
+
+    def apply(self, frequencies: jax.Array) -> jax.Array:
+        """Apply the constrained diploid selection rule.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele-1 frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        Selected frequencies with the same shape as the input.
+        """
+        return _diploid_selection(self.h * self.s, self.s, frequencies)
+
+
+# Document the generated constructor without replacing its implementation.
+DominanceSelection.__init__.__doc__ = r"""Initialize DominanceSelection.
+
+**Arguments:**
+
+- `s`: Derived-homozygote fitness reduction, finite and strictly below one.
+- `h`: Finite dominance coefficient, with finite `h * s <= 1`.
+
+Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
+construction. Value constraints are caller preconditions, including under JIT
+and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for nonscalar parameters.
+"""
+
+
+@final
+class RecessiveSelection(AbstractFrequencyMap):
+    r"""Completely recessive fitness effects with fitnesses $1$, $1$, and $1-s$.
+
+    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    the current parameter leaves on every call.
+    """
+
+    s: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+
+    def __check_init__(self) -> None:
+        """Require scalar parameters without inspecting traced values."""
+        if self.s.ndim != 0:
+            raise ValueError("selection parameters must be scalar")
+
+    def apply(self, frequencies: jax.Array) -> jax.Array:
+        """Apply the constrained diploid selection rule.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele-1 frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        Selected frequencies with the same shape as the input.
+        """
+        return _diploid_selection(0.0, self.s, frequencies)
+
+
+# Document the generated constructor without replacing its implementation.
+RecessiveSelection.__init__.__doc__ = r"""Initialize RecessiveSelection.
+
+**Arguments:**
+
+- `s`: Derived-homozygote fitness reduction, finite and strictly below one.
+
+Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
+construction. Value constraints are caller preconditions, including under JIT
+and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for nonscalar parameters.
+"""
+
+
+@final
+class DominantSelection(AbstractFrequencyMap):
+    r"""Completely dominant fitness effects with fitnesses $1$, $1-s$, and $1-s$.
+
+    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    the current parameter leaves on every call.
+    """
+
+    s: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+
+    def __check_init__(self) -> None:
+        """Require scalar parameters without inspecting traced values."""
+        if self.s.ndim != 0:
+            raise ValueError("selection parameters must be scalar")
+
+    def apply(self, frequencies: jax.Array) -> jax.Array:
+        """Apply the constrained diploid selection rule.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele-1 frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        Selected frequencies with the same shape as the input.
+        """
+        return _diploid_selection(self.s, self.s, frequencies)
+
+
+# Document the generated constructor without replacing its implementation.
+DominantSelection.__init__.__doc__ = r"""Initialize DominantSelection.
+
+**Arguments:**
+
+- `s`: Fitness reduction for carriers, finite and strictly below one.
+
+Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
+construction. Value constraints are caller preconditions, including under JIT
+and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for nonscalar parameters.
+"""
+
+
+@final
+class Overdominance(AbstractFrequencyMap):
+    r"""Symmetric heterozygote advantage with fitnesses $1$, $1+s$, and $1$.
+
+    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    the current parameter leaves on every call.
+    """
+
+    strength: jax.Array = eqx.field(
+        converter=lambda x: jnp.asarray(x, dtype=jnp.float64)
+    )
+
+    def __check_init__(self) -> None:
+        """Require scalar parameters without inspecting traced values."""
+        if self.strength.ndim != 0:
+            raise ValueError("selection parameters must be scalar")
+
+    def apply(self, frequencies: jax.Array) -> jax.Array:
+        """Apply the constrained diploid selection rule.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele-1 frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        Selected frequencies with the same shape as the input.
+        """
+        return _diploid_selection(-self.strength, 0.0, frequencies)
+
+
+# Document the generated constructor without replacing its implementation.
+Overdominance.__init__.__doc__ = r"""Initialize Overdominance.
+
+**Arguments:**
+
+- `strength`: Finite, nonnegative heterozygote fitness advantage.
+
+Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
+construction. Value constraints are caller preconditions, including under JIT
+and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for nonscalar parameters.
+"""
+
+
+@jax.custom_jvp
+def _multiplicative_selection(r: jax.Array, frequencies: jax.Array) -> jax.Array:
+    """Evaluate multiplicative selection without squaring the fitness ratio."""
+    derived = r * frequencies
+    return derived / ((1 - frequencies) + derived)
+
+
+@_multiplicative_selection.defjvp
+def _multiplicative_selection_jvp(primals, tangents):
+    """Retain finite partials even when the mean fitness squared overflows."""
+    r, x = primals
+    dr, dx = tangents
+    mean_fitness = (1 - x) + r * x
+    partial_r = (x / mean_fitness) * ((1 - x) / mean_fitness)
+    # XLA otherwise combines the two divisions into r / mean_fitness**2.
+    r_over_mean = jax.lax.optimization_barrier(r / mean_fitness)
+    partial_x = r_over_mean / mean_fitness
+    return _multiplicative_selection(*primals), partial_r * dr + partial_x * dx
+
+
+@final
+class MultiplicativeSelection(AbstractFrequencyMap):
+    r"""Multiplicative fitness effects with fitnesses $1$, $r$, and $r^2$.
+
+    This is the diploid rule with coefficients $1-r$ and $1-r^2$. Cancelling
+    the common factor gives $q(x)=rx/(1-x+rx)$, avoiding cancellation in the
+    coefficients when fitness is small and overflow from squaring large $r$.
+    """
+
+    r: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+
+    def __check_init__(self) -> None:
+        """Require scalar parameters without inspecting traced values."""
+        if self.r.ndim != 0:
+            raise ValueError("selection parameters must be scalar")
+
+    def apply(self, frequencies: jax.Array) -> jax.Array:
+        """Apply the constrained diploid selection rule.
+
+        **Arguments:**
+
+        - `frequencies`: Float64 array of allele-1 frequencies in `[0, 1]`.
+
+        **Returns:**
+
+        Selected frequencies with the same shape as the input.
+        """
+        return _multiplicative_selection(self.r, frequencies)
+
+
+# Document the generated constructor without replacing its implementation.
+MultiplicativeSelection.__init__.__doc__ = r"""Initialize MultiplicativeSelection.
+
+**Arguments:**
+
+- `r`: Finite, strictly positive fitness multiplier per derived allele.
+
+Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
+construction. Value constraints are caller preconditions, including under JIT
+and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+
+**Returns:**
+
+`None`.
+
+**Raises:**
+
+`ValueError` for nonscalar parameters.
 """
