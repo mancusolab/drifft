@@ -2,7 +2,8 @@
 
 `Demography` describes population sizes and timing. `DemographicTransition`
 combines that history with a numerical backend, an epoch method, and a shared
-frequency map. It evaluates allele-count distributions deterministically.
+frequency map. It evaluates allele-count distributions deterministically. For a complete
+biological comparison, see the [bottleneck example](../examples/bottleneck.md).
 
 ```python
 import equinox as eqx

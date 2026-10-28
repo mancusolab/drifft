@@ -25,6 +25,13 @@ nav.md-nav--secondary { border-left: revert !important; }
 
 .md-main__inner { margin-bottom: 1.5rem; }
 
+/* Lucide logos use outlines; the classic theme otherwise fills their paths. */
+.md-header__button.md-logo svg.lucide,
+.md-nav__title .md-nav__button.md-logo svg.lucide {
+    fill: none;
+    stroke: currentColor;
+}
+
 /* Indent API descriptions and suppress duplicate headings inside details. */
 div.doc-contents {
     padding-left: 25px;

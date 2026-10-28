@@ -55,6 +55,9 @@ selection changes.
 
 ## Next step
 
+Continue with the [allele-loss example](../examples/allele_loss.md) to follow
+loss and fixation over many generations.
+
 Use [selection and mutation](frequency_maps.md) to change the biological model,
 or [population histories](demography.md) to evolve through several generations
 and population sizes. [Computing transitions](transitions.md) explains the

@@ -121,6 +121,9 @@ for shifted-solve failure behavior and details.
     and with a dense model where feasible. Test the parameter range you will fit,
     including relevant boundaries, rather than only the initial parameter value.
 
+For a complete finite-time calculation with a derivative plot and
+finite-difference checks, see [sensitivity to selection](../examples/selection_sensitivity.md).
+
 ## Memory and timing
 
 Differentiation can retain more intermediates than forward evaluation,

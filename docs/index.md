@@ -10,6 +10,10 @@ responds to selection. These calculations support differentiation in JAX.
 
 Begin with the [quickstart](guide/quickstart.md): compute the loss probability of a
 new deleterious allele, then differentiate it with respect to selection.
+Explore complete examples of [allele loss](examples/allele_loss.md),
+a [population bottleneck](examples/bottleneck.md), and
+[selection sensitivity](examples/selection_sensitivity.md). For a human-scale
+selection-and-mutation calculation, see [sample allele-count likelihoods](examples/schiffels_durbin.md).
 
 ## Why the computation can be fast
 

@@ -20,6 +20,12 @@ nav = [
         "guide/numerics.md",
         "guide/solves.md",
     ] },
+    { "Examples" = [
+        "examples/allele_loss.md",
+        "examples/bottleneck.md",
+        "examples/selection_sensitivity.md",
+        "examples/schiffels_durbin.md",
+    ] },
     { "Numerical methods" = [
         "methods/fft.md",
         "methods/nufft.md",
@@ -57,6 +63,7 @@ accent = "deep orange"
 toggle = { icon = "material/brightness-4", name = "Switch to light mode" }
 
 [project.theme.icon]
+logo = "lucide/chart-line"
 repo = "fontawesome/brands/github"
 
 [project.markdown_extensions.pymdownx.arithmatex]
