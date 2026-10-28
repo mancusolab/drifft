@@ -1,4 +1,4 @@
-# Wright–Fisher FFT/NUFFT compression: sharper row-l1 bounds
+# Wright–Fisher FFT/NUFFT compression: sharper row-$\ell_1$ bounds
 
 ## Scope and status
 
@@ -8,13 +8,13 @@ The important algorithmic distinction is between a sharp Chebyshev projection, o
 
 ## 1. Setup
 
-Let M be the offspring gene-copy count and define
+Let $M$ be the offspring gene-copy count and define
 
 $$
 b_{M,j}(\theta)=\binom Mj\sin^{2j}(\theta/2)\cos^{2(M-j)}(\theta/2),\quad 0\le j\le M.
 $$
 
-Thus q = sin²(theta/2) and a Wright–Fisher row at success probability q is b_M(theta). Source probabilities may incorporate arbitrary selection and mutation maps, provided they lie in [0,1].
+Thus $q = \sin^2(\theta/2)$ and a Wright–Fisher row at success probability $q$ is $b_M(\theta)$. Source probabilities may incorporate arbitrary selection and mutation maps, provided they lie in $[0,1]$.
 
 For an approximate row family define
 
@@ -30,30 +30,30 @@ $$
 \|P^T-\widetilde P^T\|_{1\to1}\le\delta.
 $$
 
-This is twice the maximum row total-variation distance when both kernels are stochastic. If the approximation is signed, it remains a valid row-l1/operator guarantee, but should not be described as a probability distribution.
+This is twice the maximum row total-variation distance when both kernels are stochastic. If the approximation is signed, it remains a valid row-$\ell_1$/operator guarantee, but should not be described as a probability distribution.
 
-The key exact identity, valid for every real theta and real t, is
+The key exact identity, valid for every real $\theta$ and real $t$, is
 
 $$
 \boxed{\|b_M(\theta+it)\|_1=(\cosh t)^M.}
 $$
 
 It follows by summing the absolute values with the binomial theorem and using
-|sin((theta+it)/2)|² + |cos((theta+it)/2)|² = cosh(t).
+$|\sin((\theta+it)/2)|^2 + |\cos((\theta+it)/2)|^2 = \cosh(t)$.
 No central-limit or diffusion approximation is involved.
 
-## 2. Construction with L retained modes
+## 2. Construction with $L$ retained modes
 
-L denotes the number of retained cosine modes, 0,...,L−1, so the output polynomial degree is at most L−1. The encoder samples L+1 Lobatto points.
+$L$ denotes the number of retained cosine modes, $0,\ldots,L-1$, so the output polynomial degree is at most $L-1$. The encoder samples $L+1$ Lobatto points.
 
-Choose an integer taper width 1 <= w <= L, set a = L−w, and define
+Choose an integer taper width $1 \le w \le L$, set $a = L-w$, and define
 
 $$
 v_k = \max\left(0,\min\left(1,\frac{L-k}{w}\right)\right),
 \qquad k\ge 0.
 $$
 
-On the full periodic angular grid theta_l = pi*l/L, l=0,...,2L−1, compute
+On the full periodic angular grid $\theta_\ell = \pi\ell/L$, $\ell=0,\ldots,2L-1$, compute
 $$
 \widehat{b}^{d}_k =
 \frac{1}{2L}
@@ -69,11 +69,11 @@ $$
 v_{|k|}\widehat{b}^{d}_k e^{ik\theta}.
 $$
 
-Evenness reduces this computation to a DCT-I of the L+1 distinct Lobatto samples. The final evaluation can use a cosine transform or a NUFFT. The approximation has rank at most L on any collection of source probabilities. The taper is deterministic, independent of the input vector.
+Evenness reduces this computation to a DCT-I of the $L+1$ distinct Lobatto samples. The final evaluation can use a cosine transform or a NUFFT. The approximation has rank at most $L$ on any collection of source probabilities. The taper is deterministic, independent of the input vector.
 
 ## 3. Explicit sampled-operator bound
 
-For every t > 0,
+For every $t > 0$,
 
 $$
 \boxed{
@@ -88,22 +88,22 @@ This includes sampling aliasing, but excludes binomial-sample, DCT, NUFFT, and f
 
 ### 3.1 Continuous filtering error
 
-Write S_n for Fourier projection through frequencies −n,...,n. The continuous filtered operator is
+Write $S_n$ for Fourier projection through frequencies $-n,\ldots,n$. The continuous filtered operator is
 
 $$
-V_{L,w}=\frac1w\sum_{n=a}^{L-1}S_n.
+V_{L,w}=\frac{1}{w}\sum_{n=a}^{L-1}S_n.
 $$
 
-Its positive-frequency residual multiplier r_k = 1−v_k has generating function
+Its positive-frequency residual multiplier $r_k = 1-v_k$ has generating function
 
 $$
 \sum_{k\ge1}r_k z^k
 =\frac{z^{a+1}(1-z^w)}{w(1-z)^2}.
 $$
 
-Set z = exp(−t+iu). A contour shift expresses the positive-frequency residual as convolution of b_M(·−it) with this kernel; the negative-frequency residual uses b_M(·+it).
+Set $z = \exp(-t+iu)$. A contour shift expresses the positive-frequency residual as convolution of $b_M(\cdot-it)$ with this kernel; the negative-frequency residual uses $b_M(\cdot+it)$.
 
-Normalize circular L1 integrals by 1/(2*pi). Since
+Normalize circular $L^1$ integrals by $1/(2\pi)$. Since
 
 $$
 \frac1{2\pi}\int_{-\pi}^{\pi}\frac{du}{|1-e^{-t+iu}|^2}
@@ -128,7 +128,7 @@ $$
 \widehat b^d_k=\sum_{r\in\mathbb Z}\widehat b_{k+2Lr}.
 $$
 
-Let V(u) = sum_{|k|<L} v_|k| exp(iku). Its Laurent-polynomial representation is
+Let $V(u) = \sum_{|k|<L} v_{|k|}\exp(iku)$. Its Laurent-polynomial representation is
 
 $$
 V(z)=\frac{z^a+z^{-a}-z^L-z^{-L}}{w(1-z)(1-z^{-1})}.
@@ -155,29 +155,29 @@ Adding (2) and (3) and simplifying yields (1). In particular, no factor counting
 
 ## 4. A dimension-independent Gaussian certificate
 
-Assume ceil(sqrt(M)) <= L < M. Set
+Assume $\lceil\sqrt{M}\rceil \le L < M$. Set
 
 $$
 t_*=\operatorname{arctanh}(L/M),\qquad
 w=\left\lceil1/t_*\right\rceil.
 $$
 
-The condition ensures w <= L. Define
+The condition ensures $w \le L$. Define
 
 $$
 \Psi(u)=\frac{1+u}{2}\log(1+u)+\frac{1-u}{2}\log(1-u).
 $$
 
-Then M*log(cosh(t_*)) − L*t_* = −M*Psi(L/M). Also Psi(u) >= u²/2.
+Then $M\log(\cosh(t_*)) - Lt_* = -M\Psi(L/M)$. Also $\Psi(u) \ge u^2/2$.
 
-The prefactor in (1) is below 6 with this choice. To verify this, put x = w*t_*. For t_* <= 1, 1 <= x <= 2 and
+The prefactor in (1) is below 6 with this choice. To verify this, put $x = wt_*$. For $t_* \le 1$, $1 \le x \le 2$ and
 
 $$
 \frac{4\cosh^2(x/2)}{x}
 \le 2+2\cosh(1)<5.087,
 $$
 
-while t_*/sinh(t_*) <= 1 and 1−exp(−2Lt_*) >= 1−exp(−2). Thus the prefactor is less than 5.89. For t_* > 1, w=1, and the same prefactor is at most 2*coth(1/2)/(1−exp(−2)) < 5.01.
+while $t_*/\sinh(t_*) \le 1$ and $1-\exp(-2Lt_*) \ge 1-\exp(-2)$. Thus the prefactor is less than 5.89. For $t_* > 1$, $w=1$, and the same prefactor is at most $2\coth(1/2)/(1-\exp(-2)) < 5.01$.
 
 Therefore
 
@@ -186,57 +186,57 @@ $$
 \tag{4}
 $$
 
-A sufficient number of modes for row-l1 error epsilon in (0,1) is
+A sufficient number of modes for row-$\ell_1$ error $\varepsilon \in (0,1)$ is
 
 $$
 \boxed{L=\left\lceil\sqrt{2M\log(6/\varepsilon)}\right\rceil.}
 $$
 
-If this reaches M, use the exact degree-M representation with M+1 modes, or treat the limiting top-degree case separately.
+If this reaches $M$, use the exact degree-$M$ representation with $M+1$ modes, or treat the limiting top-degree case separately.
 
-Thus the sufficient rank is O(sqrt(M*log(1/epsilon))), capped at M+1. At fixed accuracy it is O(sqrt(M)); a dense reduced matrix has O(M*log(1/epsilon)) entries.
+Thus the sufficient rank is $O(\sqrt{M\log(1/\varepsilon)})$, capped at $M+1$. At fixed accuracy it is $O(\sqrt{M})$; a dense reduced matrix has $O(M\log(1/\varepsilon))$ entries.
 
-The taper width is approximately M/L. This matches the scale over which exp(−k²/(2M)) changes by a constant factor at k=L. A fixed fractional taper is unnecessary and would weaken the exponent relative to the final degree.
+The taper width is approximately $M/L$. This matches the scale over which $\exp(-k^2/(2M))$ changes by a constant factor at $k=L$. A fixed fractional taper is unnecessary and would weaken the exponent relative to the final degree.
 
-For a sharper numerical certificate, optimize the right-hand side of (1) over t>0 for each candidate integer w. The constant 6 is convenient, not asserted to be minimax-optimal.
+For a sharper numerical certificate, optimize the right-hand side of (1) over $t>0$ for each candidate integer $w$. The constant 6 is convenient, not asserted to be minimax-optimal.
 
 ## 5. Lower bound on the polynomial degree
 
-Consider approximation of the whole binomial family uniformly in q, with outputs restricted to degree at most L−1 in q. Set
+Consider approximation of the whole binomial family uniformly in $q$, with outputs restricted to degree at most $L-1$ in $q$. Set
 
 $$
 x_j=T_L(1-2j/M),\qquad |x_j|\le1.
 $$
 
-The Bernstein expectation of this input has degree L, and its highest Chebyshev coefficient is
+The Bernstein expectation of this input has degree $L$, and its highest Chebyshev coefficient is
 
 $$
 \lambda_{M,L}=\frac{M(M-1)\cdots(M-L+1)}{M^L}.
 $$
 
-This follows because the Bernstein expectation multiplies the leading coefficient of a degree-L polynomial by (M)_L/M^L. Any degree-(L−1) approximation leaves this leading coefficient unchanged. Chebyshev equioscillation implies its uniform error is at least lambda_{M,L}, and subtracting the lower-degree terms attains that lower bound for this particular input.
+This follows because the Bernstein expectation multiplies the leading coefficient of a degree-$L$ polynomial by $(M)_L/M^L$. Any degree-$(L-1)$ approximation leaves this leading coefficient unchanged. Chebyshev equioscillation implies its uniform error is at least $\lambda_{M,L}$, and subtracting the lower-degree terms attains that lower bound for this particular input.
 
-Consequently every approximation operator with this polynomial-degree restriction has uniform row-l1/operator error at least
+Consequently every approximation operator with this polynomial-degree restriction has uniform row-$\ell_1$/operator error at least
 
 $$
 \boxed{\lambda_{M,L}=\prod_{j=0}^{L-1}(1-j/M).}
 \tag{5}
 $$
 
-For L=o(M),
+For $L=o(M)$,
 
 $$
 \log\lambda_{M,L}
 =-\frac{L(L-1)}{2M}+O(L^3/M^2).
 $$
 
-Thus the leading Gaussian exponent agrees with (4). In the compressed regime the degree scaling sqrt(M*log(1/epsilon)) cannot be improved in order for this representation. This is a degree lower bound for approximation of the full continuum of binomial rows, not a lower bound for every low-rank factorization or every particular selection map.
+Thus the leading Gaussian exponent agrees with (4). In the compressed regime the degree scaling $\sqrt{M\log(1/\varepsilon)}$ cannot be improved in order for this representation. This is a degree lower bound for approximation of the full continuum of binomial rows, not a lower bound for every low-rank factorization or every particular selection map.
 
 ## 6. What is true for unfiltered methods?
 
 ### Continuous sharp projection
 
-For the projection S_{L−1}, the positive-frequency tail kernel after contour shifting is
+For the projection $S_{L-1}$, the positive-frequency tail kernel after contour shifting is
 
 $$
 \frac{e^{-Lt+iLu}}{1-e^{-t+iu}}.
@@ -256,11 +256,11 @@ A(t)=\frac1{2\pi}\int_{-\pi}^{\pi}\frac{du}{|1-e^{-t+iu}|}
 =O(1+\log(1/t))\quad(t\downarrow0).
 $$
 
-At t=atanh(L/M) this replaces the old approximately sqrt(M) prefactor by a logarithmic prefactor. It yields a sufficient degree of order sqrt(M*[log(1/epsilon)+log log M]) at fixed-accuracy large-M scaling, rather than sqrt(M*log(M/epsilon)).
+At $t=\operatorname{arctanh}(L/M)$ this replaces the old approximately $\sqrt{M}$ prefactor by a logarithmic prefactor. It yields a sufficient degree of order $\sqrt{M[\log(1/\varepsilon)+\log\log M]}$ at fixed-accuracy large-$M$ scaling, rather than $\sqrt{M\log(M/\varepsilon)}$.
 
 A dimension-independent Gaussian bound is actually false for this literal sharp projection. Here is a counterexample rather than just a generic Lebesgue-constant warning.
 
-Take L/sqrt(M) -> alpha > 0 and evaluate the approximated row at q=0. For every fixed j>=1,
+Take $L/\sqrt{M} \to \alpha > 0$ and evaluate the approximated row at $q=0$. For every fixed $j\ge1$,
 
 $$
 (S_{L-1}b_{M,j})(0)\longrightarrow
@@ -268,9 +268,9 @@ h_j(\alpha)=\frac1{\pi j}\mathbb E[\sin(2\alpha\sqrt{Y_j})],
 \quad Y_j\sim\operatorname{Gamma}(j,1).
 $$
 
-To obtain this limit, substitute u=M*sin²(theta/2) into the Dirichlet-kernel integral. The binomial mass tends to exp(−u)u^j/j!, and the sine factor tends to sin(2*alpha*sqrt(u)). Equivalently the integral is a beta expectation whose scaled beta variable tends to Gamma(j,1).
+To obtain this limit, substitute $u=M\sin^2(\theta/2)$ into the Dirichlet-kernel integral. The binomial mass tends to $\exp(-u)u^j/j!$, and the sine factor tends to $\sin(2\alpha\sqrt{u})$. Equivalently the integral is a beta expectation whose scaled beta variable tends to $\operatorname{Gamma}(j,1)$.
 
-A Taylor expansion of sqrt(Y_j) around sqrt(j), together with the exact gamma characteristic function, gives
+A Taylor expansion of $\sqrt{Y_j}$ around $\sqrt{j}$, together with the exact gamma characteristic function, gives
 
 $$
 h_j(\alpha)=\frac{e^{-\alpha^2/2}}{\pi j}
@@ -284,30 +284,30 @@ $$
 =\frac2\pi\log J+O_\alpha(1).
 $$
 
-Thus sum_j |h_j(alpha)| diverges. Since the true q=0 row has zero probability at every j>=1, considering any fixed initial segment of columns and then letting that segment grow proves that the sharp-projection row-l1 error is unbounded as M increases with L/sqrt(M)->alpha. This disproves a uniform C*exp(−c*L²/M) estimate for that operator. This argument does not by itself give the precise finite-M rate of divergence or a lower bound for ordinary DCT interpolation, which preserves endpoint samples.
+Thus $\sum_j |h_j(\alpha)|$ diverges. Since the true $q=0$ row has zero probability at every $j\ge1$, considering any fixed initial segment of columns and then letting that segment grow proves that the sharp-projection row-$\ell_1$ error is unbounded as $M$ increases with $L/\sqrt{M}\to\alpha$. This disproves a uniform $C\exp(-cL^2/M)$ estimate for that operator. This argument does not by itself give the precise finite-$M$ rate of divergence or a lower bound for ordinary DCT interpolation, which preserves endpoint samples.
 
 ### Ordinary Lobatto interpolation
 
-Let I_L be the degree-L interpolant and Lambda_L its Lebesgue constant. Since it reproduces degree-L polynomials,
+Let $I_L$ be the degree-$L$ interpolant and $\Lambda_L$ its Lebesgue constant. Since it reproduces degree-$L$ polynomials,
 
 $$
 \|F-I_LF\|_\infty\le(1+\Lambda_L)E_L(F),\qquad
 \Lambda_L\le1+\frac2\pi\log(L+1).
 $$
 
-The continuous tapered construction with cutoff L+1 gives
+The continuous tapered construction with cutoff $L+1$ gives
 
 $$
 E_L(F_x)\le4.2e^{-M\Psi((L+1)/M)}\|x\|_\infty,
 $$
 
-when sqrt(M) <= L+1 < M. Therefore the unchanged ordinary DCT interpolation also has an improved O(log L * exp(−L²/(2M))) certificate. The dimension-independent constant in (4), however, is established for the sampled tapered operator.
+when $\sqrt{M} \le L+1 < M$. Therefore the unchanged ordinary DCT interpolation also has an improved $O(\log L\,\exp(-L^2/(2M)))$ certificate. The dimension-independent constant in (4), however, is established for the sampled tapered operator.
 
 ## 7. Numerical errors, positivity, endpoints, and powers
 
 ### Sample errors
 
-Let Lambda_{L,w} be the norm mapping errors in the 2L periodic samples to the reconstructed polynomial. It is enough to use
+Let $\Lambda_{L,w}$ be the norm mapping errors in the $2L$ periodic samples to the reconstructed polynomial. It is enough to use
 
 $$
 \Lambda_{L,w}\le\min\{(2L-w)/w,\;5+\log(L/w)\}.
@@ -319,13 +319,13 @@ $$
 V(u)=\frac{\sin((2L-w)u/2)\sin(wu/2)}{w\sin^2(u/2)}
 $$
 
-and bound it by min(2L, pi/|u|, pi²/(w*u²)), then sum over angular grid annuli of width pi/L. At most two grid points lie in each annulus. The first annulus contributes at most 2, the harmonic portion at most 1+log(L/w), and the remaining quadratic tail at most 2.
+and bound it by $\min(2L, \pi/|u|, \pi^2/(wu^2))$, then sum over angular grid annuli of width $\pi/L$. At most two grid points lie in each annulus. The first annulus contributes at most 2, the harmonic portion at most $1+\log(L/w)$, and the remaining quadratic tail at most 2.
 
-If every sampled binomial row is approximated in l1 to tau, its contribution to the final operator error is at most Lambda_{L,w}*tau. Because L/w is approximately L²/M, the amplification does not grow with M at fixed target accuracy.
+If every sampled binomial row is approximated in $\ell_1$ to $\tau$, its contribution to the final operator error is at most $\Lambda_{L,w}\tau$. Because $L/w$ is approximately $L^2/M$, the amplification does not grow with $M$ at fixed target accuracy.
 
 ### Conditional NUFFT error
 
-For input norm ||x||_infinity<=1, exact sampled Bernstein expectations have absolute value at most one. Parseval and Cauchy–Schwarz give, for the complex Fourier coefficients entering the evaluation,
+For input norm $\|x\|_\infty\le1$, exact sampled Bernstein expectations have absolute value at most one. Parseval and Cauchy–Schwarz give, for the complex Fourier coefficients entering the evaluation,
 
 $$
 \sum_{k=-(L-1)}^{L-1}
@@ -335,7 +335,7 @@ $$
 \le
 \sqrt{2L-1}.
 $$
-If a NUFFT has output error at most eta times the coefficient l1 norm, the combined certificate is
+If a NUFFT has output error at most $\eta$ times the coefficient $\ell_1$ norm, the combined certificate is
 
 $$
 \delta_{\mathrm{impl}}\le\delta_{M,L,w}
@@ -348,11 +348,11 @@ A library tolerance is not automatically a proof of this assumed NUFFT error mod
 
 ### Mass and positivity
 
-The construction preserves constants, hence row sums are one. It need not preserve positivity. If the exact row is stochastic and its l1 error is at most delta, the approximate row's total negative mass is at most delta/2. Clipping and renormalizing entries is not a free repair: it can destroy the low-rank structure and changes the fixed linear operator.
+The construction preserves constants, hence row sums are one. It need not preserve positivity. If the exact row is stochastic and its $\ell_1$ error is at most $\delta$, the approximate row's total negative mass is at most $\delta/2$. Clipping and renormalizing entries is not a free repair: it can destroy the low-rank structure and changes the fixed linear operator.
 
 ### Endpoints
 
-For L>=2, exact endpoints can be restored by
+For $L\ge2$, exact endpoints can be restored by
 
 $$
 \widetilde b^{\mathrm{end}}(q)=\widetilde b(q)
@@ -364,21 +364,21 @@ The degree and rank bound do not increase, row sums remain one, and the error bo
 
 ### Powers
 
-For a fixed square transition with one-step error delta, ||P||_infinity=1 and ||P_tilde||_infinity<=1+delta. Thus
+For a fixed square transition with one-step error $\delta$, $\|P\|_\infty=1$ and $\|\widetilde P\|_\infty\le1+\delta$. Thus
 
 $$
 \|P^K-\widetilde P^K\|_\infty\le(1+\delta)^K-1.
 $$
 
-Taking delta <= log(1+epsilon_total)/K is sufficient. Consequently the conservative rank for K generations scales as sqrt(M*log(K/epsilon_total)), with no added log M. This is an accuracy statement, not a fast-powering algorithm or a uniform relative bound on rare probabilities. Value-error bounds do not automatically certify parameter derivatives.
+Taking $\delta \le \log(1+\varepsilon_{\mathrm{total}})/K$ is sufficient. Consequently the conservative rank for $K$ generations scales as $\sqrt{M\log(K/\varepsilon_{\mathrm{total}})}$, with no added $\log M$. This is an accuracy statement, not a fast-powering algorithm or a uniform relative bound on rare probabilities. Value-error bounds do not automatically certify parameter derivatives.
 
 ## 8. Scope relative to FFT, Toeplitz, and fastDTWF
 
 The theorem concerns angular Fourier/Chebyshev compression. Uniform versus nonuniform output angles changes the evaluation algorithm, not this approximation bound. The local log-odds diagonal–Toeplitz–diagonal factorization remains exact on its grid; it is not itself a rank reduction, and the theorem does not remove its interpolation or scaling errors.
 
-Count-grid Fourier truncation is different. At q=0 the row is a delta mass whose discrete Fourier transform has magnitude one at every frequency. Dropping even one frequency gives row-l1 error at least one. Even after handling exact endpoints separately, q=1/M has all characteristic-function magnitudes at least (1−2/M)^M, approaching exp(−2). Thus the angular transform is essential to the global small-rank claim; a naive count-grid Fourier truncation cannot simply inherit it.
+Count-grid Fourier truncation is different. At $q=0$ the row is a delta mass whose discrete Fourier transform has magnitude one at every frequency. Dropping even one frequency gives row-$\ell_1$ error at least one. Even after handling exact endpoints separately, $q=1/M$ has all characteristic-function magnitudes at least $(1-2/M)^M$, approaching $\exp(-2)$. Thus the angular transform is essential to the global small-rank claim; a naive count-grid Fourier truncation cannot simply inherit it.
 
-Spence et al. prove fixed-tolerance compression with O(sqrt(M)) representative rows and use concentration/sparsity to obtain O(M) matvecs. The filtered codec now matches the fixed-tolerance rank scaling, with logarithmic precision dependence. It is not claimed to be faster, and it does not inherit positivity or the practical moment-matching behavior of fastDTWF.
+Spence et al. prove fixed-tolerance compression with $O(\sqrt{M})$ representative rows and use concentration/sparsity to obtain $O(M)$ matvecs. The filtered codec now matches the fixed-tolerance rank scaling, with logarithmic precision dependence. It is not claimed to be faster, and it does not inherit positivity or the practical moment-matching behavior of fastDTWF.
 
 ## References for standard ingredients
 
