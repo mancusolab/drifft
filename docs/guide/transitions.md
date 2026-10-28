@@ -1,130 +1,77 @@
-# Transitions and frequency maps
+# Computing transitions
 
-The [quickstart](quickstart.md) constructs a backend and binds it to a transition.
-The [model guide](model.md) explains the binomial kernel, selection and mutation
-equations, and the relationship between propagation and expectations.
-
-Build the backend once and reuse it across transitions. To change selection,
-construct `Transition(backend, Underdominance(new_strength))`; this reuses the
-geometry and keeps selection differentiable.
-
-Numerical methods compile automatically on their first call. JAX reuses the
-compiled operation when parameter values change, but new shapes or configuration
-settings can require recompilation. Construct backends outside JIT.
-
-| API | Contract |
-| --- | --- |
-| `FFT(gene_copies, **options)` / `NUFFT(gene_copies, **options)` | Prepare destination geometry outside JIT |
-| `Transition(backend, frequency_map=...)` | Bind an `AbstractFrequencyMap` describing selection, mutation, or both |
-| `Transition.from_probabilities(backend, probabilities)` | Bind explicit probabilities, one per source row |
-| `transition.expect(values)` | Destination values to source expectations: `P @ values` |
-| `transition.advance(distribution)` | Source mass to destination mass: `P.T @ distribution` |
-| `transition.expect_segregating(values)` | Interior expectations with endpoint values zero |
-| `transition.advance_segregating(distribution)` | Interior mass propagation, discarding endpoint hits |
-| `transition.as_lineax(segregating=False)` | Expectation operator; `.T` advances mass |
-| `transition.expected_visits(**options)` | Square-transition visits from one copy, with convergence diagnostics |
-
-Neither operation changes the input, clips outputs, or normalizes mass.
-Segregating operations discard endpoint mass; they do not condition on survival.
-
-## Custom frequency maps
-
-Every map implements `.apply(frequencies)`; calling the map directly is shorthand
-for the same operation. Transitions always use `.apply()`. Implement
-`AbstractFrequencyMap.apply` in your own Equinox class, or wrap a function:
+A `Transition` binds prepared numerical geometry to a frequency map. Use
+`advance` for a distribution and `expect` for a quantity measured in the next
+generation.
 
 ```python
 import jax
+import jax.numpy as jnp
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-backend = drifft.FFT(2000)
-
-# Wrap a JAX-compatible function that returns one probability per frequency.
-custom_map = drifft.FrequencyMap(lambda frequency: frequency**2)
-custom = drifft.Transition(backend, frequency_map=custom_map)
-# An Equinox callable can carry dynamic parameters for inference or sweeps.
-# Alternatively, supply already evaluated probabilities explicitly.
-offspring_probabilities = custom.probabilities
-explicit = drifft.Transition.from_probabilities(backend, offspring_probabilities)
+backend = drifft.FFT(64)
+transition = drifft.Transition(backend, drifft.AdditiveSelection(s_het=0.01))
+initial = jnp.zeros(65).at[1].set(1.0)
+next_distribution = transition.advance(initial)
+allele_frequency = jnp.arange(65) / 64
+conditional_mean = transition.expect(allele_frequency)
+mean_from_one_copy = conditional_mean[1]
 ```
 
-Model probabilities are evaluated during application, keeping parameter updates
-and differentiation connected. With explicit probabilities, construct them inside
-the differentiated function if gradients through their construction are needed.
-Use Equinox fields for trainable parameters instead of closing over changing
-Python values in fresh lambdas.
+`next_distribution[j]` is the probability of count `j` after reproduction.
+`conditional_mean[i]` is the expected offspring frequency starting at count
+`i`. Consequently, `initial @ conditional_mean` and
+`next_distribution @ allele_frequency` agree up to roundoff. This transpose
+relationship uses the same approximate transition in both directions.
 
-## Selection and mutation
+## Reusing geometry
 
-`DiploidSelection(s_het, s_hom)` provides the general diploid selection rule.
-Its two required coefficients set heterozygote and derived-homozygote fitness
-reductions, respectively. The named models use these constraints:
-
-| Map | Genotype fitnesses (0/0, 0/1, 1/1) | Parameter domain |
-| --- | --- | --- |
-| `Neutral()` | $(1,1,1)$ | No parameters |
-| `DiploidSelection(s_het, s_hom)` | $(1,1-s_{\mathrm{het}},1-s_{\mathrm{hom}})$ | $s_{\mathrm{het}}\le1$, $s_{\mathrm{hom}}<1$ |
-| `DominanceSelection(s, h)` | $(1,1-hs,1-s)$ | $s<1$, $hs\le1$ |
-| `AdditiveSelection(s_het)` | $(1,1-s_{\mathrm{het}},1-2s_{\mathrm{het}})$ | $s_{\mathrm{het}}<1/2$ |
-| `RecessiveSelection(s)` | $(1,1,1-s)$ | $s<1$ |
-| `DominantSelection(s)` | $(1,1-s,1-s)$ | $s<1$ |
-| `Underdominance(strength)` | $(1,1-s,1)$ | $0\le s\le1$ |
-| `Overdominance(strength)` | $(1,1+s,1)$ | $s\ge0$ |
-| `MultiplicativeSelection(r)` | $(1,r,r^2)$ | $r>0$ |
-
-All parameters must be finite. Additive and dominance selection also require
-finite derived coefficients: `2 * s_het` and `h * s`, respectively. Negative fitness reductions are allowed for
-beneficial effects. Scalar shapes are checked at construction; value ranges
-are caller preconditions, including under JIT. There is no automatic clipping.
-The maps preserve frequency-array shape, and their float64 parameter leaves
-support JIT, differentiation, batching, and `eqx.tree_at` updates. Named models
-recompute their coefficient relationships when parameters change.
-
-FFT and NUFFT accept all these maps. Jacobi still accepts only `Neutral` and
-`Underdominance`; it does not recognize equivalent `DiploidSelection` parameter
-values as supported special cases.
+Construct backends outside JIT and reuse them when changing selection:
 
 ```python
-selection = drifft.DiploidSelection(s_het=0.01, s_hom=0.02)
-# The same fitnesses, with one free parameter:
-additive = drifft.AdditiveSelection(s_het=0.01)
-transition = drifft.Transition(drifft.FFT(64), frequency_map=additive)
+stronger = drifft.Transition(backend, drifft.AdditiveSelection(s_het=0.02))
+updated_distribution = stronger.advance(initial)
 ```
 
-`Mutation(forward_rate, backward_rate)`
-transforms an allele-1 frequency `p` into
-`p * (1 - backward_rate) + (1 - p) * forward_rate`. Rates are per-generation
-probabilities of 0 → 1 and 1 → 0 mutation, respectively; both default to zero.
+Numerical methods compile automatically on their first call. Changing array
+shapes or static configuration can require recompilation. Frequency-map
+parameters remain dynamic and differentiable; see
+[accuracy and differentiation](numerics.md).
 
-`Composition` applies maps **left to right**. This example applies selection
-before mutation:
+!!! tip "Separate preparation from timing"
+
+    Measure backend preparation, first execution, and subsequent execution
+    separately. Synchronize JAX outputs before recording elapsed time.
+
+## Restricting to segregating counts
 
 ```python
-frequency_map = drifft.Composition(
-    drifft.Underdominance(strength=0.01),
-    drifft.Mutation(forward_rate=1e-8, backward_rate=1e-8),
-)
-transition = drifft.Transition(backend, frequency_map=frequency_map)
-
-frequencies = transition.probabilities
-# frequency_map.apply(x) and frequency_map(x) are equivalent.
+interior_mass = transition.advance_segregating(initial[1:-1])
+interior_values = transition.expect_segregating(allele_frequency[1:-1])
 ```
 
-Reverse the component order to apply mutation before selection. Selection and
-mutation generally do not commute. Mutation parameters are dynamic float64
-scalar leaves and support differentiation just like selection strength. Each
-rate must be finite and lie in `[0, 1]`; their sum need not be less than one.
-Nonscalar parameters raise `ValueError`, while value ranges remain caller
-preconditions under transformations.
+Interior vectors exclude counts zero and `gene_copies`. Their total mass may
+decrease because the transition discards trajectories that hit an endpoint.
+Outputs are not clipped or renormalized.
 
-!!! warning "Mutation and endpoint removal"
+!!! note "Discarding is not conditioning"
 
-    With forward and back mutation, loss and fixation are no longer absorbing under
-    `.advance()`. Segregating methods still discard trajectories at their first
-    endpoint hit, and `expected_visits()` still ends visits there. Those operations
-    do not include later re-entry through mutation or compute a recurrent-mutation
-    stationary distribution.
+    Segregating propagation retains the probability of still segregating.
+    It does not divide by that probability to condition on survival. With
+    recurrent mutation, discarded trajectories do not later re-enter.
+
+For occupation quantities through absorption, see [expected visits](solves.md).
+
+## Explicit offspring probabilities
+
+```python
+explicit = drifft.Transition.from_probabilities(backend, transition.probabilities)
+```
+
+This binds already evaluated probabilities. To differentiate through their
+construction, construct them inside the differentiated function. For built-in
+or custom biological models, use a [frequency map](frequency_maps.md).
 
 ## Population grids and validation
 
@@ -140,7 +87,10 @@ and destination sizes. For a sequence of size changes, use
 !!! warning "Input validation"
 
     Inputs must have the documented shapes. Frequencies and probabilities must be in
-    `[0, 1]`, and selection parameters must satisfy the scalar and value domains
-    above. Shape checks raise during construction or tracing; finite values and
-    numerical ranges remain
-    caller preconditions to avoid runtime callbacks. Backends require float64.
+    `[0, 1]`. Selection parameters must satisfy the domains in the
+    [frequency-map guide](frequency_maps.md). Shape checks raise during
+    construction or tracing; finite values and numerical ranges remain caller
+    preconditions to avoid runtime callbacks. Backends require float64.
+
+The [transition API](../api/transitions.md) lists method signatures, including
+the Lineax operator view.

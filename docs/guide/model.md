@@ -1,7 +1,7 @@
 # Wright–Fisher model
 
 This page explains the probability model behind the public operations. For code
-examples, see [frequency maps](transitions.md) and [demographic histories](demography.md).
+examples, see [frequency maps](frequency_maps.md) and [demographic histories](demography.md).
 For approximation error and derivatives, see [numerical accuracy](numerics.md).
 
 ## One generation

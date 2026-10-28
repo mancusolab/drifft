@@ -1,49 +1,63 @@
 # Overview
 
-`drifft` evolves allele-count distributions under the discrete-time
-Wright–Fisher model. A frequency map determines the probability of sampling
-an allele in the next generation; a numerical backend approximates the
-corresponding binomial transition.
+`drifft` computes how allele-count distributions change under the discrete-time
+Wright–Fisher model, including selection, mutation, and changing population
+sizes. It also computes expectations and expected visits before absorption,
+and supports differentiation through biological parameters.
 
-## One-generation transitions
+The name brings together genetic drift and the FFT. The computational problem
+is a binomial transition: each possible parental allele count gives a row of
+probabilities for offspring counts. A dense transition has quadratically many
+entries in the population gene-copy count. Nearby offspring probabilities
+produce similar rows, giving structure that can be exploited without storing
+the full matrix.
 
-Choose a [frequency map](../api/frequency_maps.md) to describe selection, mutation,
-or their composition. Prepare an [FFT](../api/backends.md#drifft.FFT) or [NUFFT](../api/backends.md#drifft.NUFFT)
-backend for the destination population size, then bind them in a
-[`Transition`](../api/transitions.md).
+## Where the speedups come from
 
-A transition supports two paired operations: `expect` maps destination values
-to their conditional expectations at source states, and `advance` propagates
-source probability mass to destination states. It also provides operations
-restricted to segregating counts and a solver for expected visits.
+FFT and NUFFT accelerate individual transitions. FFT factors local portions of
+the binomial kernel into scaled convolutions; NUFFT samples binomial
+expectations, represents them by a polynomial, and evaluates that polynomial
+with a fast transform. These are different numerical representations of the
+same biological transition.
 
-Start with the [quickstart](quickstart.md), then read
-[transitions and frequency maps](transitions.md) for custom models and
-population-size changes. The [model guide](model.md) gives the probability
-model and the relationship between expectations and propagation.
+Jacobi represents evolution in a smaller polynomial state. Krylov methods can
+then approximate evolution over a long constant-size interval without applying
+a transition once per generation. Preparation and factorization have costs of
+their own; the saving depends on interval length, accuracy, and reuse.
 
-## Evolution over a population history
+!!! note "Compression and transforms have different costs"
 
-A [`Demography`](../api/demography.md) records population sizes and interval
-durations. `DemographicTransition` combines that history with a frequency map,
-a backend, and an evolution method.
+    A dense reduced matrix with $r$ coefficients still costs $O(r^2)$ to apply.
+    An FFT on $r$ values costs $O(r\log r)$, but does not apply an arbitrary
+    reduced matrix. Encoding and decoding a population-sized vector add work.
 
-The backend determines the numerical representation. The method determines
-how an interval spanning several generations is computed:
+The [algorithm guide](backends.md) explains when each approach is useful.
+[Benchmark reports](../benchmarks.md) give measurements with their workloads
+and accuracy checks; no backend is fastest for every problem.
 
-| Component | Choices | Role |
+## How a calculation fits together
+
+| Component | What you specify | Role |
 | --- | --- | --- |
 | Frequency map | Selection, mutation, composition, or a custom map | Offspring allele probability |
-| Backend | FFT, NUFFT, or Jacobi | Representation of the transition |
-| Evolution method | Sequential, Polynomial Krylov, or Rational Krylov | Repeated application within an interval |
-| Population history | Demography | Sizes and durations of the intervals |
+| Backend | FFT, NUFFT, or Jacobi | Numerical representation of the transition |
+| Evolution method | Sequential, Polynomial Krylov, or Rational Krylov | Repeated evolution within a constant-size interval |
+| Population history | Sizes and interval durations | Sequence of demographic changes |
 
-FFT and NUFFT support custom frequency maps. Jacobi currently supports neutral
-evolution and symmetric underdominance, and is used with Krylov methods for
-forward propagation. Consult [backend tradeoffs](backends.md) for supported
-combinations and [constant-size epochs](epochs.md) for method behavior.
+For one generation, bind a frequency map and FFT or NUFFT backend in
+`Transition`. Its `advance` method propagates a distribution; `expect` computes
+conditional expectations using the transpose relationship. For a history,
+`DemographicTransition` combines `Demography` with a map, backend, and method.
 
-See [demographic histories](demography.md) for complete examples. Read
-[numerical accuracy](numerics.md) when choosing tolerances and checking
-convergence. The Python API reference provides focused pages for each concept's
-constructors, operations, and result types.
+## Reading the guide
+
+[Install the package](installation.md), then run the [quickstart](quickstart.md).
+The [model chapter](model.md) introduces the probability assumptions. Continue
+with [selection and mutation](frequency_maps.md), [transition calculations](transitions.md),
+and [population histories](demography.md) for practical examples.
+
+Choose [numerical algorithms](backends.md) for your workload, then use
+[accuracy and differentiation](numerics.md) to validate the result and its
+gradients. [Expected visits](solves.md) covers occupation quantities through
+absorption. Detailed derivations live in Numerical methods; signatures and
+return types live in the Python API reference.

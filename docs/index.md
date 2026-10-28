@@ -15,8 +15,9 @@ Prepare a backend for the destination population, bind a selection function with
 `Transition`, then call `expect` or `advance`. The model uses `M = 2N` gene copies
 for a diploid population of size `N`.
 
-The [user guide](guide/transitions.md) covers custom selection and population-size
-changes. Read [backend tradeoffs](guide/backends.md) to choose a representation, and
+The [user guide](guide/overview.md) explains the model and computational approach.
+Continue with [selection and mutation](guide/frequency_maps.md) and
+[transition calculations](guide/transitions.md). Read [backend tradeoffs](guide/backends.md) to choose a representation, and
 [expected visits](guide/solves.md) for absorption calculations and solver checks.
 
 For multiple generations and changing population sizes, use

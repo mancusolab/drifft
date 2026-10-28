@@ -107,6 +107,21 @@ uv run --group docs zensical build --strict
 The generated `site/` directory is ignored by Git. No publishing workflow is
 configured. See [validation and benchmarks](benchmarks.md) for numerical checks.
 
+### Admonitions
+
+Keep the main argument and required instructions in ordinary prose. Use
+admonitions for a short point a reader should notice beside that argument:
+
+- `!!! note "Specific title"` explains interpretation or a modeling convention.
+- `!!! tip "Specific title"` gives an optional practical recommendation.
+- `!!! warning "Specific title"` identifies a condition that can invalidate a
+  calculation or change what its result means, together with the action to take.
+
+Use descriptive sentence-case titles and avoid nested admonitions. Reserve
+collapsible `???` blocks for optional reference or advanced details; assumptions,
+required steps, and failure conditions must remain visible. API reference pages
+use `??? abstract` for abstract interfaces as described above.
+
 ## Support
 
 Report bugs and feature requests in the

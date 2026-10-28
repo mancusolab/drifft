@@ -32,7 +32,7 @@ Global polynomial evaluation using a nonuniform FFT. See
 Reduced Jacobi polynomial geometry for repeated evolution. Use with
 `DemographicTransition` and a Krylov method; supported frequency maps are
 `Neutral` and `Underdominance`. See [backend tradeoffs](../guide/backends.md)
-and [constant-size epochs](../guide/epochs.md).
+and [constant-size epochs](../methods/epochs.md).
 
 ::: drifft.Jacobi
     options:

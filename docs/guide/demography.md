@@ -1,4 +1,4 @@
-# Demographic histories
+# Population histories
 
 `Demography` describes population sizes and timing. `DemographicTransition`
 combines that history with a numerical backend, an epoch method, and a shared
@@ -128,8 +128,9 @@ Both `PolynomialKrylov` and `RationalKrylov` support FFT, NUFFT, and Jacobi.
 RationalKrylov uses iterative shifted solves for FFT/NUFFT and dense solves for
 Jacobi. Both Krylov methods support forward evolution; `model.expect()` requires matched Sequential
 transitions. Jacobi supports only neutral and underdominance maps.
-See [constant-size methods](epochs.md) for accuracy controls,
-supported combinations, and migration from the earlier API.
+See [constant-size methods](../methods/epochs.md) for accuracy controls,
+direct method calls. Use [choosing numerical algorithms](backends.md) for
+supported combinations and the [migration guide](../migration.md) for the earlier API.
 
 ## Segregating mass and mutation input
 
@@ -150,7 +151,7 @@ the distribution. Domain errors still raise. A failing member under `vmap`
 may fail the whole batch when throwing is enabled.
 
 Interval error estimates describe the power approximation, not total
-demographic error. Use [frequency-map composition](transitions.md#selection-and-mutation)
+demographic error. Use [frequency-map composition](frequency_maps.md#selection-and-mutation)
 to combine selection and mutation in an explicit order.
 
 !!! warning "Accumulated error"

@@ -31,7 +31,8 @@ renormalizes its output.
 
 Reuse the backend across selection strengths. Substitute `drifft.NUFFT(2000)`
 for the Chebyshev/NUFFT implementation; see [backend tradeoffs](backends.md).
-For custom selection or population-size changes, see [transitions and selection](transitions.md).
+Choose a biological model in [selection and mutation](frequency_maps.md), then
+see [computing transitions](transitions.md) for expectations and population-size changes.
 
 For several generations or a changing population size, continue with
 [demographic histories](demography.md).

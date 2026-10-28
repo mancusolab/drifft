@@ -4,7 +4,7 @@
 constant-size interval. Implementations are `Sequential`,
 `PolynomialKrylov`, and `RationalKrylov`.
 `EpochResult` and `EvolutionStatus` describe the returned distribution and
-convergence status. See [constant-size epochs](../guide/epochs.md) for interval
+convergence status. See [constant-size epochs](../methods/epochs.md) for interval
 timing and diagnostics.
 
 ::: drifft.AbstractEpochMethod
@@ -22,7 +22,7 @@ timing and diagnostics.
 ## Sequential
 
 Apply the prepared transition generation by generation. See
-[constant-size epochs](../guide/epochs.md) for timing and immigration semantics.
+[constant-size epochs](../methods/epochs.md) for timing and immigration semantics.
 
 ::: drifft.Sequential
     options:
@@ -31,7 +31,7 @@ Apply the prepared transition generation by generation. See
 ## Polynomial Krylov
 
 Approximate repeated evolution using polynomial Krylov projection. See
-[constant-size epochs](../guide/epochs.md) for convergence and differentiation
+[constant-size epochs](../methods/epochs.md) for convergence and differentiation
 limits. Results use the shared [method result types](#drifft.EpochResult).
 
 ::: drifft.PolynomialKrylov
@@ -41,7 +41,7 @@ limits. Results use the shared [method result types](#drifft.EpochResult).
 ## Rational Krylov
 
 Approximate repeated evolution using rational Krylov projection and shifted
-linear solves. See [constant-size epochs](../guide/epochs.md) for convergence
+linear solves. See [constant-size epochs](../methods/epochs.md) for convergence
 and differentiation limits. Results use the shared [method result types](#drifft.EpochResult).
 
 ::: drifft.RationalKrylov

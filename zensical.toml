@@ -13,13 +13,19 @@ nav = [
         "guide/overview.md",
         "guide/installation.md",
         "guide/quickstart.md",
-        "guide/transitions.md",
         "guide/model.md",
+        "guide/frequency_maps.md",
+        "guide/transitions.md",
         "guide/demography.md",
-        "guide/epochs.md",
         "guide/backends.md",
         "guide/numerics.md",
         "guide/solves.md",
+    ] },
+    { "Numerical methods" = [
+        "methods/fft.md",
+        "methods/nufft.md",
+        "methods/jacobi_krylov.md",
+        "methods/epochs.md",
     ] },
     { "Python API reference" = [
         "api/transitions.md",
@@ -28,7 +34,7 @@ nav = [
         "api/backends.md",
         "api/methods.md",
     ] },
-    { "Project" = ["benchmarks.md", "contributing.md"] },
+    { "Project" = ["benchmarks.md", "migration.md", "contributing.md"] },
 ]
 
 [project.theme]
