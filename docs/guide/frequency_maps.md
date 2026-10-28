@@ -17,7 +17,7 @@ The derived allele has fitnesses $(1,0.99,0.98)$ in this example. Other built-in
 models change those genotype fitnesses while keeping the same frequency-map
 interface. The [model guide](model.md#selection-and-mutation) derives the update.
 
-## Selection and mutation
+## Choose genotype fitnesses
 
 `DiploidSelection(s_het, s_hom)` provides the general diploid selection rule.
 Its two required coefficients set heterozygote and derived-homozygote fitness
@@ -36,16 +36,13 @@ reductions, respectively. The named models use these constraints:
 | `MultiplicativeSelection(r)` | $(1,r,r^2)$ | $r>0$ |
 
 All parameters must be finite. Additive and dominance selection also require
-finite derived coefficients: `2 * s_het` and `h * s`, respectively. Negative fitness reductions are allowed for
-beneficial effects. Scalar shapes are checked at construction; value ranges
+finite derived coefficients: `2 * s_het` and `h * s`, respectively.
+Negative fitness reductions represent beneficial effects. Scalar shapes are checked at construction; value ranges
 are caller preconditions, including under JIT. There is no automatic clipping.
-The maps preserve frequency-array shape, and their float64 parameter leaves
-support JIT, differentiation, batching, and `eqx.tree_at` updates. Named models
-recompute their coefficient relationships when parameters change.
-
-FFT and NUFFT accept all these maps. Jacobi still accepts only `Neutral` and
-`Underdominance`; it does not recognize equivalent `DiploidSelection` parameter
-values as supported special cases.
+FFT and NUFFT accept all these maps. For Jacobi's model restrictions, see
+[choosing numerical algorithms](backends.md). Parameters remain differentiable;
+the [population-history example](demography.md#expectations-and-selection-gradients)
+shows how to update them in a prepared model.
 
 ```python
 selection = drifft.DiploidSelection(s_het=0.01, s_hom=0.02)
@@ -54,8 +51,9 @@ additive = drifft.AdditiveSelection(s_het=0.01)
 transition = drifft.Transition(drifft.FFT(64), frequency_map=additive)
 ```
 
-`Mutation(forward_rate, backward_rate)`
-transforms an allele-1 frequency `p` into
+## Add mutation
+
+`Mutation(forward_rate, backward_rate)` transforms an allele-1 frequency `p` into
 `p * (1 - backward_rate) + (1 - p) * forward_rate`. Rates are per-generation
 probabilities of 0 → 1 and 1 → 0 mutation, respectively; both default to zero.
 
@@ -104,16 +102,9 @@ backend = drifft.FFT(2000)
 # Wrap a JAX-compatible function that returns one probability per frequency.
 custom_map = drifft.FrequencyMap(lambda frequency: frequency**2)
 custom = drifft.Transition(backend, frequency_map=custom_map)
-# An Equinox callable can carry dynamic parameters for inference or sweeps.
-# Alternatively, supply already evaluated probabilities explicitly.
-offspring_probabilities = custom.probabilities
-explicit = drifft.Transition.from_probabilities(backend, offspring_probabilities)
 ```
 
-Model probabilities are evaluated during application, keeping parameter updates
-and differentiation connected. With explicit probabilities, construct them inside
-the differentiated function if gradients through their construction are needed.
-Use Equinox fields for trainable parameters instead of closing over changing
-Python values in fresh lambdas.
+Use an Equinox callable with array fields for trainable parameters. For
+already evaluated probabilities, see [explicit transition probabilities](transitions.md#explicit-offspring-probabilities).
 
 See the [frequency-map API](../api/frequency_maps.md) for constructor contracts.

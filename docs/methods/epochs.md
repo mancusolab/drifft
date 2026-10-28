@@ -2,7 +2,11 @@
 
 The [population-history guide](../guide/demography.md) covers the usual workflow.
 For experiments or custom orchestration, an evolution method can also act
-directly on a prepared backend, including arbitrary immigration vectors:
+directly on a prepared backend, including arbitrary immigration vectors. This
+page is an application recipe; the [Krylov chapter](jacobi_krylov.md) explains
+the power algorithms and the [Jacobi chapter](jacobi.md) explains its backend.
+
+For example:
 
 ```python
 import jax

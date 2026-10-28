@@ -1,38 +1,42 @@
 # drifft
 
-drifft is a JAX-based Python library for Wright–Fisher population genetics. It
-propagates allele-count distributions, computes expectations and expected visits
-before absorption, and supports differentiation through selection parameters.
-Its Equinox models separate reusable backend geometry from evolution methods.
+`drifft` computes allele-count distributions under the discrete-time
+Wright–Fisher model. Use it to ask how likely an allele is to disappear, how a
+population history changes its distribution, or how a predicted quantity
+responds to selection. These calculations support differentiation in JAX.
 
 [Try the quickstart](guide/quickstart.md){ .md-button .md-button--primary }
 [Install drifft](guide/installation.md){ .md-button }
-[Browse the Python API](api/transitions.md){ .md-button }
 
-## Work with transitions
+Begin with the [quickstart](guide/quickstart.md): compute the loss probability of a
+new deleterious allele, then differentiate it with respect to selection.
 
-Prepare a backend for the destination population, bind a selection function with
-`Transition`, then call `expect` or `advance`. The model uses `M = 2N` gene copies
-for a diploid population of size `N`.
+## Why the computation can be fast
 
-The [user guide](guide/overview.md) explains the model and computational approach.
-Continue with [selection and mutation](guide/frequency_maps.md) and
-[transition calculations](guide/transitions.md). Read [backend tradeoffs](guide/backends.md) to choose a representation, and
-[expected visits](guide/solves.md) for absorption calculations and solver checks.
+A dense Wright–Fisher transition stores a binomial distribution for every
+possible starting allele count. These rows have structure: nearby offspring
+probabilities give similar distributions. `drifft` exploits that structure to
+compute transitions without storing the full matrix.
 
-For multiple generations and changing population sizes, use
-[demographic histories](guide/demography.md). FFT and NUFFT support sequential
-evolution or either Krylov method. Jacobi provides a reduced representation
-for either polynomial or rational Krylov powering.
+The name brings together genetic drift and the FFT. Fast transforms accelerate
+individual transitions; polynomial compression and Krylov methods can reduce
+the work needed for long constant-size intervals. Their setup costs make the
+best choice depend on the calculation. Start with the default FFT approach;
+[choose another algorithm](guide/backends.md) when your workload calls for it.
 
-## Performance and accuracy
+## From a model to a result
 
-[Validation and benchmarks](benchmarks.md) describe the numerical checks and
-comparisons with fastDTWF. Accuracy settings control approximations; solver
-convergence alone does not certify exact-model accuracy.
+A frequency map specifies selection and mutation. A `Transition` combines
+that map with a prepared backend, then propagates a distribution with `advance`
+or computes an expectation with `expect`.
 
-## Support
+For multiple generations, `Demography` records population sizes and durations.
+`DemographicTransition` evolves an initial distribution through that history.
+The numerical representation and evolution method can be changed separately
+from the biological model.
 
-Report bugs and feature requests in the
-[issue tracker](https://github.com/mancusolab/drifft/issues).
-For local setup and documentation builds, see [development](contributing.md).
+Learn the [Wright–Fisher assumptions](guide/model.md), specify
+[selection and mutation](guide/frequency_maps.md), then compute
+[transitions](guide/transitions.md) or [population histories](guide/demography.md).
+[Accuracy and differentiation](guide/numerics.md) explains how to check results.
+Detailed algorithms and API contracts have their own reference sections.

@@ -1,17 +1,19 @@
 # Chebyshev and NUFFT transforms
 
-This chapter describes the polynomial approximation behind `NUFFT`. For
-practical settings and validation, see [accuracy and differentiation](../guide/numerics.md).
+`NUFFT` samples binomial expectations, converts them to polynomial coefficients,
+and evaluates the polynomial at source probabilities. It accelerates a single
+transition; the state between generations remains population-sized.
 
-## Polynomial representation
+## Problem and representation
 
-The default `encoding="lobatto"` uses the interpolation described below.
-Its planner takes the smaller of the original Gaussian-tail bound and the
-sharper Lobatto bound
-`4.2 * (1 + Lambda_d) * exp(-M * Psi((d+1)/M))`, where
-`Lambda_d = 1 + 2/pi * log(d+1)`. The latter applies when
-`sqrt(M) <= d+1 < M`. Thus default degrees can be smaller than in earlier
-versions, while the encoding remains ordinary interpolation.
+Let $M$ be the destination gene-copy count, $N$ the number of source rows, and
+$n$ the number of binomial sampling nodes. The input contains $M+1$ values;
+the polynomial is evaluated at $N$ offspring probabilities. The retained degree
+is set by population size and accuracy controls, rather than by the input vector.
+
+## Computation
+
+### Ordinary Lobatto interpolation
 
 For destination values $v_j$, let
 $B_M[v](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}v_j$.
@@ -52,7 +54,7 @@ The implementation replaces the values at $q=0$ and $q=1$ by $v_0$ and $v_M$.
     Samples and coefficients depend linearly on the supplied vector $v$;
     evaluation locations depend on the frequency map.
 
-## Filtered encoding
+### Filtered encoding
 
 Use `NUFFT(M, encoding="filtered")` to taper the sampled cosine coefficients.
 With `L` retained modes, it samples `L+1` Lobatto nodes, drops the terminal
@@ -72,6 +74,38 @@ $$
 This changes only the constant and linear Chebyshev coefficients, so the
 corrected polynomial retains its degree and its derivatives remain consistent
 at the endpoints. Exact endpoint substitutions also suppress evaluation roundoff.
+
+## Cost and reuse
+
+With at most $W$ retained binomial entries per node, forming samples costs
+$O(nW)$. The DCT costs $O(n\log n)$. NUFFT evaluation adds a transform cost
+that depends on degree, output count $N$, and requested tolerance; producing a
+full population-sized output still requires work proportional to its length.
+Thus a transform on the retained modes is only one stage of the transition.
+
+Prepared nodes and stencil geometry are reused. Binomial weights are regenerated
+in batches, controlled by `batch_size`, rather than retained as a full table.
+Sampling workspace depends on batch size and window width; native FINUFFT
+workspace is additional to JAX's reported memory. No dense reduced matrix is
+powered between generations.
+
+## Accuracy and controls
+
+| Control | Role |
+| --- | --- |
+| `accuracy` | Nominal budget used to choose polynomial degree |
+| `encoding` | Ordinary interpolation or filtered approximation |
+| `tail_tol` | Omitted binomial mass at sampling nodes |
+| `nufft_tol` | Requested FINUFFT evaluation tolerance |
+| `derivative_accuracy` | Larger-degree heuristic for derivatives |
+| `batch_size` | Sampling workspace and batching tradeoff |
+
+The default `encoding="lobatto"` uses the interpolation described above.
+Its planner takes the smaller of the original Gaussian-tail bound and the
+sharper Lobatto bound
+`4.2 * (1 + Lambda_d) * exp(-M * Psi((d+1)/M))`, where
+`Lambda_d = 1 + 2/pi * log(d+1)`. The latter applies when
+`sqrt(M) <= d+1 < M`. The encoding remains ordinary interpolation.
 
 The planner includes the correction in the ideal row-l1 certificate:
 
@@ -94,7 +128,8 @@ polynomials, not arbitrary low-rank factorizations or Jacobi's implementation.
 Filtered encoding still uses population-sized epoch states, like ordinary
 NUFFT; it does not add Jacobi-style reduced-state powering.
 
-## Derivative formula
+## Differentiation and adjoints
+
 
 For selection gradients, differentiate the polynomial in $q$:
 
@@ -109,3 +144,17 @@ $\partial_s p_L(q_s)=p_L'(q_s)\,\partial_s q_s$.
 This avoids differentiating the singular angle coordinate at the endpoints.
 These are derivatives of the approximation, so their accuracy still needs
 separate validation.
+
+The approximation is linear in the supplied values. Forward mass propagation
+uses its matched transpose. Changing the frequency map changes evaluation
+locations; changing the input values changes sampled coefficients. Derivatives
+of prepared sampling nodes are unsupported. Backend geometry is prepared outside
+JIT and differentiation.
+
+## Use in drifft
+
+Bind `NUFFT` to a frequency map with `Transition`. It supports general selection
+and mutation, rectangular transitions, expected visits, and demographic evolution
+with Sequential or either Krylov method. The [algorithm guide](../guide/backends.md)
+compares the choices; the [accuracy guide](../guide/numerics.md) gives validation
+examples, and the [NUFFT API](../api/backends.md#drifft.NUFFT) lists defaults.

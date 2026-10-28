@@ -4,10 +4,14 @@ A calculation combines a transition approximation with a method for repeated
 evolution or a linear solve. Tightening one part does not remove errors from
 the others. Validate the final statistic and its gradients for your workload.
 
-## Compare a calculation at tighter settings
+## Check the quantity you will use
 
-This example checks an expected offspring frequency at two NUFFT accuracy
-settings while differentiating a biological parameter:
+Compare the same calculation with tighter numerical settings. Use a nonlinear
+observable that exercises the transition approximation: a mean frequency alone
+can agree because low-degree polynomials are reproduced accurately.
+
+This example checks one-generation loss probability and its selection derivative.
+It also compares with the direct binomial formula for this particular event:
 
 ```python
 import jax
@@ -15,29 +19,38 @@ import jax.numpy as jnp
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-coarse = drifft.NUFFT(64, accuracy=1e-8)
-fine = drifft.NUFFT(64, accuracy=1e-11, derivative_accuracy=True)
-frequencies = jnp.arange(65) / 64
+M = 256
+coarse = drifft.NUFFT(M, accuracy=1e-6)
+fine = drifft.NUFFT(M, accuracy=1e-10, derivative_accuracy=True)
+loss_indicator = jnp.zeros(M + 1).at[0].set(1.0)
 
-def statistic(backend, strength):
+# The allele starts with four copies.
+def loss_probability(backend, s_het):
     transition = drifft.Transition(
-        backend, drifft.AdditiveSelection(s_het=strength)
+        backend, drifft.AdditiveSelection(s_het=s_het)
     )
-    return transition.expect(frequencies)[1]
+    return transition.expect(loss_indicator)[4]
+
+def exact_loss(s_het):
+    q = drifft.AdditiveSelection(s_het=s_het)(jnp.asarray(4 / M))
+    return (1 - q) ** M
 
 strength = jnp.asarray(0.01)
-value_difference = statistic(coarse, strength) - statistic(fine, strength)
-gradient_difference = (
-    jax.grad(lambda s: statistic(coarse, s))(strength)
-    - jax.grad(lambda s: statistic(fine, s))(strength)
-)
+exact_value = exact_loss(strength)
+exact_gradient = jax.grad(exact_loss)(strength)
+for label, backend in [("coarse", coarse), ("fine", fine)]:
+    value = loss_probability(backend, strength)
+    gradient = jax.grad(lambda s: loss_probability(backend, s))(strength)
+    print(f"{label}: value error={abs(value - exact_value):.3e}, "
+          f"gradient error={abs(gradient - exact_gradient):.3e}")
 ```
 
-Inspect differences against the precision required by your application. This
-one statistic is an example, not a test of the complete transition: also check
-the distribution or other observables you actually use. For small populations,
-compare with a dense binomial reference. For long histories and expected visits,
-check the final output rather than only one-generation behavior.
+Inspect both errors against the precision required by your application.
+This reference uses exact binomial reproduction and the same selection map;
+it checks the transition approximation, not the selection formula itself.
+For general quantities, use a dense binomial reference on a small population.
+For a history or an expected-visits solve, also compare the final statistic
+under tighter settings: one-step agreement is not sufficient.
 
 ## Which settings control which errors?
 
@@ -67,28 +80,23 @@ a failing member under `vmap` can fail the batch when throwing is enabled.
     the exact Wright–Fisher result. Check backend accuracy separately, and
     validate gradients independently of values.
 
-## NUFFT controls
+## Tune the representation separately from the method
 
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `accuracy` | `1e-10` | Nominal value-error budget; `[1e-13, .1)` |
-| `encoding` | `"lobatto"` | Ordinary interpolation or `"filtered"` tapered encoding |
-| `tail_tol` | Allocated automatically | Optional stricter omitted binomial mass per node |
-| `nufft_tol` | `min(1e-13, accuracy/4)` | Requested FINUFFT tolerance; at least `1e-15` |
-| `batch_size` | `32` | Sampling nodes processed together |
-| `derivative_accuracy` | `False` | Increase degree by 50%, capped at exact degree |
-| `dtype` | `jnp.float64` | Float64 only; enable JAX x64 before planning |
+For FFT, tighten tail truncation and increase interpolation order. For NUFFT,
+lower `accuracy` and compare the final quantity again. Setting
+`derivative_accuracy=True` increases polynomial degree by 50%, capped at exact
+degree; it is a heuristic for derivative accuracy. Filtered encoding can reduce
+the sample count needed by its spectral bound, but must still be checked for
+your statistic and gradient.
 
-The nominal budget includes polynomial approximation, binomial sampling,
-transform evaluation, and roundoff. Actual FINUFFT error and arithmetic need
-empirical validation. `derivative_accuracy=True` is a larger-degree heuristic,
-not a derivative certificate. Details of the two encodings and their bounds
-are in [Chebyshev/NUFFT transforms](../methods/nufft.md).
+For Jacobi, increase `rank`; for Krylov, increase `dimension` separately. If a
+shifted solve fails, increasing the outer Krylov dimension does not fix it.
+See the [backend API](../api/backends.md) and [method API](../api/methods.md) for
+parameter defaults and [NUFFT transforms](../methods/nufft.md) for encoding bounds.
 
-Sampling weights are normalized within retained binomial stencils. This is
-part of constructing the approximation; outputs are not clipped or normalized.
-Exact endpoint treatment does not guarantee positivity of approximate interior
-coefficients. Check mass, negative entries, and your final observables.
+Check mass, negative entries, and the final observable. The implementations do
+not clip or renormalize transition outputs; tiny negative entries can arise
+from the numerical approximation.
 
 ## Differentiating biological parameters
 
@@ -102,10 +110,10 @@ NUFFT differentiates its polynomial in the offspring probability rather than
 through the singular angle coordinate at endpoints. These are derivatives of
 the approximation. Derivatives of its sampling nodes are unsupported.
 
-JAX differentiates the input-dependent Krylov basis. At zero seeds or changes
-in Arnoldi breakdown, derivatives are not guaranteed. Rational Krylov's
-FFT/NUFFT shifted solves use implicit differentiation through Lineax; failed
-tangent or transpose solves raise even if the primal call used `throw=False`.
+Krylov derivatives also depend on the basis construction. At zero seeds or
+changes in Arnoldi breakdown, derivatives are not guaranteed. See
+[epoch differentiation](../methods/epochs.md#differentiation-and-demographic-integration)
+for shifted-solve failure behavior and details.
 
 !!! tip "Validate derivatives on a small reference problem"
 

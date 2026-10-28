@@ -10,7 +10,6 @@ extra_javascript = ["_static/mathjax.js", "https://cdn.jsdelivr.net/npm/mathjax@
 nav = [
     "index.md",
     { "User guide" = [
-        "guide/overview.md",
         "guide/installation.md",
         "guide/quickstart.md",
         "guide/model.md",
@@ -24,6 +23,7 @@ nav = [
     { "Numerical methods" = [
         "methods/fft.md",
         "methods/nufft.md",
+        "methods/jacobi.md",
         "methods/jacobi_krylov.md",
         "methods/epochs.md",
     ] },

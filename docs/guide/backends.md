@@ -1,8 +1,23 @@
 # Choosing numerical algorithms
 
-Choose a backend to represent the transition and an evolution method to apply
-it over an interval. Begin with FFT and Sequential as a reference, then compare
-alternatives at matched accuracy on the quantity you need.
+Start with FFT for one-generation calculations and FFT with Sequential for
+population histories. These support every frequency map and both propagation
+and expectations. Change that configuration when you have a specific reason:
+
+| Your calculation | First choice | When to try an alternative |
+| --- | --- | --- |
+| One generation or expected visits | FFT | Compare NUFFT if retained geometry uses too much memory |
+| A history with short intervals or general selection | FFT + Sequential | Compare NUFFT for memory; test Krylov if repeated stepping dominates runtime |
+| Long intervals with neutral or symmetric underdominant selection | Compare Jacobi + RationalKrylov with FFT + Sequential | Keep the faster configuration at matched accuracy, including setup |
+| Conditional expectations through a history | FFT or NUFFT + Sequential | Krylov methods provide forward propagation only |
+
+These are starting points for measurement. The [accuracy guide](numerics.md)
+explains how to check that two configurations solve your problem equally well.
+
+## Accelerate a long interval
+
+Jacobi compresses the working state, and RationalKrylov approximates repeated
+evolution within it. Here is a complete example using neutral evolution:
 
 ```python
 import jax
@@ -10,93 +25,72 @@ import jax.numpy as jnp
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-history = drifft.Demography(ne=[32, 32], generations=[20])
-model = drifft.DemographicTransition(
+history = drifft.Demography(ne=[32, 32], generations=[200])
+initial = jnp.zeros(65).at[1].set(1.0)
+
+reference = drifft.DemographicTransition(
     history,
     backend=drifft.FFT,
     method=drifft.Sequential(),
-    frequency_map=drifft.Underdominance(strength=0.01),
+    frequency_map=drifft.Neutral(),
 )
-initial = jnp.zeros(65).at[1].set(1.0)
-result = model.advance(initial)
-```
-
-This computes the recurrence generation by generation. The following choices
-change its numerical representation or the way repeated evolution is computed.
-
-## Match the backend to the model
-
-| Backend | Representation | Useful when | Model support |
-| --- | --- | --- | --- |
-| FFT | Local convolutions and interpolation | Repeated one-generation operations | Built-in and custom maps |
-| NUFFT | Binomial samples and polynomial evaluation | Comparing memory and accuracy tradeoffs with FFT | Built-in and custom maps |
-| Jacobi | Reduced polynomial state | Long constant-size portions of a history | Neutral and symmetric underdominance |
-
-FFT caches more geometry. NUFFT regenerates binomial weights in batches,
-trading retained storage for computation. Both support `Transition`, including
-expectations, size changes, and expected visits. Neither is universally faster;
-measure preparation, compilation, and warm execution separately.
-
-Jacobi uses an explicit FFT or NUFFT `boundary_backend` for size changes.
-Its reduced matrix is dense: storage and matvec cost grow as $O(r^2)$ in rank
-$r$, and LU factorization costs $O(r^3)$. Speedups over long intervals come
-from working in this reduced space and reducing the number of evolution steps.
-
-## Match the method to the interval
-
-| Method | Backends | Work performed | Expectations |
-| --- | --- | --- | --- |
-| Sequential | FFT, NUFFT | One transition application per generation | Supported |
-| PolynomialKrylov | FFT, NUFFT, Jacobi | Operator applications to construct a smaller power approximation | Forward propagation only |
-| RationalKrylov | FFT, NUFFT, Jacobi | Shifted solves to construct a smaller power approximation | Forward propagation only |
-
-Polynomial Krylov avoids shifted linear solves. Its basis storage grows with
-working-state size times `dimension`; long intervals may need a larger basis.
-Neither Krylov method automatically restarts or falls back to Sequential.
-Rational Krylov with Jacobi reuses a dense LU factorization during basis
-construction. With FFT or NUFFT it instead uses iterative, unpreconditioned
-GMRES solves, each of which can require many transition applications.
-
-!!! tip "Amortize setup over the work you actually need"
-
-    For a short interval, Sequential may beat the setup cost of a Krylov method.
-    For long intervals, compare total time including backend preparation,
-    factorization, and decoding. Increase rank and Krylov dimension independently
-    when checking accuracy.
-
-For a supported neutral or underdominant model, try:
-
-```python
 accelerated = drifft.DemographicTransition(
     history,
     backend=drifft.Jacobi,
     boundary_backend=drifft.FFT,
     method=drifft.RationalKrylov(dimension=32),
-    frequency_map=drifft.Underdominance(strength=0.01),
+    frequency_map=drifft.Neutral(),
 )
+reference_result = reference.advance(initial)
 accelerated_result = accelerated.advance(initial)
+difference = jnp.sum(jnp.abs(
+    reference_result.distribution - accelerated_result.distribution
+))
+print(f"Distribution L1 difference: {difference:.3e}")
 ```
 
-Both examples use the same biological model and input. Compare their outputs
-at tighter settings before comparing execution time.
+The printed difference compares the full output distributions. FFT is an
+approximate reference; repeat at tighter settings as described in
+[accuracy and differentiation](numerics.md). This small population demonstrates
+the workflow, not a timing advantage.
 
-!!! warning "Check supported combinations"
+!!! tip "Measure the complete calculation"
 
-    Jacobi currently accepts only `Neutral` and `Underdominance`, including when
-    another map has equivalent parameter values. Both Krylov methods provide
-    forward propagation only; use Sequential when you need `model.expect()`.
+    Include preparation, compilation, factorization, and decoding for a first-use
+    measurement. Measure subsequent execution separately when you will reuse the
+    model. Synchronize JAX outputs before recording elapsed time.
 
-## Representation and accuracy choices
+## When another choice helps
 
-NUFFT supports ordinary Lobatto interpolation and `encoding="filtered"`.
-Filtering can reduce the number of samples needed by its spectral certificate;
-it does not guarantee faster execution or improved derivative accuracy.
-Jacobi's `rank` controls polynomial compression, while a Krylov method's
-`dimension` controls its power approximation. These are separate error sources.
+**NUFFT** retains less geometry and regenerates binomial weights in batches.
+It trades storage for computation. Its ordinary and filtered encodings offer
+different accuracy and sample-count tradeoffs; compare them on your workload.
 
-Use [accuracy and differentiation](numerics.md) to choose and check settings.
-[Population histories](demography.md) explains boundary timing and factories.
-The [backend API](../api/backends.md) and [method API](../api/methods.md) list
-constructor options. For the numerical mechanisms, see [FFT convolution](../methods/fft.md),
-[Chebyshev/NUFFT transforms](../methods/nufft.md), and
-[Jacobi reduction and Krylov powers](../methods/jacobi_krylov.md).
+**PolynomialKrylov** builds a power approximation using operator applications,
+avoiding shifted linear solves. It works with FFT, NUFFT, or Jacobi. It can
+require a larger basis than RationalKrylov for long intervals.
+
+**RationalKrylov with FFT or NUFFT** uses iterative GMRES shifted solves.
+Each basis vector can require many transition applications, so compare its
+actual runtime with Sequential. With Jacobi, it reuses a dense LU factorization.
+Neither Krylov method automatically restarts or falls back to Sequential.
+
+!!! warning "Jacobi has a restricted selection model"
+
+    Use `Neutral` or `Underdominance` with Jacobi. General diploid selection,
+    mutation maps, and custom maps currently require FFT or NUFFT, even when
+    their parameters happen to reproduce an accepted model. Jacobi also needs
+    an explicit FFT or NUFFT `boundary_backend` for population-size changes.
+
+## Understand the costs
+
+Jacobi's dense rank-$r$ matrix costs $O(r^2)$ to store and apply, and $O(r^3)$
+to factor. Compression does not make its matvec an FFT. The saving over a long
+interval comes from working in a smaller state and reducing repeated steps;
+encoding and decoding still cost work.
+
+The [FFT](../methods/fft.md), [NUFFT](../methods/nufft.md), and
+[Jacobi](../methods/jacobi.md), and [Krylov](../methods/jacobi_krylov.md) chapters explain the mechanisms.
+The [backend](../api/backends.md) and [method](../api/methods.md) API pages list
+configuration options; the [population-history guide](demography.md) explains
+boundary timing and factories.

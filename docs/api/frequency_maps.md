@@ -2,7 +2,7 @@
 
 Frequency maps determine offspring allele probabilities. Selection, mutation,
 and composition share this interface; custom maps implement the same contract.
-See [selection and mutation](../guide/frequency_maps.md#selection-and-mutation)
+See [selection and mutation](../guide/frequency_maps.md)
 for usage and parameter domains.
 
 ## Interface and custom maps
@@ -23,7 +23,7 @@ probabilities. See [custom frequency maps](../guide/frequency_maps.md#custom-fre
 
 Selection maps genotype fitnesses to offspring allele probabilities under
 random mating. All named models below are configurations of the diploid rule;
-see [selection models](../guide/frequency_maps.md#selection-and-mutation) for domains
+see [selection models](../guide/frequency_maps.md) for domains
 and [the probability model](../guide/model.md#selection-and-mutation) for derivations.
 
 | Model | Fitnesses (0/0, 0/1, 1/1) |
@@ -78,7 +78,7 @@ and [the probability model](../guide/model.md#selection-and-mutation) for deriva
 
 `Mutation` applies forward and back mutation. `Composition` applies frequency
 maps in the supplied left-to-right order. See
-[selection and mutation](../guide/frequency_maps.md#selection-and-mutation) for
+[selection and mutation](../guide/frequency_maps.md) for
 examples and the consequences of changing their order.
 
 ::: drifft.Mutation

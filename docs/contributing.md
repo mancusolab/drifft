@@ -107,6 +107,20 @@ uv run --group docs zensical build --strict
 The generated `site/` directory is ignored by Git. No publishing workflow is
 configured. See [validation and benchmarks](benchmarks.md) for numerical checks.
 
+### Numerical-method chapters
+
+Use the same top-level sections for each algorithm chapter: **Problem and
+representation**, **Computation**, **Cost and reuse**, **Accuracy and controls**,
+**Differentiation and adjoints**, and **Use in drifft**. Define dimensions before
+using cost formulas. Include preparation, application, transforms, and storage
+where relevant; distinguish the cost of one stage from the complete operation.
+
+State what each tolerance controls and what the error estimate excludes.
+Separate backend approximation from repeated-power approximation, and distinguish
+a defined transpose from an input-dependent Krylov action. Keep application
+recipes separate from algorithm descriptions. Link to the API for defaults and
+the User guide for choosing a configuration.
+
 ### Admonitions
 
 Keep the main argument and required instructions in ordinary prose. Use

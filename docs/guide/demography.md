@@ -50,8 +50,7 @@ generation. The example above evaluates:
     The size-changing step includes selection and binomial reproduction. There is
     no additional resampling step and no subsequent evolution at the final size.
     The initial distribution is supplied by the caller; no equilibrium or burn-in
-    is assumed. This timing differs from fastDTWF's destination-size intervals,
-    which change size at the start of each interval.
+    is assumed.
 
 Repeated sizes are valid: `Demography([100, 100], [50])` evaluates 50 generations
 at Ne = 100. `Demography([100], [])` is an identity history. Use
@@ -65,8 +64,7 @@ values to expectations conditional on each initial allele count. Its input has
 `2 * history.final_ne + 1` entries and
 its output has `2 * history.initial_ne + 1` entries. It is the adjoint of
 the distribution returned by `.advance()`, not backward population evolution.
-Both methods accept signed vectors and leave inputs unchanged; neither clips
-nor renormalizes outputs.
+Both methods accept signed vectors.
 
 The frequency map applies on the source grid at every generation, including
 size changes. Update an Equinox selection model without rebuilding geometry:
@@ -124,13 +122,9 @@ factory defaults to `backend`. Jacobi requires an explicit boundary factory.
 The method defaults to `Sequential()`. Factories receive **gene-copy counts**,
 even though the history uses diploid Ne.
 
-Both `PolynomialKrylov` and `RationalKrylov` support FFT, NUFFT, and Jacobi.
-RationalKrylov uses iterative shifted solves for FFT/NUFFT and dense solves for
-Jacobi. Both Krylov methods support forward evolution; `model.expect()` requires matched Sequential
-transitions. Jacobi supports only neutral and underdominance maps.
-See [constant-size methods](../methods/epochs.md) for accuracy controls,
-direct method calls. Use [choosing numerical algorithms](backends.md) for
-supported combinations and the [migration guide](../migration.md) for the earlier API.
+Use [choosing numerical algorithms](backends.md) to select supported backend
+and method combinations. `model.expect()` requires Sequential. For custom
+orchestration, see [direct epoch operations](../methods/epochs.md).
 
 ## Segregating mass and mutation input
 
@@ -150,13 +144,6 @@ numerical failure raises; with `throw=False`, inspect the result before using
 the distribution. Domain errors still raise. A failing member under `vmap`
 may fail the whole batch when throwing is enabled.
 
-Interval error estimates describe the power approximation, not total
-demographic error. Use [frequency-map composition](frequency_maps.md#selection-and-mutation)
-to combine selection and mutation in an explicit order.
-
-!!! warning "Accumulated error"
-
-    Each generation inherits the chosen backend's
-    approximation and derivative limitations; errors can accumulate over long
-    histories. Compare results with tighter backend settings and, for Jacobi, larger rank
-    and Krylov dimension. Validate gradients separately from distribution values.
+Before using a result in an analysis, compare its final statistic and gradient
+under tighter settings. The [accuracy guide](numerics.md) explains what interval
+diagnostics do and do not establish.
