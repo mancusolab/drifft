@@ -3,18 +3,10 @@
 drifft is a JAX-based Python library for Wright–Fisher population genetics. It
 propagates allele-count distributions, computes expectations and expected visits
 before absorption, and supports differentiation through selection parameters.
-Its Equinox models separate reusable backend geometry from evolution methods.
-
-| Backend | Computation | Supported frequency maps |
-| --- | --- | --- |
-| `FFT` | One-generation transitions; `Sequential`, `PolynomialKrylov`, or `RationalKrylov` | Built-in and custom maps |
-| `NUFFT` | Chebyshev/NUFFT transitions; `Sequential`, `PolynomialKrylov`, or `RationalKrylov` | Built-in and custom maps |
-| `Jacobi` | Reduced evolution with `PolynomialKrylov` or `RationalKrylov` | Neutral and underdominance |
-
-`DemographicTransition` combines a population history, backend, and method.
-Jacobi handles constant-size portions, with an explicit FFT or NUFFT backend
-for interval boundaries. Its rank and the Krylov dimension control separate
-approximations; check convergence and accuracy for the intended workload.
+To speed up calculations, it leverages Fast Fourier Transform (FFT) approaches,
+hence the name. However it has expanded beyond only FFT-based approaches to
+encompass more general compression techniques. It is end-to-end differentiable
+using JAX.
 
 [Read the usage and numerical guide](docs/index.md)
 
