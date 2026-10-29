@@ -26,13 +26,6 @@ nav = [
         "examples/selection_sensitivity.md",
         "examples/schiffels_durbin.md",
     ] },
-    { "Numerical methods" = [
-        "methods/fft.md",
-        "methods/nufft.md",
-        "methods/jacobi.md",
-        "methods/jacobi_krylov.md",
-        "methods/epochs.md",
-    ] },
     { "Python API reference" = [
         "api/transitions.md",
         "api/demography.md",
@@ -40,7 +33,14 @@ nav = [
         "api/backends.md",
         "api/methods.md",
     ] },
-    { "Project" = ["benchmarks.md", "migration.md", "contributing.md"] },
+    { "Numerical methods" = [
+        "methods/fft.md",
+        "methods/nufft.md",
+        "methods/jacobi.md",
+        "methods/jacobi_krylov.md",
+        "methods/epochs.md",
+    ] },
+    { "Project" = ["benchmarks.md", "contributing.md"] },
 ]
 
 [project.theme]
