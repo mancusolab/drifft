@@ -36,6 +36,7 @@ nav = [
         "methods/nufft.md",
         "methods/jacobi.md",
         "methods/jacobi_krylov.md",
+        "methods/autodiff.md",
         "methods/epochs.md",
     ] },
     { "Project" = ["benchmarks.md", "contributing.md"] },

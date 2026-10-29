@@ -95,6 +95,9 @@ describes validation of the final quantity.
 
 ## Differentiation and adjoints
 
+The [autodiff chapter](autodiff.md) explains finite-time sensitivities and the
+derivative rules used in these calculations.
+
 JAX differentiates operator actions, frequency-map parameters, and the
 input-dependent basis. FFT/NUFFT shifted solves use implicit differentiation
 through Lineax; a failed tangent or transpose solve raises even when the primal call used

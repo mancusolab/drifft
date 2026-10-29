@@ -103,6 +103,9 @@ from the numerical approximation.
 
 ## Differentiating biological parameters
 
+The [autodiff chapter](../methods/autodiff.md) derives finite-time sensitivities
+and explains JAX's differentiation of transitions, Krylov bases, and linear solves.
+
 Frequency-map parameters, input distributions, and immigration can be dynamic
 array leaves. Prepared geometry, population sizes, durations, and numerical
 dimensions are fixed configuration. Construct geometry outside differentiated
