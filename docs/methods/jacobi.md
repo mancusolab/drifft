@@ -104,6 +104,13 @@ Rank, padding, quadrature nodes, and population size are fixed geometry. JAX
 differentiates mapped evaluation and rational assembly; the method also
 differentiates its power action.
 
+The encoder has explicit JVP and transpose rules. Polynomial moments and
+their derivatives use streaming recurrences, keeping reverse-mode working
+storage proportional to population size plus rank at fixed derivative order.
+The rules differentiate the same polynomial approximation, including its
+endpoint terms. They do not change Krylov differentiation or its breakdown
+limitations; see [automatic differentiation](autodiff.md).
+
 The external maps have defined transposes, and the full-state construction
 preserves mass. Endpoint rows are absorbing when the frequency map fixes zero
 and one; recurrent mutation generally removes that property. Segregating

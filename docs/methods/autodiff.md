@@ -105,6 +105,16 @@ from them. The binomial rule uses
 $\partial B_{n,j}(q)/\partial q=n[B_{n-1,j-1}(q)-B_{n-1,j}(q)]$,
 with out-of-range binomial indices interpreted as zero.
 
+NUFFT also has explicit primitives for endpoint-safe polynomial evaluation
+and its transpose, and for streaming binomial sampling. Jacobi encoding uses
+a polynomial-moment primitive with a streaming evaluation transpose. Its JVP
+differentiates both the evaluation points and input mass using polynomial
+derivative recurrences. These rules support higher derivatives and avoid
+retaining a population-sized vector for every polynomial degree in reverse
+mode. For fixed derivative order, encoder working storage is $O(M+r)$ for
+$M$ gene copies and rank $r$; arithmetic remains $O(Mr)$. Separate recurrence
+passes can increase execution time compared with retaining intermediates.
+
 ## Implicit derivatives of linear solves
 
 Rational Krylov constructs its basis using shifted systems

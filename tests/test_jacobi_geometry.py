@@ -8,6 +8,7 @@ import pytest
 from jax.scipy.special import gammaln, xlog1py, xlogy
 from scipy.special import roots_jacobi
 
+import drifft
 from drifft._jacobi import _JacobiGeometry, _polynomials
 
 jax.config.update("jax_enable_x64", True)
@@ -98,3 +99,69 @@ def test_compact_truncated_stencils_match_full_binomial_quadrature(copies, rank)
         coefficients * (-1.0) ** jnp.arange(rank), True
     )
     assert jnp.allclose(reflected, actual[::-1], atol=2e-12, rtol=2e-12)
+
+
+@pytest.mark.skipif(
+    jax.default_backend() != "cpu", reason="CPU compiler storage budget"
+)
+def test_encoder_reverse_storage_is_population_sized():
+    """Avoid retaining one population vector per polynomial in reverse mode."""
+    copies, rank = 2048, 64
+    geometry = _JacobiGeometry(copies, rank)
+    mass = jnp.ones(copies + 1) / (copies + 1)
+    weights = jnp.cos(jnp.arange(rank + 2))
+
+    def objective(s):
+        return weights @ geometry.encode(mass, drifft.AdditiveSelection(s), False)
+
+    compiled = jax.jit(jax.value_and_grad(objective)).lower(jnp.asarray(0.01)).compile()
+    stats = compiled.memory_analysis()
+    assert stats is not None
+    assert stats.temp_size_in_bytes < 32 * (copies + 1) * 8
+
+
+@pytest.mark.parametrize("rank", [1, 2, 7, 8])
+@pytest.mark.parametrize("segregating", [False, True])
+def test_encoder_joint_derivatives_and_transposes(rank, segregating):
+    """Match explicit polynomial moments, including endpoint and mixed derivatives."""
+    copies = 12
+    geometry = _JacobiGeometry(copies, rank)
+    size = copies - 1 if segregating else copies + 1
+    q = jnp.linspace(0.0, 1.0, size)
+    mass = jnp.sin(jnp.arange(size) + 0.3)
+    weights = jnp.cos(jnp.arange(rank if segregating else rank + 2))
+
+    def encode(q, mass):
+        return geometry.encode(mass, drifft.FrequencyMap(lambda x: q), segregating)
+
+    def reference(q, mass):
+        z = 2 * q - 1
+        moments = _polynomials(z, rank).T @ ((1 - 1 / copies) * 4 * q * (1 - q) * mass)
+        return (
+            moments
+            if segregating
+            else jnp.concatenate((jnp.array([mass.sum(), mass @ z]), moments))
+        )
+
+    direction = (jnp.cos(q), mass[::-1])
+
+    def derivatives(fn):
+        value, tangent = jax.jit(lambda q, m: jax.jvp(fn, (q, m), direction))(q, mass)
+        gradient = jax.jit(jax.grad(lambda q, m: weights @ fn(q, m), argnums=(0, 1)))(
+            q, mass
+        )
+        hessian = jax.jit(jax.hessian(lambda q: weights @ fn(q, mass)))(q)
+        return value, tangent, gradient, hessian
+
+    for actual, expected in zip(
+        jax.tree.leaves(derivatives(encode)),
+        jax.tree.leaves(derivatives(reference)),
+        strict=True,
+    ):
+        assert jnp.allclose(actual, expected, atol=2e-10, rtol=2e-11)
+    batch = jnp.stack((mass, -mass))
+    assert jnp.allclose(
+        jax.jit(jax.vmap(encode, in_axes=(None, 0)))(q, batch),
+        jax.vmap(reference, in_axes=(None, 0))(q, batch),
+        atol=2e-12,
+    )
