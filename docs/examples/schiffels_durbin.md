@@ -32,7 +32,7 @@ of 5 derived copies.*
 
 ## Calculation
 
-After [installation](../guide/installation.md), save the code as
+After [installation](../index.md#installation), save the code as
 `schiffels_durbin.py` and run `uv run --with matplotlib python schiffels_durbin.py`.
 The human-scale calculation is much larger than the other examples; first check
 the code on a small history if your machine has limited memory.

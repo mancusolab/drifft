@@ -39,11 +39,6 @@ shapes or static configuration can require recompilation. Frequency-map
 parameters remain dynamic and differentiable; see
 [accuracy and differentiation](numerics.md).
 
-!!! tip "Separate preparation from timing"
-
-    Measure backend preparation, first execution, and subsequent execution
-    separately. Synchronize JAX outputs before recording elapsed time.
-
 ## Restricting to segregating counts
 
 ```python
@@ -73,24 +68,7 @@ This binds already evaluated probabilities. To differentiate through their
 construction, construct them inside the differentiated function. For built-in
 or custom biological models, use a [frequency map](frequency_maps.md).
 
-## Population grids and validation
-
-For population-size changes, the backend specifies destination size and
-`Transition(backend, frequency_map=..., source_gene_copies=...)` specifies source size.
-`expect` maps destination-length values to source-length expectations; `advance`
-performs the reverse mapping for mass. Explicit probabilities may also describe
-sampled source rows. Segregating and expected-visits operations assume complete,
-ordered allele-count grids; expected visits additionally requires equal source
-and destination sizes. For a sequence of size changes, use
-[`Demography` and `DemographicTransition`](demography.md).
-
-!!! warning "Input validation"
-
-    Inputs must have the documented shapes. Frequencies and probabilities must be in
-    `[0, 1]`. Selection parameters must satisfy the domains in the
-    [frequency-map guide](frequency_maps.md). Shape checks raise during
-    construction or tracing; finite values and numerical ranges remain caller
-    preconditions to avoid runtime callbacks. Backends require float64.
-
-The [transition API](../api/transitions.md) lists method signatures, including
-the Lineax operator view.
+For a sequence of population-size changes, continue with
+[population histories](demography.md). The
+[transition API](../api/transitions.md) describes source and destination grids,
+input contracts, and the Lineax operator view.

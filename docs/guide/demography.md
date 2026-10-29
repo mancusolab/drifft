@@ -101,32 +101,17 @@ spectral_model = drifft.DemographicTransition(
 )
 ```
 
-To evaluate constant-size portions in reduced coordinates, select Jacobi
-geometry and a rational Krylov method separately:
-
-```python
-accelerated = drifft.DemographicTransition(
-    history,
-    backend=partial(drifft.Jacobi, max_strength=0.1),
-    boundary_backend=drifft.FFT,
-    method=drifft.RationalKrylov(dimension=64, rtol=1e-8),
-    frequency_map=drifft.Underdominance(0.01),
-)
-result = accelerated.advance(initial, throw=False)
-if not bool(result.converged):
-    raise RuntimeError(f"demographic evolution failed: {result.status}")
-final = result.distribution
-```
-
 `backend` prepares constant-size geometry; `boundary_backend` prepares the
 one-generation size-changing transitions. With FFT or NUFFT, the boundary
 factory defaults to `backend`. Jacobi requires an explicit boundary factory.
 The method defaults to `Sequential()`. Factories receive **gene-copy counts**,
 even though the history uses diploid Ne.
 
-Use [choosing numerical algorithms](backends.md) to select supported backend
-and method combinations. `model.expect()` requires Sequential. For custom
-orchestration, see [direct epoch operations](../methods/epochs.md).
+For other backend and method combinations, see
+[choosing numerical algorithms](backends.md). The
+[Schiffels–Durbin example](../examples/schiffels_durbin.md) uses Jacobi with
+RationalKrylov and an explicit FFT boundary backend. `model.expect()` requires
+Sequential. For custom orchestration, see [direct epoch operations](../methods/epochs.md).
 
 ## Segregating mass and mutation input
 

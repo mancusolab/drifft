@@ -9,7 +9,7 @@ penalties. Population size is constant, and there is no mutation or immigration.
 
 ## Calculation
 
-After [installing drifft](../guide/installation.md), save the code below as
+After [installing drifft](../index.md#installation), save the code below as
 `allele_loss.py` and run `uv run --with matplotlib python allele_loss.py`.
 Matplotlib is needed only for plotting.
 

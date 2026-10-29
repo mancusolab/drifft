@@ -21,7 +21,7 @@ uv sync
 ```
 
 The `jax-finufft` dependency currently builds from Git and requires a C++ toolchain.
-See [dependency and hardware constraints](docs/guide/installation.md#dependencies-and-hardware)
+See [dependency and hardware constraints](docs/index.md#dependencies-and-hardware)
 for build details and device support.
 
 ## Quick example

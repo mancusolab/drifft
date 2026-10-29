@@ -9,7 +9,7 @@ individuals, starts with one derived copy, and has no mutation or immigration.
 
 ## Calculation
 
-After [installing drifft](../guide/installation.md), save the code below as
+After [installing drifft](../index.md#installation), save the code below as
 `selection_sensitivity.py` and run `uv run --with matplotlib python selection_sensitivity.py`.
 Matplotlib is needed only for plotting.
 

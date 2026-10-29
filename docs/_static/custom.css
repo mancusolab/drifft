@@ -1,13 +1,13 @@
-/* Match jaxqtl's typography and keep anchors below the fixed header. */
+/* Keep anchors below the fixed header and give headings a clear hierarchy. */
 html {
     scroll-padding-top: 50px;
     font-size: 110%;
 }
 
-.md-typeset h1 { font-size: 1.6rem; }
-.md-typeset h2 { font-size: 1.5rem; }
-.md-typeset h3 { font-size: 1.3rem; }
-.md-typeset h4 { font-size: 1.1rem; font-weight: 700; }
+.md-typeset h1 { font-size: 1.8rem; }
+.md-typeset h2 { font-size: 1.3rem; }
+.md-typeset h3 { font-size: 1.1rem; }
+.md-typeset h4 { font-size: 1rem; font-weight: 700; }
 .md-typeset h5 { font-size: 0.9rem; font-weight: 700; }
 .md-typeset h6 { font-size: 0.8rem; font-weight: 700; }
 
@@ -21,6 +21,13 @@ nav.md-nav--secondary { border-left: revert !important; }
 .md-nav__title,
 .md-nav__item--section > .md-nav__link {
     font-size: 0.9rem;
+}
+
+/* The section heading already names the project in desktop navigation. */
+@media screen and (min-width: 76.25em) {
+    .md-nav--primary > .md-nav__title[for="__drawer"] {
+        display: none;
+    }
 }
 
 .md-main__inner { margin-bottom: 1.5rem; }

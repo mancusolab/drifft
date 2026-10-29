@@ -120,7 +120,7 @@ State what each tolerance controls and what the error estimate excludes.
 Separate backend approximation from repeated-power approximation, and distinguish
 a defined transpose from an input-dependent Krylov action. Keep application
 recipes separate from algorithm descriptions. Link to the API for defaults and
-the User guide for choosing a configuration.
+the [algorithm guide](guide/backends.md) for choosing a configuration.
 
 ### Admonitions
 

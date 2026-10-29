@@ -9,7 +9,7 @@ and end at 64 diploid individuals, and use neutral reproduction without mutation
 
 ## Calculation
 
-After [installing drifft](../guide/installation.md), save the code below as
+After [installing drifft](../index.md#installation), save the code below as
 `bottleneck.py` and run `uv run --with matplotlib python bottleneck.py`.
 Matplotlib is needed only for plotting.
 

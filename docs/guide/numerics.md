@@ -68,7 +68,7 @@ padding separately. It is not a total implemented-error guarantee.
 coefficients, including those derived by constrained selection classes. Prepare
 geometry with a bound covering the parameters you will evaluate. Jacobi checks
 these bounds and the mutation-rate domain at runtime, even for identity
-histories. See [supported frequency maps](backends.md#when-another-choice-helps).
+histories. See [supported frequency maps](../api/backends.md#jacobi).
 
 Krylov's `error_estimate` combines a smaller-basis comparison with a check of
 the reduced recurrence. The default acceptance threshold is

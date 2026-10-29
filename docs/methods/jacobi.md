@@ -116,14 +116,9 @@ demographic Jacobi evolution exposes forward propagation only.
 
 Use `backend=Jacobi` with `PolynomialKrylov` or `RationalKrylov` in
 `DemographicTransition`. Supply an explicit FFT or NUFFT `boundary_backend` for
-size-changing steps. Supported maps are neutral evolution, diploid selection
-and its constrained classes, mutation, and one mutation composed with one
-selection rule in either order. Both selection coefficients must have absolute
-value at most `max_strength`; `Underdominance` and `Overdominance` additionally
-require finite, nonnegative strength, including in mutation compositions.
-Each mutation rate must be finite and in `[0, 1]`. Arbitrary frequency functions
-and longer compositions are not supported. `Jacobi` is not a one-generation
-`Transition` backend; use FFT or NUFFT for `Transition` and expected-visits solves.
+size-changing steps. The [Jacobi API](../api/backends.md#jacobi) lists supported
+maps and parameter bounds. Use FFT or NUFFT for one-generation `Transition`
+operations and expected-visits solves.
 
 See [choosing algorithms](../guide/backends.md) for a complete example,
 [direct epoch operations](epochs.md) for custom orchestration, and the

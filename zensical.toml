@@ -8,10 +8,8 @@ edit_uri = ""
 extra_css = ["_static/custom.css"]
 extra_javascript = ["_static/mathjax.js", "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"]
 nav = [
-    "index.md",
-    { "User guide" = [
-        "guide/installation.md",
-        "guide/quickstart.md",
+    { "drifft" = [
+        { "Quickstart" = "index.md" },
         "guide/model.md",
         "guide/frequency_maps.md",
         "guide/transitions.md",
