@@ -7,8 +7,8 @@ and expectations. Change that configuration when you have a specific reason:
 | Your calculation | First choice | When to try an alternative |
 | --- | --- | --- |
 | One generation or expected visits | FFT | Compare NUFFT if retained geometry uses too much memory |
-| A history with short intervals or general selection | FFT + Sequential | Compare NUFFT for memory; test Krylov if repeated stepping dominates runtime |
-| Long intervals with neutral or symmetric underdominant selection | Compare Jacobi + RationalKrylov with FFT + Sequential | Keep the faster configuration at matched accuracy, including setup |
+| Short intervals or maps outside Jacobi's supported family | FFT + Sequential | Compare NUFFT for memory; test Krylov if repeated stepping dominates runtime |
+| Long intervals with supported diploid selection and mutation maps | Compare Jacobi + RationalKrylov with FFT + Sequential | Keep the faster configuration at matched accuracy, including setup |
 | Conditional expectations through a history | FFT or NUFFT + Sequential | Krylov methods provide forward propagation only |
 
 These are starting points for measurement. The [accuracy guide](numerics.md)
@@ -54,6 +54,9 @@ approximate reference; repeat at tighter settings as described in
 [accuracy and differentiation](numerics.md). This small population demonstrates
 the workflow, not a timing advantage.
 
+For a human-scale calculation with selection and recurrent mutation, see
+[sample likelihoods under a Schiffels–Durbin history](../examples/schiffels_durbin.md).
+
 !!! tip "Measure the complete calculation"
 
     Include preparation, compilation, factorization, and decoding for a first-use
@@ -75,12 +78,17 @@ Each basis vector can require many transition applications, so compare its
 actual runtime with Sequential. With Jacobi, it reuses a dense LU factorization.
 Neither Krylov method automatically restarts or falls back to Sequential.
 
-!!! warning "Jacobi has a restricted selection model"
+!!! note "Jacobi's supported frequency maps"
 
-    Use `Neutral` or `Underdominance` with Jacobi. General diploid selection,
-    mutation maps, and custom maps currently require FFT or NUFFT, even when
-    their parameters happen to reproduce an accepted model. Jacobi also needs
-    an explicit FFT or NUFFT `boundary_backend` for population-size changes.
+    Jacobi accepts neutral evolution, diploid selection and its constrained
+    classes, mutation, and one mutation map composed with one selection rule
+    in either order. Both diploid coefficients must have absolute value at
+    most `max_strength` (default `0.1`); `Underdominance` and `Overdominance`
+    also require finite, nonnegative strength, including in mutation
+    compositions. Each mutation rate must be finite and in `[0, 1]`.
+    Custom functions and longer compositions require FFT or NUFFT. Jacobi
+    also needs an explicit FFT or NUFFT `boundary_backend` for population-size
+    changes. Use a Krylov method with Jacobi; `Sequential` requires FFT or NUFFT.
 
 ## Understand the costs
 
@@ -89,8 +97,9 @@ to factor. Compression does not make its matvec an FFT. The saving over a long
 interval comes from working in a smaller state and reducing repeated steps;
 encoding and decoding still cost work.
 
-The [FFT](../methods/fft.md), [NUFFT](../methods/nufft.md), and
-[Jacobi](../methods/jacobi.md), and [Krylov](../methods/jacobi_krylov.md) chapters explain the mechanisms.
+The [FFT](../methods/fft.md), [NUFFT](../methods/nufft.md),
+[Jacobi](../methods/jacobi.md), and [Krylov](../methods/jacobi_krylov.md) chapters
+explain the mechanisms.
 The [backend](../api/backends.md) and [method](../api/methods.md) API pages list
 configuration options; the [population-history guide](demography.md) explains
 boundary timing and factories.

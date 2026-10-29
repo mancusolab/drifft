@@ -65,13 +65,13 @@ def test_unsupported_combinations_rejected_without_holds(history):
             method=drifft.RationalKrylov(),
             frequency_map=drifft.Neutral(),
         )
-    with pytest.raises(TypeError, match="Neutral.*Underdominance"):
+    with pytest.raises(TypeError, match="diploid selection"):
         drifft.DemographicTransition(
             history,
             backend=drifft.Jacobi,
             boundary_backend=drifft.FFT,
             method=drifft.RationalKrylov(),
-            frequency_map=drifft.Mutation(1e-5),
+            frequency_map=drifft.FrequencyMap(lambda x: x),
         )
 
 

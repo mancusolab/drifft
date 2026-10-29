@@ -115,12 +115,15 @@ def test_demography_uses_jacobi_method_with_singleton_input():
 
 
 def test_epoch_rejects_unsupported_maps():
-    """Rational Jacobi assembly does not silently ignore recurrent mutation."""
+    """Rational Jacobi assembly rejects arbitrary frequency functions."""
     backend = drifft.Jacobi(16)
     method = drifft.RationalKrylov()
-    with pytest.raises(TypeError, match="Neutral.*Underdominance"):
+    with pytest.raises(TypeError, match="diploid selection"):
         method.advance(
-            backend, jnp.ones(17), frequency_map=drifft.Mutation(1e-5), generations=2
+            backend,
+            jnp.ones(17),
+            frequency_map=drifft.FrequencyMap(lambda x: x),
+            generations=2,
         )
 
 

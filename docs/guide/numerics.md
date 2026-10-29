@@ -64,8 +64,11 @@ under tighter settings: one-step agreement is not sufficient.
 
 Jacobi's `one_step_tolerance` plans ideal polynomial truncation and assembly
 padding separately. It is not a total implemented-error guarantee.
-`max_strength` bounds supported underdominance strength for assembly planning;
-prepare geometry with a bound covering the strengths you will evaluate.
+`max_strength` bounds the absolute values of both diploid selection
+coefficients, including those derived by constrained selection classes. Prepare
+geometry with a bound covering the parameters you will evaluate. Jacobi checks
+these bounds and the mutation-rate domain at runtime, even for identity
+histories. See [supported frequency maps](backends.md#when-another-choice-helps).
 
 Krylov's `error_estimate` combines a smaller-basis comparison with a check of
 the reduced recurrence. The default acceptance threshold is

@@ -2,8 +2,8 @@
 
 `Demography` describes population sizes and timing. `DemographicTransition`
 combines that history with a numerical backend, an epoch method, and a shared
-frequency map. It evaluates allele-count distributions deterministically. For a complete
-biological comparison, see the [bottleneck example](../examples/bottleneck.md).
+frequency map. It evaluates allele-count distributions deterministically. For a
+complete biological comparison, see the [bottleneck example](../examples/bottleneck.md).
 
 ```python
 import equinox as eqx
@@ -48,8 +48,9 @@ generation. The example above evaluates:
 
 !!! note "Boundary timing"
 
-    The size-changing step includes selection and binomial reproduction. There is
-    no additional resampling step and no subsequent evolution at the final size.
+    The size-changing step applies the shared frequency map and binomial
+    reproduction. There is no additional resampling step and no subsequent
+    evolution at the final size.
     The initial distribution is supplied by the caller; no equilibrium or burn-in
     is assumed.
 
@@ -100,8 +101,8 @@ spectral_model = drifft.DemographicTransition(
 )
 ```
 
-For accelerated constant-size portions, select Jacobi geometry and a rational
-Krylov method separately:
+To evaluate constant-size portions in reduced coordinates, select Jacobi
+geometry and a rational Krylov method separately:
 
 ```python
 accelerated = drifft.DemographicTransition(
@@ -129,11 +130,13 @@ orchestration, see [direct epoch operations](../methods/epochs.md).
 
 ## Segregating mass and mutation input
 
-`model.advance_segregating(initial, mutation_rate=1e-8)` discards absorbing mass
+`model.advance_segregating(initial, mutation_rate=1e-8)` discards endpoint mass
 each generation and adds singleton input equal to the destination gene-copy
 count times the mutation rate. Its input and output contain interior counts
 only (`2 * ne - 1` entries). This source is distinct from recurrent mutation in
-a frequency map. Equilibrium initialization is supplied by the caller.
+a frequency map. With recurrent mutation, use full-state `advance()` when
+endpoint mass should be able to return to the interior. Equilibrium
+initialization is supplied by the caller.
 
 ## Results and failures
 

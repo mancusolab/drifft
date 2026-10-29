@@ -64,9 +64,8 @@ $$
 
 Thus `Underdominance(strength=s)` is equivalent to
 `DiploidSelection(s_het=s, s_hom=0)`. It uses the shared diploid numerical
-rule and retains the specialized Jacobi assembly. For Jacobi, use the named
-`Underdominance` class; an equivalent general `DiploidSelection` instance is
-not currently accepted.
+rule and retains the specialized Jacobi assembly. Jacobi also accepts an
+equivalent `DiploidSelection` instance through its general rational assembler.
 
 For `Mutation`, let $u$ be the 0 → 1 rate and $v$ the 1 → 0 rate. An allele-1
 copy persists with probability $1-v$; an allele-0 copy changes with probability

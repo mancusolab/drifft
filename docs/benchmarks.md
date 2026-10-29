@@ -55,9 +55,17 @@ The [encoding comparison report](https://github.com/mancusolab/drifft/blob/main/
 records the CPU measurements and numerical tradeoffs for the filtered option,
 including matched-degree and larger-degree derivative experiments.
 
-Use `benchmarks/compare_demography.py` for demographic comparisons, including
-Jacobi with RationalKrylov. Historical reports predate the backend/method API
-separation and are not performance measurements of the current refactor.
+Use `benchmarks/compare_demography.py` to compare Sequential FFT with Jacobi and
+RationalKrylov on a neutral history with singleton immigration. Its
+[report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RATIONAL_KRYLOV.md)
+includes a rerun after the backend/method API separation; check each
+measurement's recorded revision and workload.
+
+The [Schiffels–Durbin example](examples/schiffels_durbin.md#numerical-checks)
+records a selected, recurrent-mutation calculation with Jacobi and RationalKrylov,
+including setup, compilation, synchronized execution, and an FFT numerical
+comparison. Those timings do not establish a speedup over Sequential FFT for
+that model.
 
 See [historical replacement results](https://github.com/mancusolab/drifft/blob/main/benchmarks/BERNSTEIN.md) for measured limitations.
 The older [CPU report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RESULTS.md) and

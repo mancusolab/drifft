@@ -16,11 +16,12 @@ $$
 
 where $\phi_k$ are normalized Jacobi polynomials with parameters $(1,1)$,
 orthonormal for weight $3(1-z^2)/4$ on $[-1,1]$. The envelope makes interior
-basis functions vanish at the absorbing endpoints. The full representation
+basis functions vanish at the count endpoints. The full representation
 has $r+2$ coordinates; the segregating representation has $r$.
 
 Write the one-generation expectation approximation as $P\approx DE$, with
-$E$ mapping values to coefficients and $D$ evaluating after selection. Then
+$E$ mapping values to coefficients and $D$ evaluating at the offspring
+probabilities after the full frequency map. Then
 $H=ED$ is a reduced square matrix. In exact coefficient arithmetic,
 
 $$
@@ -38,11 +39,15 @@ coefficient transform. The implementation uses $Q=r+32$ quadrature nodes,
 truncated and normalized binomial stencils, and reflection to store only half
 of the quadrature geometry. Reflection remains valid for asymmetric inputs.
 
-For supported selection, the reduced matrix is assembled through rational
+For supported frequency maps, the reduced matrix is assembled through rational
 functions of a symmetric tridiagonal Hahn coordinate matrix. A leading
 $R\times R$ block supplies padding; banded solves and a polynomial recurrence
-produce the retained $r\times r$ matrix and endpoint forcing. No dense
-population transition is formed.
+produce the retained matrix and endpoint coupling. General diploid selection
+uses a quadratic rational map and banded Cholesky solves; symmetric
+underdominance retains its specialized even/odd solves when used without
+mutation. Recurrent mutation can move mass away from zero or fixation, so the
+full $r+2$ matrix includes their coupling to the interior. No dense population
+transition is formed.
 
 Forward mass is evaluated in the opposite order, using the transposed external
 maps. The source mass is encoded once, the method advances its reduced state,
@@ -52,8 +57,10 @@ power approximation and constant immigration.
 ## Cost and reuse
 
 Geometry depends on population size, rank, and numerical settings. It is
-reusable across supported selection strengths. The reduced matrix and shifted
-factorization depend on selection and must reflect its current value.
+reusable across supported selection and mutation parameters within the planned
+bounds. The reduced matrix depends on both selection and mutation.
+RationalKrylov factors its shifted matrix once per power action and reuses that
+factorization across basis vectors. The shift also depends on interval duration.
 
 | Stage | Cost or storage |
 | --- | --- |
@@ -76,7 +83,7 @@ factors; do not interpret $r$ as an unconditional constant times $\sqrt M$.
 | --- | --- |
 | `rank` | Retained interior polynomial modes |
 | `one_step_tolerance` | Plans ideal truncation and assembly padding separately |
-| `max_strength` | Static bound used to plan padding for underdominance |
+| `max_strength` | Static absolute bound on both diploid coefficients, used to plan padding |
 
 The error budget includes polynomial truncation, quadrature, binomial stencil
 truncation, padded assembly, and arithmetic. The default rank certificate covers
@@ -92,23 +99,31 @@ parameter derivatives independently, as described in the
 
 ## Differentiation and adjoints
 
-Selection, initial mass, and immigration are dynamic parameters. Rank, padding,
-quadrature nodes, and population size are fixed geometry. JAX differentiates
-selected evaluation and rational assembly; the method also differentiates its
-power action.
+Selection, mutation rates, initial mass, and immigration are dynamic parameters.
+Rank, padding, quadrature nodes, and population size are fixed geometry. JAX
+differentiates mapped evaluation and rational assembly; the method also
+differentiates its power action.
 
 The external maps have defined transposes, and the full-state construction
-preserves mass and absorbing endpoint rows. It need not preserve positivity.
-An input-dependent Krylov approximation is not automatically a fixed linear
-map with a matched expectation transpose; demographic Jacobi evolution exposes
-forward propagation only.
+preserves mass. Endpoint rows are absorbing when the frequency map fixes zero
+and one; recurrent mutation generally removes that property. Segregating
+evolution still discards endpoint mass each generation. The approximation need
+not preserve positivity. An input-dependent Krylov approximation is not
+automatically a fixed linear map with a matched expectation transpose;
+demographic Jacobi evolution exposes forward propagation only.
 
 ## Use in drifft
 
 Use `backend=Jacobi` with `PolynomialKrylov` or `RationalKrylov` in
 `DemographicTransition`. Supply an explicit FFT or NUFFT `boundary_backend` for
-size-changing steps. The current rational assembly accepts only `Neutral` and
-`Underdominance`, not general diploid or mutation maps.
+size-changing steps. Supported maps are neutral evolution, diploid selection
+and its constrained classes, mutation, and one mutation composed with one
+selection rule in either order. Both selection coefficients must have absolute
+value at most `max_strength`; `Underdominance` and `Overdominance` additionally
+require finite, nonnegative strength, including in mutation compositions.
+Each mutation rate must be finite and in `[0, 1]`. Arbitrary frequency functions
+and longer compositions are not supported. `Jacobi` is not a one-generation
+`Transition` backend; use FFT or NUFFT for `Transition` and expected-visits solves.
 
 See [choosing algorithms](../guide/backends.md) for a complete example,
 [direct epoch operations](epochs.md) for custom orchestration, and the

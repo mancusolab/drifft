@@ -202,8 +202,9 @@ fixation; a lethal derived homozygote is outside this map's domain.
 !!! warning "Parameter domain"
 
     Value constraints are caller preconditions, including under JIT and vmap.
-    Outputs and parameters are not clipped. FFT and NUFFT support this map;
-    the specialized Jacobi backend does not.
+    Outputs and parameters are not clipped. FFT and NUFFT support this map.
+    Jacobi requires both coefficients to have absolute value at most its
+    configured `max_strength`, which is strictly below one.
 """
 
 
@@ -466,7 +467,9 @@ AdditiveSelection.__init__.__doc__ = r"""Initialize AdditiveSelection.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
 construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
+checks that both derived selection coefficients have absolute value at most
+its configured `max_strength`.
 
 **Returns:**
 
@@ -519,7 +522,9 @@ DominanceSelection.__init__.__doc__ = r"""Initialize DominanceSelection.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
 construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
+checks that both derived selection coefficients have absolute value at most
+its configured `max_strength`.
 
 **Returns:**
 
@@ -569,7 +574,9 @@ RecessiveSelection.__init__.__doc__ = r"""Initialize RecessiveSelection.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
 construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
+checks that both derived selection coefficients have absolute value at most
+its configured `max_strength`.
 
 **Returns:**
 
@@ -619,7 +626,9 @@ DominantSelection.__init__.__doc__ = r"""Initialize DominantSelection.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
 construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
+checks that both derived selection coefficients have absolute value at most
+its configured `max_strength`.
 
 **Returns:**
 
@@ -671,7 +680,9 @@ Overdominance.__init__.__doc__ = r"""Initialize Overdominance.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
 construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
+checks that both derived selection coefficients have absolute value at most
+its configured `max_strength`.
 
 **Returns:**
 
@@ -742,7 +753,9 @@ MultiplicativeSelection.__init__.__doc__ = r"""Initialize MultiplicativeSelectio
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
 construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. Supported by FFT and NUFFT, not Jacobi.
+and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
+checks that both derived selection coefficients have absolute value at most
+its configured `max_strength`.
 
 **Returns:**
 

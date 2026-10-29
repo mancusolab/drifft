@@ -41,8 +41,9 @@ biological observation likelihood. Shifted linear solves use Lineax internally;
 their solver selection is not a public configuration option.
 
 Keep population geometry on backends and algorithm controls on methods. Bind
-parameter-dependent operators and factors during evaluation so selection remains
-differentiable. Do not retain factors or Krylov bases in demographic results.
+parameter-dependent operators and factors during evaluation so selection and
+mutation remain differentiable. Do not retain factors or Krylov bases in
+demographic results.
 
 Every class, method, and function needs a docstring describing its contract or
 purpose. Ruff checks missing docstrings; comments explain numerical identities,

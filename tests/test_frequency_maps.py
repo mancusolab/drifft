@@ -297,11 +297,28 @@ def test_selection_rejects_nonscalar_parameters(name, parameters):
             getattr(drifft, name)(**{**parameters, field: jnp.array([0.1, 0.2])})
 
 
-def test_jacobi_rejects_general_selection_even_at_symmetric_parameters():
-    """The specialized Jacobi assembly must not silently accept new models."""
-    assert hasattr(drifft, "DiploidSelection")
-    with pytest.raises(TypeError, match="Neutral and Underdominance"):
-        drifft.Jacobi(8).validate(drifft.DiploidSelection(0.1, 0.0))
+def test_jacobi_general_selection_matches_named_symmetric_rule():
+    """General diploid and specialized symmetric assembly agree on shared inputs."""
+    backend = drifft.Jacobi(8)
+    method = drifft.RationalKrylov(dimension=12)
+    initial = jnp.arange(1, 10, dtype=jnp.float64) / 45
+    general = method.advance(
+        backend,
+        initial,
+        frequency_map=drifft.DiploidSelection(0.1, 0.0),
+        generations=7,
+    )
+    symmetric = method.advance(
+        backend,
+        initial,
+        frequency_map=drifft.Underdominance(0.1),
+        generations=7,
+    )
+    assert general.converged
+    assert symmetric.converged
+    assert jnp.allclose(
+        general.distribution, symmetric.distribution, atol=3e-12, rtol=3e-10
+    )
 
 
 @pytest.mark.parametrize("ratio", [1e-10, 1e-200, 1e200])

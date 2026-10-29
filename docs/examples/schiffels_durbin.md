@@ -21,7 +21,8 @@ spectrum with singleton immigration.
     are included below; setting `end_time = 0` includes the full history, with
     nearest-integer sizes and boundaries. That explicit discretization changes
     the noninteger recent rows. The final population then has over 51 million
-    gene copies, and a population-sized Krylov basis requires substantial memory.
+    gene copies and requires much larger geometries and separate numerical
+    validation.
 
 ![Conditional sample allele-count probabilities under the supplied demographic history, with the observation of 5 derived copies out of 100 highlighted.](../_static/examples/schiffels_durbin_likelihood.svg)
 
@@ -75,8 +76,9 @@ frequency_map = drifft.Composition(
 )
 model = drifft.DemographicTransition(
     history,
-    backend=drifft.FFT,
-    method=drifft.PolynomialKrylov(dimension=512, rtol=1e-10, atol=1e-13),
+    backend=drifft.Jacobi,
+    boundary_backend=drifft.FFT,
+    method=drifft.RationalKrylov(dimension=128, rtol=1e-10, atol=1e-13),
     frequency_map=frequency_map,
 )
 
@@ -131,6 +133,15 @@ fig.savefig("schiffels_durbin_likelihood.svg")
 plt.show()
 ```
 
+The default calculation gives:
+
+```text
+History endpoint: 252 generations ago
+P(K=5) = 4.12985e-05
+Log likelihood = -10.0947
+P(K=5 | sample segregating) = 0.03798
+```
+
 ## From a population distribution to a likelihood
 
 For population allele count $J$ and a sample of $n$ gene copies without
@@ -165,11 +176,35 @@ does not reproduce MSMC's sequence/coalescent likelihood for inferring demograph
 
 ## Numerical checks
 
-`PolynomialKrylov` supports the composed map with FFT geometry. Jacobi's current
-assembly accepts only neutral and symmetric underdominant maps, so it cannot
-be substituted for this selection-and-mutation model. Krylov may reduce the
-number of repeated transition applications; speed depends on interval duration,
-basis size, and the backend.
+Jacobi represents the constant-size intervals in reduced polynomial
+coordinates, and `RationalKrylov` advances that reduced state. FFT handles the
+single-generation transitions between population sizes. The biological map
+is shared by both backends.
+
+For the default history, all 53 interval checks passed with 128 Krylov vectors.
+Total probability mass differed from one by $4.3\times10^{-12}$, and every
+population and sample bin was positive. Compared with the previous FFT plus
+512-vector `PolynomialKrylov` calculation, the likelihood of $K=5$ differed
+relatively by $1.3\times10^{-10}$. The largest relative difference across the
+conditional sample probabilities was $8.5\times10^{-8}$. These are comparisons
+between approximations, not exact-error bounds.
+
+A local float64 CPU run on macOS arm64 measured:
+
+| Stage | Time |
+| --- | ---: |
+| Geometry setup | 70.7 s |
+| JIT tracing and compilation | 57.3 s |
+| First synchronized propagation | 44.4 s |
+| Synchronized warm propagation | 40.8 s |
+
+The warm call reused the compiled model and restarted from the same ancestral
+distribution; both calls gave identical outputs. Timings exclude the sampling
+projection and plotting. BLAS/OpenMP thread limits were one, JAX CPU threading
+used its default, and persistent compilation caching was disabled. Peak process
+memory for the complete run, including both calls, sampling and plotting, was
+about 5.1 GB. These single-run measurements do not establish a speedup over
+Sequential FFT.
 
 A converged power action is not a certificate for rare-event likelihoods.
 Compare the sample probabilities themselves under larger Krylov dimensions and

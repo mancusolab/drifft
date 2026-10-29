@@ -37,7 +37,7 @@ different results.
 
 ## Mass and immigration
 
-Full-state input has `gene_copies + 1` entries, including absorbing endpoints.
+Full-state input has `gene_copies + 1` entries, including count zero and fixation.
 With `segregating=True`, input has `gene_copies - 1` entries and each generation
 discards boundary mass. `immigration` adds the supplied vector **after every
 generation**, including the last. Zero generations returns the original mass
@@ -48,16 +48,18 @@ renormalized.
 
     Singleton immigration is an infinite-sites source of new segregating mass.
     It does not apply recurrent mutation or backmutation to existing alleles.
-    Jacobi currently accepts only `Neutral` and `Underdominance`.
-    Use FFT or NUFFT with Sequential and a composed frequency map for
-    recurrent mutation.
+    Recurrent mutation is a `Mutation` frequency map, optionally composed with
+    one diploid selection rule in either order. Jacobi supports these maps;
+    full-state evolution lets endpoint mass return to the interior, while
+    `segregating=True` still discards endpoint mass after every generation.
 
 ## Accuracy and failures
 
 Jacobi's `rank` controls polynomial truncation. Its default uses an ideal
 one-step tail bound. `max_strength` controls assembly padding and is checked at
-runtime; raise it when preparing geometry for stronger selection. Neither
-setting certifies the final demographic result.
+runtime against the absolute values of both diploid coefficients; choose it
+when preparing geometry for the parameter range you need. It must remain
+strictly below one. Neither setting certifies the final demographic result.
 
 Both Krylov methods use `dimension` to control the power approximation. The reported
 absolute `error_estimate` measures differences in the output distribution using
@@ -84,13 +86,14 @@ estimate does not cover.
 ## Differentiation and demographic integration
 
 JAX differentiates the operator applications and the input-dependent Krylov basis.
-Selection, initial mass, and immigration are dynamic arrays; dimensions and
-generation counts are static. Derivatives at zero seeds or changes in Arnoldi
-breakdown are not guaranteed. Differentiation can require substantially more
+Selection, mutation rates, initial mass, and immigration are dynamic arrays;
+dimensions and generation counts are static. Derivatives at zero seeds or
+changes in Arnoldi breakdown are not guaranteed. Differentiation can require substantially more
 memory than forward evaluation.
 The accumulated recurrence-defect diagnostic is excluded from differentiation.
-RationalKrylov differentiates GMRES solves implicitly through Lineax. A failed
-tangent or transpose solve raises even when the primal call uses `throw=False`.
+With FFT or NUFFT, RationalKrylov differentiates GMRES solves implicitly through
+Lineax. A failed tangent or transpose solve raises even when the primal call
+uses `throw=False`. Jacobi uses dense LU shifted solves.
 
 Because their bases depend on the input, neither Krylov method provides a
 matched expectation transpose. Use Sequential when you need `model.expect()`.

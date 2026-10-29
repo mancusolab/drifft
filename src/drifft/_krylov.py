@@ -334,7 +334,7 @@ class RationalKrylov(AbstractEpochMethod):
     ) -> EpochResult:
         r"""Evolve with the contracts of `AbstractEpochMethod.advance`.
 
-        Jacobi selection-domain checks apply even when `throw=False`. Power
+        Jacobi process-domain checks apply even when `throw=False`. Power
         estimates exclude representation, quadrature and assembly error. Increase
         rank and dimension independently when validating a new numerical regime.
         """
@@ -498,7 +498,7 @@ class PolynomialKrylov(AbstractEpochMethod):
 
         Immigration is included through an augmented operator. Inspect convergence
         with `throw=False`, or increase dimension when the power check fails.
-        Jacobi's selection-domain restrictions remain active.
+        Jacobi's process-domain checks remain active, including with `throw=False`.
         """
         self.validate(backend, frequency_map)
         problem = _prepare_epoch(

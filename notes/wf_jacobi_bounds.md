@@ -4,11 +4,11 @@
 
 The [FFT/NUFFT note](wf_filtered_chebyshev_bounds.md) studies compression of a Wright–Fisher row by sampled, filtered Chebyshev polynomials. The Jacobi backend solves a related problem: represent a fixed-population transition in a small polynomial space, then apply many generations through a reduced matrix. A useful error analysis must connect the polynomial representation to errors in the original allele-count distribution.
 
-The relevant basis is Jacobi with parameters $(1,1)$, equivalently Gegenbauer with parameter $3/2$. The backend separates the two endpoint values and multiplies its interior polynomials by $1-z^2$. This construction gives exact absorbing endpoints and an explicit connection to discrete Hahn polynomials. It also permits rational selection maps to be assembled using a symmetric tridiagonal matrix.
+The relevant basis is Jacobi with parameters $(1,1)$, equivalently Gegenbauer with parameter $3/2$. The backend separates the two endpoint values and multiplies its interior polynomials by $1-z^2$. This gives exact endpoint interpolation and an explicit connection to discrete Hahn polynomials. Endpoints are absorbing when the frequency map fixes zero and one; recurrent mutation generally removes that property. The construction also permits rational frequency maps to be assembled using a symmetric tridiagonal matrix.
 
 This note derives the ideal projection bound used by the current rank selector, gives separate bounds for sampled coefficients and padded assembly, and explains their implications for repeated transitions. The resulting sufficient rank is $O(\sqrt{M\log(M/\varepsilon)})$, capped at the exact finite dimension. A bound with a dimension-independent Gaussian prefactor is **not established here**. The larger sufficient rank is a limitation of the certificate, not a proof that the Jacobi approximation needs that many modes.
 
-The implementation discussed is [src/drifft/_jacobi.py](../src/drifft/_jacobi.py), specifically `Jacobi`, `_choose_rank`, `_JacobiGeometry`, and `_assemble`. Its supported frequency maps are neutral evolution and underdominance, with no mutation in the frequency map. Immigration is a separate affine forcing. All mathematical certificates below are in exact arithmetic unless an additional numerical error is stated explicitly.
+The implementation discussed is [src/drifft/_jacobi.py](../src/drifft/_jacobi.py), specifically `Jacobi`, `_choose_rank`, `_JacobiGeometry`, and `_assemble`. Sections 5–6 analyze neutral evolution and symmetric underdominance without recurrent mutation. Section 8 describes the extension to diploid selection composed with mutation and its separate assembly bound. Immigration is a separate affine forcing. All mathematical certificates below are in exact arithmetic unless an additional numerical error is stated explicitly.
 
 ## 1. Setup and notation
 
@@ -414,7 +414,7 @@ $$
 
 For forward mass, transpose the complete expression. The code calls $D_r^T$ `encode` and the sampled approximation to $E_r^T$ `decode`; those names refer to mass propagation, whereas (24) acts on values.
 
-The full-state construction preserves constants, hence row sums, and leaves the absorbing endpoint rows exact. It need not preserve positivity. A row with $\ell_1$ error at most $\delta$ from a probability row has negative mass at most $\delta/2$. Removing the endpoint outputs gives the corresponding interior approximation; its exact target is substochastic, and full-state mass conservation should not be asserted for it.
+For the neutral/underdominant setting analyzed in this section, the full-state construction preserves constants, hence row sums, and leaves the absorbing endpoint rows exact. It need not preserve positivity. A row with $\ell_1$ error at most $\delta$ from a probability row has negative mass at most $\delta/2$. Removing the endpoint outputs gives the corresponding interior approximation; its exact target is substochastic, and full-state mass conservation should not be asserted for it.
 
 ### 6.1 Powers of the ideal projected transition
 
@@ -472,6 +472,156 @@ To see this, use the bounded input $f_j=T_{r+2}(z_j)$. The Bernstein expectation
 A filtered Jacobi construction is a reasonable next object to study, but would change the operator. Uniform stability of filtered Jacobi means is known in suitable weighted spaces [6]; matching those hypotheses to endpoint reconstruction and Gauss–Jacobi sampling is necessary before claiming a dimension-independent row bound. In particular, the Chebyshev taper and its constant cannot simply be transferred to the present sharp Jacobi truncation.
 
 The useful conclusions for the current backend are therefore the exact singular values (4), the finite-sum row certificate (9), the sampled one-step budget (15), and the separate assembly and propagation estimates (21) and (26). They identify which errors are controlled by rank, quadrature order, padding, and the power algorithm, respectively.
+
+## 8. Diploid selection composed with recurrent mutation
+
+The extended assembler `_assemble_diploid` supports independent diploid fitness
+reductions and one affine mutation map, in either order. It retains the same
+coefficient transform and Jacobi basis. The contraction and exact absorbing-row
+claims in Sections 5–6 apply to the original neutral/underdominant setting;
+they must not be transferred to recurrent mutation.
+
+### 8.1 Rational map and endpoint subtraction
+
+Let $u,v\in[0,1]$ be the forward and backward mutation rates. In the centered
+coordinate, mutation is $z\mapsto\alpha+\beta z$, where $\alpha=u-v$,
+$\beta=1-u-v$, and $|\alpha|+|\beta|\le1$. Diploid selection with fitnesses
+$(1,1-s_{\mathrm{het}},1-s_{\mathrm{hom}})$ gives $g(z)=N(z)/D(z)$ with
+
+$$
+N(z)=-\frac{s_{\mathrm{hom}}}{4}
+ +\left(1-\frac{s_{\mathrm{hom}}}{2}\right)z
+ -\frac{s_{\mathrm{hom}}}{4}z^2,
+$$
+
+$$
+D(z)=1-\frac{s_{\mathrm{het}}}{2}-\frac{s_{\mathrm{hom}}}{4}
+ -\frac{s_{\mathrm{hom}}}{2}z
+ +\left(\frac{s_{\mathrm{het}}}{2}-\frac{s_{\mathrm{hom}}}{4}\right)z^2.
+$$
+
+Mutation before selection substitutes $\alpha+\beta z$ into both polynomials.
+Mutation after selection replaces $N$ by $\alpha D+\beta N$. Both cases remain
+quadratic rational functions. They describe a deterministic frequency map
+followed by one binomial sampling step, not two successive sampling steps.
+
+For a function $F$, write its endpoint interpolant and residual as
+
+$$
+F(z)=a_F+b_Fz+h(z)R_F(z),\qquad
+ a_F=\frac{F(-1)+F(1)}2,\quad
+ b_F=\frac{F(1)-F(-1)}2.
+$$
+
+The reduced column of its count-grid values is
+$(a_F,b_F,\Sigma R_F(Z)e_0)$, retaining the first $r$ interior coordinates.
+In particular, if $g=a_g+b_gz+hR_g$, polynomial division gives
+
+$$
+R_g(z)=\frac{N_0-a_gD_0+b_gD_2z}{D(z)}.
+$$
+
+This removes the apparent poles from division by $h$ analytically. Products
+can then be evaluated without division by small count-grid endpoint factors:
+
+$$
+R_{gF}(z)=g(z)R_F(z)+(a_F+b_Fz)R_g(z)-b_gb_F.
+$$
+
+The assembler uses this identity to construct $h(g)=1-g^2$ and then the
+three-term recurrence for $h(g)\phi_k(g)$. Its endpoint values are evaluated
+as $4q(1-q)$, where $q=(g+1)/2$. The columns for $1$, $g$, and
+$\gamma h(g)\phi_k(g)$ form the full $(r+2)\times(r+2)$ reduced operator.
+The constant column is exact. The endpoint block is generally not the identity.
+
+The matrix $D(Z_R)$ is symmetric positive definite in the supported domain.
+It has two off-diagonal bands, so a two-band Cholesky factorization and solves
+use $O(R)$ work and storage. The polynomial recurrence then uses $O(rR)$
+assembly work, with $O(r^2)$ retained matrix storage. This is separate from
+the dense shifted factorization used by RationalKrylov.
+
+### 8.2 Padding domain and bound
+
+The extended planner assumes
+$|s_{\mathrm{het}}|,|s_{\mathrm{hom}}|\le S<1$, where $S$ is `max_strength`.
+Mean fitness on the real interval is at least $1-S$. For a Bernstein ellipse
+of radius $\rho>1$, write its semiaxes as
+$a=(\rho+\rho^{-1})/2$ and $b=(\rho-\rho^{-1})/2$. Affine mutation maps this
+ellipse into itself. The denominator derivative is bounded by
+$S(1/2+3a/2)$ there. Comparing each ellipse point with the nearest real point
+in $[-1,1]$ gives the sufficient variation bound
+
+$$
+V=S(1/2+3a/2)(b+a-1).
+$$
+
+The planner shrinks $\rho$ until $V\le(1-S)/2$. Then
+$|D(z)|\ge d=1-S-V>0$. A bound for the composed image is
+
+$$
+|g(z)|\le G=\max\left(1,
+\frac{S/4+(1+S/2)a+Sa^2/4}{d}\right).
+$$
+
+For mutation after selection, use
+$|\alpha+\beta g|\le\max(1,|g|)$ to obtain the same bound. Put
+$\chi=G+\sqrt{G^2+1}$ and let $c_{r-1}$ be the endpoint polynomial bound
+from (3). Since $|h(z)|\ge b^2$ on the ellipse boundary, every residual column
+used in full-state assembly is bounded by
+
+$$
+B=\frac{c_{r-1}\chi^{r-1}(2+G^2+a)}{b^2}.
+$$
+
+This includes the slope residual. Endpoint subtraction makes these residuals
+analytic at $z=\pm1$. A degree-$L$ polynomial approximation has uniform error
+at most $2B\rho^{-L}/(\rho-1)$. The full and padded coordinate matrices have
+matching retained polynomial actions through degree $L=2R-r$. Applying the
+approximation on both matrices therefore bounds the interior-column assembly
+error, and a Frobenius bound over $r+1$ nonconstant columns gives
+
+$$
+\|H-H_R\|_2\le
+\frac{4\sqrt{r+1}\,B\rho^{-(2R-r)}}{\rho-1}.
+$$
+
+The planner chooses $R$ from this sufficient bound, capped at $M-1$, where
+matrix-function truncation disappears. If the required ellipse is too close
+to the real interval to resolve reliably in floating-point planning, it uses
+the full dimension. This bound concerns ideal full-state assembly only; it
+excludes quadrature, stencil truncation, arithmetic, and power-action errors.
+
+### 8.3 Full-state and killed-interior evolution
+
+For recurrent mutation, endpoint mass can return to the interior. Full-state
+evolution includes that coupling and preserves total mass through its exact
+constant coordinate. When both mutation rates vanish, diploid selection fixes
+the endpoints and the absorbing behavior is recovered.
+
+Segregating evolution instead kills trajectories when their allele count hits
+zero or $M$, even if the underlying mutation map could later move them away.
+For the interior basis columns $F=\gamma h(g)\phi_k(g)$, its coefficient map
+must use $F/h=R_F+(a_F+b_Fz)/h$, rather than only the endpoint-subtracted
+residual. The implementation caches the two sampled coefficient vectors for
+the interior count-space functions $1$ and $z$ using the transpose of the
+existing decoder. If these vectors form $C$, the killed reduced matrix is
+
+$$
+H_{\mathrm{kill}}=H_{2:,2:}+C H_{:2,2:},
+$$
+
+where the first two coordinates are the endpoint interpolant. This correction
+uses the sampled coefficient transform and adds its quadrature and stencil
+errors. It does not inherit the ideal full-state padding bound without those
+additional terms. Mutation remains a frequency transformation; immigration is
+still a separate source added after each generation.
+
+Tests compare both composition orders, full-state and killed-interior powers,
+immigration, endpoint seeds at mutation rates down to $10^{-8}$, parameter
+JVPs/VJPs and batching, and changing-size histories with independent dense
+binomial transitions. A separately truncated case compares the rational
+assembly with the sampled $ED$ construction. These checks do not certify
+relative likelihood errors for arbitrary histories or establish a speedup.
 
 ## References
 

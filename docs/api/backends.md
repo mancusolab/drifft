@@ -30,8 +30,13 @@ Global polynomial evaluation using a nonuniform FFT. See
 ## Jacobi
 
 Reduced Jacobi polynomial geometry for repeated evolution. Use with
-`DemographicTransition` and a Krylov method; supported frequency maps are
-`Neutral` and `Underdominance`. See [backend tradeoffs](../guide/backends.md)
+`DemographicTransition` and a Krylov method. Supports neutral evolution, diploid
+selection and its constrained classes, mutation, and one mutation map composed
+with one selection rule in either order, within its selection bounds.
+Jacobi requires `PolynomialKrylov` or `RationalKrylov`; it is not accepted by
+`Transition` or `Sequential`. For demographic evolution, supply an explicit
+FFT or NUFFT boundary backend.
+See [backend tradeoffs](../guide/backends.md)
 and [constant-size epochs](../methods/epochs.md).
 
 ::: drifft.Jacobi

@@ -95,9 +95,9 @@ describes validation of the final quantity.
 
 ## Differentiation and adjoints
 
-JAX differentiates operator actions, selected parameters, and the input-dependent
-basis. FFT/NUFFT shifted solves use implicit differentiation through Lineax;
-a failed tangent or transpose solve raises even when the primal call used
+JAX differentiates operator actions, frequency-map parameters, and the
+input-dependent basis. FFT/NUFFT shifted solves use implicit differentiation
+through Lineax; a failed tangent or transpose solve raises even when the primal call used
 `throw=False`. The accumulated recurrence-defect diagnostic is excluded from
 differentiation.
 
@@ -110,7 +110,7 @@ expectation transpose. Use Sequential for `model.expect()`.
 
 Select `PolynomialKrylov` or `RationalKrylov` as the method of a
 `DemographicTransition`, or apply it directly to a prepared backend. Both
-support FFT, NUFFT, and Jacobi; selection-model support follows the backend.
+support FFT, NUFFT, and Jacobi; frequency-map support follows the backend.
 Population-size boundary steps still use FFT/NUFFT.
 
 See [choosing algorithms](../guide/backends.md) for recommendations,
