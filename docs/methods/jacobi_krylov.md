@@ -104,7 +104,12 @@ through Lineax; a failed tangent or transpose solve raises even when the primal 
 `throw=False`. The accumulated recurrence-defect diagnostic is excluded from
 differentiation.
 
-Derivatives at zero seeds or changes in Arnoldi breakdown are not guaranteed.
+JVPs and reverse-mode gradients raise for zero working-state seeds or detected
+Arnoldi breakdown, even with `throw=False`. Forward values retain their usual
+convergence contract. This conservative check can reject otherwise safe
+parameter directions; use Sequential with FFT or NUFFT for derivatives in
+these cases. There is no automatic fallback. See the
+[breakdown derivative policy](autodiff.md#accuracy-and-limitations).
 Differentiation can retain substantially more memory than a forward action.
 Because the basis depends on the input, the methods do not expose a matched
 expectation transpose. Use Sequential for `model.expect()`.

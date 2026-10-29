@@ -155,8 +155,19 @@ exact Wright–Fisher model. Increase backend accuracy and Krylov dimension
 separately, and compare gradients with a dense reference where feasible.
 Forward convergence diagnostics do not certify gradient accuracy.
 
-Krylov derivatives at zero seeds or changes in Arnoldi breakdown are not
-guaranteed. The accumulated recurrence-defect diagnostic is excluded from
+Krylov JVPs and reverse-mode gradients raise at a zero working-state seed or
+when the Arnoldi recurrence detects breakdown. Forward propagation still
+returns its usual distribution and convergence diagnostics. This derivative
+policy is independent of `throw`: `throw=False` does not suppress the error.
+The check is conservative and can reject directions whose derivatives happen
+to remain in the represented space. It also applies to breakdown inside a
+`DemographicTransition`; a failing member under `vmap` can fail the batch.
+Use Sequential with FFT or NUFFT for derivatives in these cases. No automatic
+fallback is performed. Identity actions and Jacobi's single-generation action
+bypass basis construction and remain differentiable at zero mass.
+
+A nonzero seed and no detected breakdown do not certify gradient accuracy.
+Validate derivatives against a reference and tighter settings. The accumulated recurrence-defect diagnostic is excluded from
 differentiation; the propagated distribution remains differentiable. A failed
 tangent or transpose solve can raise even when the primal call uses
 `throw=False`. Measure derivative runtime and memory separately from forward

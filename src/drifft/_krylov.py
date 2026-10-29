@@ -41,6 +41,35 @@ def _matrix_power_matvec(matrix: jax.Array, vector: jax.Array, steps: int):
     return vector
 
 
+@jax.custom_jvp
+def _require_krylov_derivative(value, supported):
+    """Preserve primal results while rejecting derivatives at basis breakdown."""
+    return value
+
+
+@_require_krylov_derivative.defjvp
+def _require_krylov_derivative_jvp(primals, tangents):
+    """Keep the failure check in both the tangent and transposed tangent paths."""
+    value, supported = primals
+    tangent, _ = tangents
+    # A checked residual multiplier survives transposition to reverse mode.
+    # Checking only the primal result can be eliminated when requesting grad.
+    scale = eqx.error_if(
+        jnp.ones((), dtype=value.dtype),
+        ~supported,
+        "Krylov derivatives require a nonzero seed and no Arnoldi breakdown; "
+        "use Sequential with FFT or NUFFT for derivatives in this regime. "
+        "throw=False applies only to forward evolution failures.",
+    )
+    return _require_krylov_derivative(value, supported), scale * tangent
+
+
+def _guard_krylov_derivative(value, basis, norm_squared):
+    """Reject zero seeds and any zero column left by the breakdown branch."""
+    supported = (norm_squared > 0) & jnp.all(jnp.sum(basis * basis, axis=0) > 0)
+    return _require_krylov_derivative(value, supported)
+
+
 def _power_action_with_status(
     matrix: jax.Array, seed: jax.Array, steps: int, dimension: int
 ):
@@ -52,7 +81,7 @@ def _power_action_with_status(
     operator = lx.MatrixLinearOperator(identity + shift * (identity - matrix))
     solver = lx.LU()
     factor = solver.init(operator, {})
-    # Safe normalization also keeps zero and happy-breakdown branches finite in AD.
+    # Keep primal zero seeds finite; the derivative guard rejects these branches.
     norm_squared = seed @ seed
     norm = jnp.sqrt(jnp.where(norm_squared > 0, norm_squared, 1.0))
     basis = jnp.zeros((size, dimension)).at[:, 0].set(seed / norm)
@@ -88,6 +117,7 @@ def _power_action_with_status(
     projected = basis.T @ images
     coordinates = basis.T @ seed
     result = basis @ _matrix_power_matvec(projected, coordinates, steps)
+    result = _guard_krylov_derivative(result, basis, norm_squared)
     defect = images - basis @ projected
     if dimension == size:
         # A complete basis (or invariant-subspace breakdown) needs no truncation
@@ -196,6 +226,7 @@ def _gmres_power_action(
     projected = basis.T @ images
     coordinates = basis.T @ seed
     fine = basis @ _matrix_power_matvec(projected, coordinates, problem.steps)
+    fine = _guard_krylov_derivative(fine, basis, norm_squared)
     defect = images - basis @ projected
     if dimension == seed.size:
         coarse = fine
@@ -260,7 +291,7 @@ class RationalKrylov(AbstractEpochMethod):
     FFT/NUFFT speedups depend on how many operator applications GMRES needs.
 
     Derivatives follow the input-dependent basis and projected power. Derivatives
-    at zero seeds or changes in Arnoldi breakdown are not guaranteed. This is not
+    at zero seeds or detected Arnoldi breakdown raise, even with `throw=False`. This is not
     a fixed linear operator and does not provide a matched transpose.
     Lineax raises on failed tangent or transpose solves even with `throw=False`.
     """
@@ -400,6 +431,7 @@ def _polynomial_power_action(problem: _PowerProblem, dimension: int):
     projected = basis.T @ images
     coordinates = basis.T @ seed
     fine = basis @ _matrix_power_matvec(projected, coordinates, problem.steps)
+    fine = _guard_krylov_derivative(fine, basis, norm_squared)
     defect = images - basis @ projected
     if dimension == seed.size or dimension > problem.steps:
         # The space can represent the requested polynomial exactly; recurrence
@@ -427,8 +459,8 @@ class PolynomialKrylov(AbstractEpochMethod):
     Larger dimensions can be necessary for long intervals; no restart or
     automatic Sequential fallback is performed. Convergence checks exclude
     backend approximation error. Derivatives follow the input-dependent basis,
-    except that zero seeds and changes in Arnoldi breakdown have no accuracy
-    guarantee. This method does not provide a matched expectation transpose.
+    with derivatives at zero seeds or detected Arnoldi breakdown raising even
+    with `throw=False`. This method does not provide a matched expectation transpose.
     """
 
     dimension: int = 64

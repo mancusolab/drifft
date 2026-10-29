@@ -87,8 +87,10 @@ estimate does not cover.
 
 JAX differentiates the operator applications and the input-dependent Krylov basis.
 Selection, mutation rates, initial mass, and immigration are dynamic arrays;
-dimensions and generation counts are static. Derivatives at zero seeds or
-changes in Arnoldi breakdown are not guaranteed. Differentiation can require substantially more
+dimensions and generation counts are static. Krylov JVPs and reverse-mode
+gradients raise at zero working-state seeds or detected Arnoldi breakdown,
+even with `throw=False`; forward values remain available. See the
+[breakdown derivative policy](autodiff.md#accuracy-and-limitations). Differentiation can require substantially more
 memory than forward evaluation.
 The accumulated recurrence-defect diagnostic is excluded from differentiation.
 With FFT or NUFFT, RationalKrylov differentiates GMRES solves implicitly through
