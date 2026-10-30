@@ -257,9 +257,22 @@ def test_overdominance_matches_independent_dense_reference(order, strength):
     np.testing.assert_allclose(result.distribution, expected, atol=3e-12, rtol=3e-10)
 
 
-@pytest.mark.parametrize("order", ["standalone", "mutation_first", "selection_first"])
-@pytest.mark.parametrize("strength", [-0.03, float("nan"), float("inf")])
-@pytest.mark.parametrize("generations", [0, 1, 7])
+# Pairwise coverage: every order/error, order/generation and error/generation
+# combination appears. Validation uses the same predicate before all three paths.
+@pytest.mark.parametrize(
+    "order,strength,generations",
+    [
+        ("standalone", -0.03, 0),
+        ("standalone", float("nan"), 1),
+        ("standalone", float("inf"), 7),
+        ("mutation_first", -0.03, 1),
+        ("mutation_first", float("nan"), 7),
+        ("mutation_first", float("inf"), 0),
+        ("selection_first", -0.03, 7),
+        ("selection_first", float("nan"), 0),
+        ("selection_first", float("inf"), 1),
+    ],
+)
 def test_overdominance_domain_checked_including_identity(order, strength, generations):
     """Named-rule constraints remain active before identity and nontrivial actions."""
     selection = drifft.Overdominance(strength)

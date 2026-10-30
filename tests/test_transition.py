@@ -15,7 +15,7 @@ jax.config.update("jax_enable_x64", True)
 
 def test_selection_model_and_both_transition_directions():
     """Match underdominance expectations and propagation to dense references."""
-    backend = drifft.NUFFT(16)
+    backend = drifft.NUFFT(gene_copies=16)
     transition = drifft.Transition(
         backend, frequency_map=drifft.Underdominance(strength=0.1)
     )
@@ -24,15 +24,19 @@ def test_selection_model_and_both_transition_directions():
     matrix = binom.pmf(np.arange(17)[None, :], 16, p[:, None])
     values = jnp.linspace(-1, 1, 17)
     mass = jnp.arange(1, 18, dtype=jnp.float64) / 153
-    np.testing.assert_allclose(transition.expect(values), matrix @ values, atol=1e-12)
-    np.testing.assert_allclose(transition.advance(mass), matrix.T @ mass, atol=1e-12)
     np.testing.assert_allclose(
-        transition.expect_segregating(values[1:-1]),
+        transition.expect(values=values), matrix @ values, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        transition.advance(distribution=mass), matrix.T @ mass, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        transition.expect_segregating(values=values[1:-1]),
         matrix[1:-1, 1:-1] @ values[1:-1],
         atol=1e-12,
     )
     np.testing.assert_allclose(
-        transition.advance_segregating(mass[1:-1]),
+        transition.advance_segregating(distribution=mass[1:-1]),
         matrix[1:-1, 1:-1].T @ mass[1:-1],
         atol=1e-12,
     )

@@ -5,7 +5,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
-from test_demography import dense_transition
+from _reference import dense_transition
 
 import drifft
 

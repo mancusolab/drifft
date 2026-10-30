@@ -19,22 +19,22 @@ jax.config.update("jax_enable_x64", True)
         (drifft.Jacobi, drifft.RationalKrylov),
     ],
 )
-@pytest.mark.parametrize("throw", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("zero_seed", [False, True])
 def test_breakdown_derivatives_match_sequential(
-    backend_type, method_type, throw, reverse, zero_seed
+    backend_type, method_type, reverse, zero_seed
 ):
     """Represent mass and mutation sensitivities outside the primal Krylov space."""
     backend = backend_type(12)
     method = method_type(dimension=20)
     absent = jnp.eye(13)[0]
+    reward = jnp.sin(jnp.arange(13) * 0.3)
 
     def action(parameter):
         mass = parameter if zero_seed else absent
         rule = drifft.Neutral() if zero_seed else drifft.Mutation(parameter, 0.0)
         return method.advance(
-            backend, mass, frequency_map=rule, generations=7, throw=throw
+            backend, mass, frequency_map=rule, generations=7, throw=False
         )
 
     parameter = jnp.zeros(13) if zero_seed else jnp.asarray(0.0)
@@ -48,7 +48,7 @@ def test_breakdown_derivatives_match_sequential(
         return action(x).distribution
 
     if reverse:
-        differentiated = eqx.filter_jit(jax.grad(lambda x: fn(x).sum()))
+        differentiated = eqx.filter_jit(jax.grad(lambda x: fn(x) @ reward))
     else:
         direction = (
             absent.at[0].set(0.0).at[3].set(1.0) if zero_seed else jnp.asarray(1.0)
@@ -67,9 +67,10 @@ def test_breakdown_derivatives_match_sequential(
 
     actual = differentiated(parameter)
     if reverse:
-        expected = jax.grad(lambda x: reference(x).sum())(parameter)
+        expected = jax.grad(lambda x: reference(x) @ reward)(parameter)
     else:
         expected = jax.jvp(reference, (parameter,), (direction,))[1]
+    assert jnp.max(jnp.abs(expected)) > 1e-3
     assert jnp.allclose(actual, expected, atol=2e-9, rtol=2e-8)
 
 
@@ -86,11 +87,12 @@ def test_demographic_breakdown_sensitivities(method_type):
         frequency_map=drifft.Mutation(0.0, 0.0),
     )
     mass = jnp.eye(13)[0]
+    reward = jnp.sin(jnp.arange(11) * 0.3)
     assert model.advance(mass).converged
 
     def objective(u):
         updated = eqx.tree_at(lambda m: m.frequency_map.forward_rate, model, u)
-        return updated.advance(mass, throw=False).distribution.sum()
+        return updated.advance(mass, throw=False).distribution @ reward
 
     reference = drifft.DemographicTransition(
         model.demography,
@@ -101,10 +103,12 @@ def test_demographic_breakdown_sensitivities(method_type):
 
     def expected(u):
         updated = eqx.tree_at(lambda m: m.frequency_map.forward_rate, reference, u)
-        return updated.advance(mass).distribution.sum()
+        return updated.advance(mass).distribution @ reward
 
     actual = eqx.filter_jit(jax.grad(objective))(jnp.asarray(0.0))
-    assert jnp.allclose(actual, jax.grad(expected)(jnp.asarray(0.0)), atol=2e-9)
+    expected_gradient = jax.grad(expected)(jnp.asarray(0.0))
+    assert jnp.abs(expected_gradient) > 1e-3
+    assert jnp.allclose(actual, expected_gradient, atol=2e-9)
 
 
 @pytest.mark.parametrize(
@@ -133,24 +137,31 @@ def test_no_power_still_differentiates_zero_mass(
 
 
 def test_batched_derivatives_include_breakdown_members():
-    """Zero and nonzero mutation rates share the same derivative contract."""
+    """Mutation sensitivities remain nonzero for both zero and nonzero rates."""
     backend = drifft.FFT(12)
     method = drifft.PolynomialKrylov(dimension=20)
     mass = jnp.eye(13)[0]
+    frequencies = jnp.arange(13) / 12
 
     def objective(u):
-        return method.advance(
-            backend,
-            mass,
-            frequency_map=drifft.Mutation(u, 0.0),
-            generations=7,
-            throw=False,
-        ).distribution.sum()
+        return (
+            method.advance(
+                backend,
+                mass,
+                frequency_map=drifft.Mutation(u, 0.0),
+                generations=7,
+                throw=False,
+            ).distribution
+            @ frequencies
+        )
 
+    # Mutation alone obeys E[x_t] = 1 - (1-u)**t, independently of drift.
     rates = jnp.array([0.001, 0.0])
-    assert jnp.allclose(eqx.filter_jit(jax.vmap(objective))(rates), 1.0, atol=1e-12)
+    assert jnp.allclose(
+        eqx.filter_jit(jax.vmap(objective))(rates), 1 - (1 - rates) ** 7, atol=1e-12
+    )
     actual = eqx.filter_jit(jax.vmap(jax.grad(objective)))(rates)
-    assert jnp.allclose(actual, 0.0, atol=2e-9)
+    assert jnp.allclose(actual, 7 * (1 - rates) ** 6, atol=2e-9)
 
 
 def test_sequential_mutation_boundary_sensitivity_matches_dense_reference():

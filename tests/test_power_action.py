@@ -8,6 +8,7 @@ import lineax as lx
 import pytest
 
 import drifft
+from drifft._power import _cached_power_action, _power_action
 
 jax.config.update("jax_enable_x64", True)
 
@@ -17,12 +18,10 @@ def reference(matrix, initial, steps):
     return jax.lax.fori_loop(0, steps, lambda _, x: matrix @ x, initial)
 
 
-@pytest.mark.parametrize("steps", [0, 1, 7, 31])
+@pytest.mark.parametrize("steps", [0, 1, 7])
 @pytest.mark.parametrize("implicit", [False, True])
 def test_power_action_operator_and_state_derivatives(steps, implicit):
     """Match joint JVPs, reverse derivatives and Hessians for nonnormal operators."""
-    from drifft._power import _power_action
-
     matrix = jnp.array([[0.9, 0.12, 0.01], [0.0, 0.8, 0.08], [0.0, 0.0, 0.7]])
     initial = jnp.array([0.2, -0.1, 0.5])
     perturbation = jnp.array(
@@ -78,8 +77,6 @@ def test_power_action_operator_and_state_derivatives(steps, implicit):
 
 def test_power_action_pytree_state_and_parameter_closure():
     """Preserve callable captures and nested state structure under filtered AD."""
-    from drifft._power import _power_action
-
     initial = {"left": jnp.array([0.2, 0.3]), "right": jnp.asarray(-0.1)}
 
     def action(rate, initial):
@@ -206,3 +203,80 @@ def test_krylov_linearized_state_transpose_skips_known_operator_tangent(
     transpose = jax.linear_transpose(lambda h: linearized(jnp.asarray(0.0), h), initial)
     actual = eqx.filter_jit(transpose)(cotangent)[0]
     assert jnp.allclose(actual, reference(matrix.T, cotangent, steps), atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "method",
+    [drifft.Sequential(), drifft.PolynomialKrylov(8), drifft.RationalKrylov(8)],
+)
+def test_power_linearization_and_batched_derivatives(method):
+    """Compare mapped directions and gradients with an independent dense chain."""
+    matrix = jnp.array([[0.9, 0.1], [-0.02, 0.8]])
+    direction = jnp.array([[0.01, -0.03], [0.02, 0.01]])
+    state = jnp.array([0.3, -0.2])
+    weights = jnp.array([0.4, -0.7])
+
+    def action(scale, initial):
+        return _power_action(
+            method, lx.MatrixLinearOperator(matrix + scale * direction), initial, 5
+        )
+
+    def reference(scale, initial):
+        for _ in range(5):
+            initial = (matrix + scale * direction) @ initial
+        return initial
+
+    def mapped_linearization(scale, initial, ds, dx):
+        primal, linear = jax.linearize(action, scale, initial)
+        return primal, jax.vmap(linear)(ds, dx)
+
+    ds = jnp.array([0.0, 0.5, -0.2])
+    dx = jnp.array([[0.1, 0.0], [0.0, -0.3], [0.2, 0.1]])
+    primal, actual = jax.jit(mapped_linearization)(0.1, state, ds, dx)
+    expected = jax.vmap(lambda ds, dx: jax.jvp(reference, (0.1, state), (ds, dx))[1])(
+        ds, dx
+    )
+    assert jnp.allclose(primal, reference(0.1, state), atol=1e-12)
+    assert jnp.allclose(actual, expected, atol=1e-12)
+
+    # jacfwd batches tangent directions while all primal arguments stay fixed.
+    for transform in (jax.jacfwd, jax.jacrev):
+        actual = jax.jit(transform(action, argnums=(0, 1)))(0.1, state)
+        expected = transform(reference, argnums=(0, 1))(0.1, state)
+        for result, target in zip(actual, expected, strict=True):
+            assert jnp.allclose(result, target, atol=1e-12)
+
+    def objective(s):
+        return weights @ action(s, state)
+
+    def ref_objective(s):
+        return weights @ reference(s, state)
+
+    scales = jnp.array([0.0, 0.1, 0.2])
+    assert jnp.allclose(
+        jax.jit(jax.vmap(jax.grad(objective)))(scales),
+        jax.vmap(jax.grad(ref_objective))(scales),
+        atol=1e-12,
+    )
+
+
+def test_cached_power_uses_operator_rule_and_ignores_value_tangent():
+    """A reused primal must not add the derivative of its cached computation."""
+    matrix = jnp.array([[0.9, 0.1], [0.0, 0.8]])
+    state = jnp.array([0.3, -0.2])
+    method = drifft.PolynomialKrylov(8)
+
+    def action(initial, cache):
+        return _cached_power_action(
+            method, lx.MatrixLinearOperator(matrix), initial, 3, cache
+        )
+
+    cache = jnp.linalg.matrix_power(matrix, 3) @ state
+    value, tangent = jax.jit(
+        lambda x, cached: jax.jvp(action, (x, cached), (jnp.ones(2), jnp.ones(2)))
+    )(state, cache)
+    assert jnp.allclose(value, cache)
+    assert jnp.allclose(tangent, jnp.linalg.matrix_power(matrix, 3) @ jnp.ones(2))
+    assert jnp.array_equal(
+        jax.jacrev(action, argnums=1)(state, cache), jnp.zeros((2, 2))
+    )

@@ -30,7 +30,10 @@ fastdtwf = ["fastdtwf @ git+https://github.com/jeffspence/fastDTWF@bd36496a64fda
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: large numerical validation"]
+markers = [
+    "slow: large numerical validation",
+    "benchmark: benchmark CLI, worker protocol, and upstream comparison integration",
+]
 
 [tool.ruff]
 line-length = 88

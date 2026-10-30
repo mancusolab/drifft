@@ -8,6 +8,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import lineax as lx
+from jax.experimental import hijax
 
 from ._epochs import (
     AbstractEpochMethod,
@@ -42,20 +43,11 @@ def _matrix_power_matvec(matrix: jax.Array, vector: jax.Array, steps: int):
     return vector
 
 
-@jax.custom_jvp
-def _require_krylov_derivative(value, supported):
-    """Guard direct AD through raw Arnoldi helpers used in research diagnostics.
-
-    Public Krylov methods use the separate mathematical Frechet rule instead.
-    """
-    return value
-
-
-@_require_krylov_derivative.defjvp
 def _require_krylov_derivative_jvp(primals, tangents):
     """Keep the failure check in both the tangent and transposed tangent paths."""
     value, supported = primals
     tangent, _ = tangents
+    tangent = hijax.instantiate_zeros(tangent)
     # A checked residual multiplier survives transposition to reverse mode.
     # Checking only the primal result can be eliminated when requesting grad.
     scale = eqx.error_if(
@@ -66,6 +58,40 @@ def _require_krylov_derivative_jvp(primals, tangents):
         "throw=False applies only to forward evolution failures.",
     )
     return _require_krylov_derivative(value, supported), scale * tangent
+
+
+class _RequireKrylovDerivative(hijax.HiPrim):
+    """Preserve the Arnoldi derivative guard through JVP and reverse mode."""
+
+    def __init__(self, value, supported):
+        """Declare an identity operation with a dynamic support predicate."""
+        self.in_avals = (value, supported)
+        self.out_aval = value
+        self.params = {}
+        super().__init__()
+
+    def expand(self, *args):
+        """Return the unchecked forward value."""
+        value, _ = args
+        return value
+
+    def jvp(self, primals, tangents):
+        """Check support on the tangent path."""
+        return _require_krylov_derivative_jvp(primals, tangents)
+
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def batch_dim_rule(self, axis_data, dims):
+        """Map the result when either input is mapped."""
+        return 0 if any(dim is not None for dim in dims) else None
+
+
+def _require_krylov_derivative(value, supported):
+    """Bind the derivative-only support check."""
+    return _RequireKrylovDerivative(jax.typeof(value), jax.typeof(supported))(
+        value, supported
+    )
 
 
 def _guard_krylov_derivative(value, basis, norm_squared):

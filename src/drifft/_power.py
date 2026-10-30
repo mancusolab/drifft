@@ -1,229 +1,226 @@
-"""Operator-level power actions with filtered tangent and transpose rules.
+"""HiJAX power actions with method-owned sensitivities and explicit adjoints.
 
-Methods supply ``_power_action`` and ``_power_jvp`` in working coordinates.
-Preparation, reconstruction, and diagnostics remain outside this boundary.
+Preparation, reconstruction, and diagnostics remain outside these primitives.
 Sequential uses an exact coupled recurrence. Krylov methods approximate the
 Frechet action and its operator pullback without differentiating Arnoldi bases.
 """
 
 # pattern: Functional Core
+from typing import cast
+
 import equinox as eqx
 import equinox.internal as eqxi
 import jax
-import jax.core
-import jax.interpreters.ad as ad
 import jax.numpy as jnp
 import lineax as lx
+from jax.experimental import hijax
 
 
-def _is_none(value):
-    return value is None
+def _is_ad_leaf(value):
+    return isinstance(value, (hijax.Zero, hijax.GradAccum))
 
 
-def _is_undefined(value):
-    return isinstance(value, ad.UndefinedPrimal)
-
-
-def _materialise(primal, tangent):
-    return jnp.zeros_like(primal) if tangent is None else tangent
-
-
-def _power_impl(operator, initial, steps, method):
-    """Execute the method without differentiating its numerical implementation."""
-    return method._power_action(operator, initial, steps)
-
-
-@eqxi.filter_primitive_def
-def _power_abstract(operator, initial, steps, method):
-    operator, shape = jax.tree.map(
-        lambda x: (
-            jax.ShapeDtypeStruct(x.shape, x.dtype)
-            if isinstance(x, jax.core.ShapedArray)
-            else x
-        ),
-        (operator, initial),
-    )
-    result = eqx.filter_eval_shape(method._power_action, operator, shape, steps)
-    return jax.tree.map(lambda x: jax.core.ShapedArray(x.shape, x.dtype), result)
-
-
-@eqxi.filter_primitive_jvp
-def _power_jvp(primals, tangents):
-    operator, initial, steps, method = primals
-    t_operator, t_initial, t_steps, t_method = tangents
-    assert all(
-        x is None for x in jax.tree.leaves((t_steps, t_method), is_leaf=_is_none)
-    )
-    if any(x is not None for x in jax.tree.leaves(t_operator, is_leaf=_is_none)):
-        tangent_operator = lx.TangentLinearOperator(operator, t_operator)
-    else:
-        tangent_operator = None
-    tangent_initial = jax.tree.map(_materialise, initial, t_initial, is_leaf=_is_none)
-    return method._power_jvp(
-        operator, tangent_operator, initial, tangent_initial, steps
+def _has_accum(tree):
+    return any(
+        isinstance(x, hijax.GradAccum)
+        for x in jax.tree.leaves(tree, is_leaf=_is_ad_leaf)
     )
 
 
-@eqxi.filter_primitive_transpose(materialise_zeros=True)
-def _power_transpose(inputs, cotangent):
-    operator, initial, steps, method = inputs
-    # Operator cotangents arise by transposing the operator-tangent action in
-    # the JVP. This rule handles the primitive's linear initial-state argument.
-    if any(
-        isinstance(x, ad.UndefinedPrimal)
-        for x in jax.tree.leaves(operator, is_leaf=_is_undefined)
-    ):
-        raise ValueError("power actions are linear only in the initial state")
-    result = _power_action(method, operator.T, cotangent, steps)
-    initial_ct = jax.tree.map(
-        lambda x, ct: ct if isinstance(x, ad.UndefinedPrimal) else None,
-        initial,
-        result,
-        is_leaf=_is_undefined,
-    )
-    return (
-        jax.tree.map(lambda _: None, operator),
-        initial_ct,
-        None,
-        jax.tree.map(lambda _: None, method),
+def _tangent_or_none(tangent):
+    return None if isinstance(tangent, hijax.Zero) else tangent
+
+
+def _operator_tangent(tangent):
+    return jax.tree.map(_tangent_or_none, tangent, is_leaf=_is_ad_leaf)
+
+
+def _has_tangent(tree):
+    return any(
+        not isinstance(x, hijax.Zero)
+        for x in jax.tree.leaves(tree, is_leaf=_is_ad_leaf)
     )
 
 
-_power_p = eqxi.create_vprim(
-    "drifft_power_action",
-    eqxi.filter_primitive_def(_power_impl),
-    _power_abstract,
-    _power_jvp,
-    _power_transpose,
-)
-eqxi.register_impl_finalisation(_power_p)
+def _accumulate(accums, values):
+    def add(accum, value):
+        if isinstance(accum, hijax.GradAccum):
+            accum.accum(value)
+
+    jax.tree.map(add, accums, values, is_leaf=lambda x: x is None or _is_ad_leaf(x))
+
+
+class _PowerAction(hijax.HiPrim):
+    """Power evaluation or cached value with the same mathematical derivative."""
+
+    def __init__(self, avals, static, *, cached):
+        """Keep array leaves dynamic and filtered Python configuration static."""
+        self.in_avals = avals
+        self.out_aval = avals[1]
+        self.params = dict(static=static, cached=cached)
+        super().__init__()
+
+    def expand(self, *args):
+        """Compute a power or retain the primal already computed with status."""
+        operator, initial, steps, method, *value = eqx.combine(
+            args, cast(tuple, self.params["static"])
+        )
+        if self.params["cached"]:
+            return value[0]
+        return method._power_action(operator, initial, steps)
+
+    def jvp(self, primals, tangents):
+        """Apply method-owned sensitivities without differentiating configuration."""
+        operator, initial, steps, method, *value = eqx.combine(
+            primals, cast(tuple, self.params["static"])
+        )
+        t_operator, t_initial, t_steps, t_method, *_ = tangents
+        if _has_tangent((t_steps, t_method)):
+            raise TypeError(
+                "power-action method configuration and exponent are nondifferentiable"
+            )
+        operator_direction = _operator_tangent(t_operator)
+        tangent_operator = (
+            lx.TangentLinearOperator(operator, operator_direction)
+            if _has_tangent(t_operator)
+            else None
+        )
+        tangent_initial = jax.tree.map(
+            hijax.instantiate_zeros, t_initial, is_leaf=_is_ad_leaf
+        )
+        if not self.params["cached"]:
+            return method._power_jvp(
+                operator, tangent_operator, initial, tangent_initial, steps
+            )
+        if tangent_operator is None:
+            tangent = _power_action(method, operator, tangent_initial, steps)
+        else:
+            tangent = _frechet_action(
+                method, operator, initial, operator_direction, tangent_initial, steps
+            )
+        return value[0], tangent
+
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def transpose(self, out_ct, *args):
+        """Transpose only the linear initial-state argument of an uncached power."""
+        operator, initial, steps, method, *_ = eqx.combine(
+            args, cast(tuple, self.params["static"])
+        )
+        if self.params["cached"] or _has_accum((operator, steps, method)):
+            raise ValueError("power actions are linear only in the initial state")
+        if _has_accum(initial):
+            cotangent = jax.tree.map(
+                hijax.instantiate_zeros, out_ct, is_leaf=_is_ad_leaf
+            )
+            _accumulate(initial, _power_action(method, operator.T, cotangent, steps))
+
+    def batch_dim_rule(self, axis_data, dims):
+        """Retain unmapped primal outputs during tangent-only batching."""
+        dim = 0 if any(x is not None for x in jax.tree.leaves(dims)) else None
+        return jax.tree.map(lambda _: dim, self.out_aval)
+
+
+def _bind_power(operator, initial, steps, method, *value):
+    dynamic, static = eqx.partition(
+        (operator, initial, steps, method, *value), eqx.is_array
+    )
+    avals = jax.tree.map(jax.typeof, dynamic)
+    return _PowerAction(avals, static, cached=bool(value))(*dynamic)
 
 
 def _power_action(method, operator, initial, steps):
     """Apply a power with method-owned JVPs and an operator-level transpose."""
-    method = eqxi.nondifferentiable(method, name="power-action method configuration")
-    return eqxi.filter_primitive_bind(_power_p, operator, initial, steps, method)
+    return _bind_power(operator, initial, steps, method)
 
 
-@eqx.filter_custom_jvp
 def _cached_power_action(method, operator, initial, steps, value):
     """Attach the mathematical power rule to an already computed primal value."""
-    return value
+    return _bind_power(operator, initial, steps, method, value)
 
 
-@_cached_power_action.def_jvp
-def _cached_power_jvp(primals, tangents):
-    method, operator, initial, steps, value = primals
-    t_method, t_operator, t_initial, t_steps, _ = tangents
-    if any(
-        x is not None for x in jax.tree.leaves((t_method, t_steps), is_leaf=_is_none)
-    ):
-        raise TypeError(
-            "power-action method configuration and exponent are nondifferentiable"
+class _FrechetAction(hijax.HiPrim):
+    """First-order Krylov sensitivity with an explicit low-rank pullback."""
+
+    def __init__(self, avals, static):
+        """Declare the state result and preserve filtered operator structure."""
+        self.in_avals = avals
+        self.out_aval = avals[1]
+        self.params = dict(static=static)
+        super().__init__()
+
+    def expand(self, *args):
+        """Evaluate the coupled sensitivity and enforce tangent convergence."""
+        operator, initial, t_operator, t_initial, steps, method = eqx.combine(
+            args, cast(tuple, self.params["static"])
         )
-    tangent_operator = None
-    if any(x is not None for x in jax.tree.leaves(t_operator, is_leaf=_is_none)):
-        tangent_operator = lx.TangentLinearOperator(operator, t_operator)
-    tangent_initial = jax.tree.map(_materialise, initial, t_initial, is_leaf=_is_none)
-    if tangent_operator is None:
-        tangent = _power_action(method, operator, tangent_initial, steps)
-    else:
-        tangent = _frechet_action(
-            method, operator, initial, t_operator, tangent_initial, steps
-        )
-    return value, tangent
-
-
-def _frechet_impl(operator, initial, t_operator, t_initial, steps, method):
-    result = method._frechet_action(
-        operator,
-        lx.TangentLinearOperator(operator, t_operator),
-        initial,
-        t_initial,
-        steps,
-    )
-    return eqx.error_if(
-        result.distribution,
-        ~result.converged,
-        "Krylov sensitivity action did not converge; increase dimension or use Sequential",
-    )
-
-
-@eqxi.filter_primitive_def
-def _frechet_abstract(operator, initial, t_operator, t_initial, steps, method):
-    return initial
-
-
-@eqxi.filter_primitive_jvp
-def _frechet_jvp(primals, tangents):
-    raise NotImplementedError(
-        "Higher-order Krylov sensitivities are not implemented; use Sequential"
-    )
-
-
-@eqxi.filter_primitive_transpose(materialise_zeros=True)
-def _frechet_transpose(inputs, cotangent):
-    operator, initial, t_operator, t_initial, steps, method = inputs
-    # This transpose is a first-order mathematical adjoint. Do not accidentally
-    # differentiate the numerical construction of its Krylov factors.
-    operator, initial, cotangent = eqxi.nondifferentiable(
-        (operator, initial, cotangent),
-        msg="Higher-order Krylov sensitivities are not implemented; use Sequential",
-    )
-    if any(
-        _is_undefined(x) for x in jax.tree.leaves(t_operator, is_leaf=_is_undefined)
-    ):
-        template = jax.tree.map(
-            lambda t: (
-                jnp.zeros(t.aval.shape, t.aval.dtype) if _is_undefined(t) else None
-            ),
-            t_operator,
-            is_leaf=_is_undefined,
-        )
-        operator_ct, error, converged = method._frechet_transpose(
-            operator, template, initial, cotangent, steps
-        )
-        operator_ct = eqx.error_if(
-            operator_ct,
-            ~converged,
-            "Krylov operator pullback did not converge; increase dimension or use Sequential",
-        )
-    else:
-        # A known operator direction has no requested cotangent. In particular,
-        # an all-None cotangent tree cannot carry an error_if runtime check.
-        operator_ct = jax.tree.map(lambda _: None, t_operator)
-    if any(_is_undefined(x) for x in jax.tree.leaves(t_initial, is_leaf=_is_undefined)):
-        state_ct = _power_action(method, operator.T, cotangent, steps)
-        state_ct = jax.tree.map(
-            lambda x, ct: ct if _is_undefined(x) else None,
+        result = method._frechet_action(
+            operator,
+            lx.TangentLinearOperator(operator, t_operator),
+            initial,
             t_initial,
-            state_ct,
-            is_leaf=_is_undefined,
+            steps,
         )
-    else:
-        state_ct = jax.tree.map(lambda _: None, t_initial)
-    return (
-        jax.tree.map(lambda _: None, operator),
-        jax.tree.map(lambda _: None, initial),
-        operator_ct,
-        state_ct,
-        None,
-        jax.tree.map(lambda _: None, method),
-    )
+        return eqx.error_if(
+            result.distribution,
+            ~result.converged,
+            "Krylov sensitivity action did not converge; increase dimension or use Sequential",
+        )
 
+    def jvp(self, primals, tangents):
+        """Reject unsupported higher-order Krylov sensitivities explicitly."""
+        raise NotImplementedError(
+            "Higher-order Krylov sensitivities are not implemented; use Sequential"
+        )
 
-_frechet_p = eqxi.create_vprim(
-    "drifft_frechet_action",
-    eqxi.filter_primitive_def(_frechet_impl),
-    _frechet_abstract,
-    _frechet_jvp,
-    _frechet_transpose,
-)
-eqxi.register_impl_finalisation(_frechet_p)
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def transpose(self, out_ct, *args):
+        """Accumulate operator and state directions using mathematical adjoints."""
+        operator, initial, t_operator, t_initial, steps, method = eqx.combine(
+            args, cast(tuple, self.params["static"])
+        )
+        if _has_accum((operator, initial, steps, method)):
+            raise ValueError("Frechet actions are linear only in tangent arguments")
+        cotangent = jax.tree.map(hijax.instantiate_zeros, out_ct, is_leaf=_is_ad_leaf)
+        operator, initial, cotangent = eqxi.nondifferentiable(
+            (operator, initial, cotangent),
+            msg="Higher-order Krylov sensitivities are not implemented; use Sequential",
+        )
+        if _has_accum(t_operator):
+            template = jax.tree.map(
+                lambda t: (
+                    jnp.zeros(t.aval.shape, t.aval.dtype)
+                    if isinstance(t, hijax.GradAccum)
+                    else None
+                ),
+                t_operator,
+                is_leaf=_is_ad_leaf,
+            )
+            operator_ct, _, converged = method._frechet_transpose(
+                operator, template, initial, cotangent, steps
+            )
+            operator_ct = eqx.error_if(
+                operator_ct,
+                ~converged,
+                "Krylov operator pullback did not converge; increase dimension or use Sequential",
+            )
+            _accumulate(t_operator, operator_ct)
+        if _has_accum(t_initial):
+            _accumulate(t_initial, _power_action(method, operator.T, cotangent, steps))
+
+    def batch_dim_rule(self, axis_data, dims):
+        """Map sensitivity outputs only when an input is mapped."""
+        dim = 0 if any(x is not None for x in jax.tree.leaves(dims)) else None
+        return jax.tree.map(lambda _: dim, self.out_aval)
 
 
 def _frechet_action(method, operator, initial, t_operator, t_initial, steps):
-    """Apply the linearized power as a primitive with an explicit adjoint."""
-    return eqxi.filter_primitive_bind(
-        _frechet_p, operator, initial, t_operator, t_initial, steps, method
+    """Bind the linearized power with an explicit adjoint."""
+    dynamic, static = eqx.partition(
+        (operator, initial, t_operator, t_initial, steps, method), eqx.is_array
     )
+    avals = jax.tree.map(jax.typeof, dynamic)
+    return _FrechetAction(avals, static)(*dynamic)

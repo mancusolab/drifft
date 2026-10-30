@@ -11,8 +11,18 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 
 
-@pytest.mark.parametrize("throw", [False, True])
-@pytest.mark.parametrize("strength", [-0.01, 0.2, float("nan"), float("inf")])
+# All invalid domains must raise with throw=False; one representative also
+# checks the default throw=True path.
+@pytest.mark.parametrize(
+    "strength,throw",
+    [
+        (-0.01, False),
+        (0.2, False),
+        (float("nan"), False),
+        (float("inf"), False),
+        (-0.01, True),
+    ],
+)
 def test_zero_generation_epoch_rejects_invalid_selection(strength, throw):
     """Domain violations raise even when no transition consumes the strength."""
     backend = drifft.Jacobi(8, max_strength=0.1)

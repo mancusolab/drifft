@@ -103,7 +103,13 @@ the executed primal Krylov approximation. They approximate the underlying
 power's sensitivity. Forward and reverse approximations must be checked for
 accuracy and adjoint consistency as the basis dimension increases.
 
-Selection maps have explicit custom JVP rules:
+All drifft-owned custom differentiation uses
+[`jax.experimental.hijax.HiPrim`](https://docs.jax.dev/en/latest/301/custom-derivatives.html).
+Each primitive owns its primal operation, JVP, and batching rule; linearization
+and reverse mode are derived from the JVP. Operations linear in selected inputs
+also provide explicit transpose rules.
+
+Selection maps have analytic JVP rules:
 
 | Function | Purpose |
 | --- | --- |
@@ -113,12 +119,16 @@ Selection maps have explicit custom JVP rules:
 JAX uses these JVP rules for forward mode and constructs reverse-mode rules
 from them.
 
-Custom differentiation kernels in the three optimized backends use
-[`jax.experimental.hijax.HiPrim`](https://docs.jax.dev/en/latest/301/custom-derivatives.html).
-Each supplies its primal operation, JVP, and batching rule. Linearization and
-reverse mode are derived from the JVP; kernels linear in values or mass also
-provide matched transpose rules. Other backend operations use ordinary JAX
-differentiation, while evolution methods retain their operator-level rules.
+Power actions use the same HiJAX interface, with Equinox partitioning to keep
+operator arrays dynamic and Python configuration static. The cached-power path
+attaches the mathematical derivative to an existing primal without differentiating
+the cached value. The Fréchet primitive supplies the explicit operator pullback
+and rejects unsupported higher derivatives. Symbolic zero tangents remain absent
+operator directions; state tangents are materialized when required.
+
+Custom kernels in the three optimized backends follow this convention too.
+Kernels linear in values or mass provide matched transpose rules; other backend
+operations use ordinary JAX differentiation.
 Dense uses ordinary JAX differentiation throughout its binomial recurrence,
 providing an independent small-population reference for these custom kernels.
 

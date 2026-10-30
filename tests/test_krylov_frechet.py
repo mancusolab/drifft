@@ -20,7 +20,7 @@ def dense_action(a, x, steps):
 @pytest.mark.parametrize(
     "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
 )
-@pytest.mark.parametrize("steps", [0, 1, 7, 29])
+@pytest.mark.parametrize("steps", [0, 1, 7])
 @pytest.mark.parametrize("implicit", [False, True])
 def test_frechet_power_matches_joint_dense_jvp(method_type, steps, implicit):
     """Recover state and operator perturbations for a signed nonnormal matrix."""

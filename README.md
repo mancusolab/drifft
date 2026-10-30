@@ -68,6 +68,16 @@ uv run pytest -p no:capture
 uv run pre-commit run --all-files
 ```
 
+For a focused numerical run, use
+`uv run pytest -m "not benchmark and not slow"`. Run benchmark integration checks
+with `uv run pytest -m benchmark` and large-population checks with
+`uv run pytest -m slow`. The default command and CI run all categories.
+
+Prefer tests for distinct numerical regimes and failure modes over Cartesian
+products of every option. Keep independent reference formulas in
+`tests/_reference.py`; derivative checks should use objectives with nonzero
+sensitivity, alongside any conservation checks.
+
 See [validation and benchmarks](docs/benchmarks.md) for
 benchmark commands and [epoch comparisons](benchmarks/EPOCHS.md) for results
 against fastDTWF. The [demographic timing report](benchmarks/RATIONAL_KRYLOV.md)

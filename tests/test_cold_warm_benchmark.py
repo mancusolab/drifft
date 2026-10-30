@@ -13,6 +13,8 @@ import numpy as np
 import pytest
 from scipy.stats import binom
 
+pytestmark = pytest.mark.benchmark
+
 SCRIPT = Path(__file__).resolve().parents[1] / "benchmarks" / "compare_startup.py"
 
 

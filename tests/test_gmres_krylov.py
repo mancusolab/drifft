@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 import pytest
-from test_demography import dense_transition
+from _reference import dense_transition
 
 import drifft
 from drifft._epochs import _PowerProblem
