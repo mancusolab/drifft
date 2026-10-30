@@ -71,6 +71,7 @@ The private implementation is organized by responsibility:
 | Module | Responsibility |
 | --- | --- |
 | `_polynomial.py` | Normalized Gegenbauer recurrences, streaming moments and their HiJAX rules; Chebyshev coefficient operations |
+| `_banded.py` | Compact symmetric pentadiagonal operators and reusable Lineax Cholesky solves |
 | `_backend/` | Population geometry, sampling, accelerated evaluation and representation-specific assembly |
 | `_evolution/preparation.py` | Adapt representations to power problems and route representation validation |
 | `_evolution/problem.py` | Working coordinates, reconstruction, error norms and evolution results |

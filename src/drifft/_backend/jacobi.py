@@ -7,9 +7,11 @@ from typing import final
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import lineax as lx
 from jax.scipy.special import gammaln, xlog1py, xlogy
 from scipy.special import roots_jacobi
 
+from .._banded import PentadiagonalCholesky, SymmetricPentadiagonalOperator
 from .._frequency import (
     AbstractFrequencyMap,
     AdditiveSelection,
@@ -149,55 +151,6 @@ def _diploid_padding(copies: int, rank: int, strength: float, tolerance: float) 
     return min(copies - 1, max(3, rank, math.ceil((required + rank) / 2)))
 
 
-def _pentadiagonal_solver(diagonal, adjacent, second):
-    """Factor an SPD quadratic of the Hahn matrix in linear storage and work.
-
-    The two-band Cholesky recurrence avoids a dense O(R³) factorization inside
-    O(rR) assembly. Generic epoch shifted solves still use Lineax.
-    """
-    size = diagonal.size
-    # For L with two lower bands, each Cholesky row depends on only the previous
-    # two pivots and previous first-band entry. Leading zero bands make the
-    # initial dummy pivots harmless, keeping one uniform scan for all rows.
-    adjacent = jnp.pad(adjacent, (1, 0))
-    second = jnp.pad(second, (2, 0))[:size]
-
-    def factor(carry, entries):
-        previous, previous_previous, previous_lower = carry
-        diag, first, outer = entries
-        lower2 = outer / previous_previous
-        lower1 = (first - lower2 * previous_lower) / previous
-        root = jnp.sqrt(diag - lower1**2 - lower2**2)
-        return (root, previous, lower1), (root, lower1, lower2)
-
-    _, (roots, lower1, lower2) = jax.lax.scan(
-        factor,
-        (jnp.asarray(1.0), jnp.asarray(1.0), jnp.asarray(0.0)),
-        (diagonal, adjacent, second),
-    )
-
-    def triangular(rhs, diag, first, outer):
-        def step(carry, entries):
-            previous, previous_previous = carry
-            value, root, a, b = entries
-            result = (value - a * previous - b * previous_previous) / root
-            return (result, previous), result
-
-        return jax.lax.scan(
-            step, (jnp.asarray(0.0), jnp.asarray(0.0)), (rhs, diag, first, outer)
-        )[1]
-
-    def solve(rhs):
-        forward = triangular(rhs, roots, lower1, lower2)
-        # Reverse the coordinates to reuse the forward substitution for L.T;
-        # shift the lower bands first so each entry aligns with its upper row.
-        upper1 = jnp.concatenate((lower1[1:], jnp.zeros(1)))
-        upper2 = jnp.concatenate((lower2[2:], jnp.zeros(min(2, size))))
-        return triangular(forward[::-1], roots[::-1], upper1[::-1], upper2[::-1])[::-1]
-
-    return solve
-
-
 def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     """Assemble all r+2 coordinates, including nonabsorbing endpoint coupling."""
     numerator, denominator = _rational_coefficients(frequency_map)
@@ -212,11 +165,18 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     d0, d1, d2 = denominator
     # Z is tridiagonal, so d0*I + d1*Z + d2*Z² has only five bands.
     # Factor the denominator once and reuse it for every polynomial column.
-    solve = _pentadiagonal_solver(
+    operator = SymmetricPentadiagonalOperator(
         d0 + d2 * (jnp.pad(off**2, (1, 0)) + jnp.pad(off**2, (0, 1))),
         d1 * off,
         d2 * off[:-1] * off[1:],
     )
+
+    solver = PentadiagonalCholesky()
+    factor = solver.init(operator, {})
+
+    def solve(rhs):
+        """Reuse the banded factorization with Lineax's implicit derivative rules."""
+        return lx.linear_solve(operator, rhs, solver, state=factor).value
 
     def mapped(vector):
         """Apply the rational map g(Z) via one numerator action and banded solve."""
