@@ -17,9 +17,9 @@ Keep names aligned with the direction of the transition:
 
 | Name | Meaning |
 | --- | --- |
-| `backend` | Prepared geometry (`FFT`, `NUFFT`, or reduced `Jacobi`) |
+| `backend` | Prepared transition geometry (`FFT`, `NUFFT`, or `Jacobi`); Jacobi also supplies reduced Krylov geometry |
 | `method` | Geometry-free epoch algorithm (`Sequential`, `PolynomialKrylov`, or `RationalKrylov`) |
-| `boundary_backend` | FFT/NUFFT factory for demographic size changes |
+| `boundary_backend` | Transition backend factory for demographic size changes |
 | `frequency_map` | Selection, mutation, or a composition of both |
 | `transition` | Backend bound to selection or explicit source probabilities |
 | `probabilities`, `stencil_width` | Computed quantities exposed as properties |

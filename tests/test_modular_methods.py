@@ -56,15 +56,17 @@ def test_method_reuses_settings_across_population_sizes():
 @pytest.mark.parametrize(
     "history", [drifft.Demography([8], []), drifft.Demography([8, 5], [1])]
 )
-def test_unsupported_combinations_rejected_without_holds(history):
+def test_jacobi_default_boundary_and_reduced_map_validation_without_holds(history):
     """Reject invalid combinations even when no hold would execute."""
-    with pytest.raises(TypeError, match="boundary_backend"):
-        drifft.DemographicTransition(
-            history,
-            backend=drifft.Jacobi,
-            method=drifft.RationalKrylov(),
-            frequency_map=drifft.Neutral(),
-        )
+    model = drifft.DemographicTransition(
+        history,
+        backend=drifft.Jacobi,
+        method=drifft.RationalKrylov(),
+        frequency_map=drifft.Neutral(),
+    )
+    initial = jnp.eye(17)[1]
+    expected = initial if not history.generations else dense_transition(8, 5, 0)[1]
+    assert jnp.allclose(model.advance(initial).distribution, expected, atol=2e-12)
     with pytest.raises(TypeError, match="diploid selection"):
         drifft.DemographicTransition(
             history,

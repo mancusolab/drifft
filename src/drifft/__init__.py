@@ -23,11 +23,10 @@ from ._frequency import (
     RecessiveSelection,
     Underdominance,
 )
-from ._jacobi import Jacobi
 from ._krylov import PolynomialKrylov, RationalKrylov
 from ._operator import Transition
 from ._solve import ExpectedVisitsResult
-from .backends import FFT, NUFFT, AbstractTransitionBackend
+from .backends import FFT, NUFFT, AbstractTransitionBackend, Jacobi
 
 __all__ = [
     "AbstractEpochMethod",

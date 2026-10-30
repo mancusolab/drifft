@@ -66,9 +66,11 @@ Jacobi's `one_step_tolerance` plans ideal polynomial truncation and assembly
 padding separately. It is not a total implemented-error guarantee.
 `max_strength` bounds the absolute values of both diploid selection
 coefficients, including those derived by constrained selection classes. Prepare
-geometry with a bound covering the parameters you will evaluate. Jacobi checks
-these bounds and the mutation-rate domain at runtime, even for identity
-histories. See [supported frequency maps](../api/backends.md#jacobi).
+geometry with a bound covering the parameters you will evaluate in reduced
+Krylov evolution. Jacobi checks these assembly bounds and the mutation-rate
+domain at runtime, even for identity Krylov histories. One-generation operations
+and Sequential do not use the reduced assembly. See
+[supported frequency maps](../api/backends.md#drifft.Jacobi).
 
 Krylov's `error_estimate` combines a smaller-basis comparison with a check of
 the reduced recurrence. The default acceptance threshold is
@@ -120,7 +122,7 @@ Krylov derivatives use separate approximations to the mathematical power
 sensitivity and its operator pullback. They do not differentiate Arnoldi bases.
 Zero and invariant seeds are supported, but a failed sensitivity or pullback
 raises even with `throw=False`. Higher-order operator sensitivities currently
-raise; use Sequential with FFT or NUFFT for those calculations. See the
+raise; use Sequential for those calculations. See the
 [autodiff chapter](../methods/autodiff.md#accuracy-and-limitations) for details.
 
 !!! tip "Validate derivatives on a small reference problem"

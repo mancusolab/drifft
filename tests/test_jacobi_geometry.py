@@ -9,7 +9,7 @@ from jax.scipy.special import gammaln, xlog1py, xlogy
 from scipy.special import roots_jacobi
 
 import drifft
-from drifft._jacobi import _JacobiGeometry, _polynomials
+from drifft.backends.jacobi import _JacobiGeometry, _polynomials
 
 jax.config.update("jax_enable_x64", True)
 

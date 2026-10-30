@@ -312,7 +312,7 @@ def test_padding_handles_strength_bounds_approaching_one(rank):
 
 def test_genuinely_truncated_rational_assembly_matches_sampled_reduced_operator():
     """Compare ED independently when both rank and Hahn padding are truncated."""
-    from drifft._jacobi import _assemble_diploid
+    from drifft.backends.jacobi import _assemble_diploid
 
     backend = drifft.Jacobi(512)
     geometry = backend._geometry

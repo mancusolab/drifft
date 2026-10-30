@@ -14,13 +14,12 @@ from ._epochs import (
     EpochResult,
     _epoch_result,
     _PowerProblem,
-    _prepare_epoch,
+    _prepare_evolution,
 )
 from ._frequency import AbstractFrequencyMap
-from ._jacobi import Jacobi
 from ._power import _cached_power_action, _frechet_action
 from ._power import _power_action as _operator_power_action
-from .backends import AbstractTransitionBackend
+from .backends import AbstractTransitionBackend, Jacobi
 
 
 def _matrix_power_matvec(matrix: jax.Array, vector: jax.Array, steps: int):
@@ -63,7 +62,7 @@ def _require_krylov_derivative_jvp(primals, tangents):
         jnp.ones((), dtype=value.dtype),
         ~supported,
         "Krylov derivatives require a nonzero seed and no Arnoldi breakdown; "
-        "use Sequential with FFT or NUFFT for derivatives in this regime. "
+        "use Sequential for derivatives in this regime. "
         "throw=False applies only to forward evolution failures.",
     )
     return _require_krylov_derivative(value, supported), scale * tangent
@@ -431,8 +430,14 @@ class RationalKrylov(AbstractEpochMethod):
         rank and dimension independently when validating a new numerical regime.
         """
         self.validate(backend, frequency_map)
-        problem = _prepare_epoch(
-            backend, distribution, frequency_map, generations, segregating, immigration
+        problem = _prepare_evolution(
+            self,
+            backend,
+            distribution,
+            frequency_map,
+            generations,
+            segregating,
+            immigration,
         )
         return self.solve(problem, throw=throw)
 
@@ -636,8 +641,14 @@ class PolynomialKrylov(AbstractEpochMethod):
         Jacobi's process-domain checks remain active, including with `throw=False`.
         """
         self.validate(backend, frequency_map)
-        problem = _prepare_epoch(
-            backend, distribution, frequency_map, generations, segregating, immigration
+        problem = _prepare_evolution(
+            self,
+            backend,
+            distribution,
+            frequency_map,
+            generations,
+            segregating,
+            immigration,
         )
         return self.solve(problem, throw=throw)
 

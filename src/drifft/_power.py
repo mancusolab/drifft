@@ -145,7 +145,7 @@ def _frechet_impl(operator, initial, t_operator, t_initial, steps, method):
     return eqx.error_if(
         result.distribution,
         ~result.converged,
-        "Krylov sensitivity action did not converge; increase dimension or use Sequential with FFT or NUFFT",
+        "Krylov sensitivity action did not converge; increase dimension or use Sequential",
     )
 
 
@@ -157,7 +157,7 @@ def _frechet_abstract(operator, initial, t_operator, t_initial, steps, method):
 @eqxi.filter_primitive_jvp
 def _frechet_jvp(primals, tangents):
     raise NotImplementedError(
-        "Higher-order Krylov sensitivities are not implemented; use Sequential with FFT or NUFFT"
+        "Higher-order Krylov sensitivities are not implemented; use Sequential"
     )
 
 
@@ -168,7 +168,7 @@ def _frechet_transpose(inputs, cotangent):
     # differentiate the numerical construction of its Krylov factors.
     operator, initial, cotangent = eqxi.nondifferentiable(
         (operator, initial, cotangent),
-        msg="Higher-order Krylov sensitivities are not implemented; use Sequential with FFT or NUFFT",
+        msg="Higher-order Krylov sensitivities are not implemented; use Sequential",
     )
     if any(
         _is_undefined(x) for x in jax.tree.leaves(t_operator, is_leaf=_is_undefined)
@@ -186,7 +186,7 @@ def _frechet_transpose(inputs, cotangent):
         operator_ct = eqx.error_if(
             operator_ct,
             ~converged,
-            "Krylov operator pullback did not converge; increase dimension or use Sequential with FFT or NUFFT",
+            "Krylov operator pullback did not converge; increase dimension or use Sequential",
         )
     else:
         # A known operator direction has no requested cotangent. In particular,

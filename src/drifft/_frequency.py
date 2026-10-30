@@ -202,9 +202,9 @@ fixation; a lethal derived homozygote is outside this map's domain.
 !!! warning "Parameter domain"
 
     Value constraints are caller preconditions, including under JIT and vmap.
-    Outputs and parameters are not clipped. FFT and NUFFT support this map.
-    Jacobi requires both coefficients to have absolute value at most its
-    configured `max_strength`, which is strictly below one.
+    Outputs and parameters are not clipped. All three backends support this map.
+    Jacobi's reduced Krylov assembly requires both coefficients to have absolute
+    value at most its configured `max_strength`, which is strictly below one.
 """
 
 

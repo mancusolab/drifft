@@ -13,9 +13,11 @@ cost becomes a limitation.
 | Faster propagation across long constant-size intervals | Jacobi with RationalKrylov, which works in a reduced state |
 | Krylov propagation with a custom frequency map | PolynomialKrylov with FFT or NUFFT |
 
-Jacobi supports a bounded family of diploid selection and mutation maps; check
-[compatibility and parameter bounds](../api/backends.md#jacobi) before switching.
-If you need `model.expect()`, use FFT or NUFFT with Sequential.
+Jacobi's reduced Krylov assembly supports a bounded family of diploid selection
+and mutation maps; check [compatibility and parameter bounds](../api/backends.md#drifft.Jacobi)
+before switching. Its one-generation operations and Sequential support arbitrary
+frequency maps producing valid probabilities. If you need `model.expect()`,
+use Sequential with any backend.
 
 The [Schiffels–Durbin example](../examples/schiffels_durbin.md) demonstrates
 Jacobi and RationalKrylov with selection and recurrent mutation. The

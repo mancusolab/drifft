@@ -26,7 +26,9 @@ class Transition(eqx.Module):
     For a frequency map, $q_i=q(i/M_s)$ where $M_s$ is `source_gene_copies`.
 
     Segregating operations restrict the kernel to interior allele counts and
-    discard endpoint mass. For a square interior kernel $Q$, `expected_visits`
+    discard endpoint mass. They require complete, ordered allele-count grids;
+    sampled probability rows are for full-state operations. For a square
+    interior kernel $Q$, `expected_visits`
     solves $(I-Q^T)g=e_1$, including the initial generation. Finite visits require
     eventual endpoint hitting; mutation does not restore discarded trajectories.
     """
@@ -62,8 +64,10 @@ class Transition(eqx.Module):
         **Raises:**
 
         `ValueError` for ambiguous configuration or invalid source dimensions or
-        probability shape; `TypeError` for an invalid frequency-map type.
+        probability shape; `TypeError` for an invalid backend or frequency-map type.
         """
+        if not isinstance(backend, AbstractTransitionBackend):
+            raise TypeError("backend must be an AbstractTransitionBackend")
         self.backend = backend
         self.frequency_map = frequency_map
         self._probabilities = (

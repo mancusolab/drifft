@@ -107,7 +107,7 @@ block solves reuse the original shifted factorization.
 Zero and invariant seeds are supported when the sensitivity checks converge.
 A failed sensitivity or pullback raises even with `throw=False`, and no
 automatic fallback is performed. Higher-order operator sensitivities currently
-raise; use Sequential with FFT or NUFFT for these. See the
+raise; use Sequential for these. See the
 [autodiff chapter](autodiff.md#accuracy-and-limitations) for the derivative
 accuracy contract and validation requirements.
 
@@ -120,7 +120,8 @@ map; use Sequential for `model.expect()`.
 Select `PolynomialKrylov` or `RationalKrylov` as the method of a
 `DemographicTransition`, or apply it directly to a prepared backend. Both
 support FFT, NUFFT, and Jacobi; frequency-map support follows the backend.
-Population-size boundary steps still use FFT/NUFFT.
+Population-size boundary steps use the configured transition backend, which
+defaults to the hold backend.
 
 See [choosing algorithms](../guide/backends.md) for recommendations,
 [direct epoch operations](epochs.md) for timing and immigration semantics, and

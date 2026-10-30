@@ -1,8 +1,8 @@
 # Jacobi reduction
 
-`Jacobi` represents constant-size evolution in polynomial coefficients. Its
-reduced state is used by an evolution method; it is a different approximation
-from the Chebyshev interpolation used by `NUFFT`.
+`Jacobi` approximates binomial expectations in polynomial coefficients. It
+supports one-generation transitions and supplies a reduced state for Krylov
+evolution. This differs from the Chebyshev interpolation used by `NUFFT`.
 
 ## Problem and representation
 
@@ -21,8 +21,9 @@ has $r+2$ coordinates; the segregating representation has $r$.
 
 Write the one-generation expectation approximation as $P\approx DE$, with
 $E$ mapping values to coefficients and $D$ evaluating at the offspring
-probabilities after the full frequency map. Then
-$H=ED$ is a reduced square matrix. In exact coefficient arithmetic,
+probabilities after the full frequency map. One-generation operations apply
+these external maps directly. For Krylov evolution, $H=ED$ is a reduced square
+matrix. In exact coefficient arithmetic,
 
 $$
 \widetilde P^{\,g}=DH^{g-1}E,\qquad g\ge1.
@@ -50,9 +51,11 @@ full $r+2$ matrix includes their coupling to the interior. No dense population
 transition is formed.
 
 Forward mass is evaluated in the opposite order, using the transposed external
-maps. The source mass is encoded once, the method advances its reduced state,
-and the output is decoded once. [Krylov methods](jacobi_krylov.md) describe the
-power approximation and constant immigration.
+maps. For Krylov evolution, the source mass is encoded once, the method advances
+its reduced state, and the output is decoded once.
+[Krylov methods](jacobi_krylov.md) describe the power approximation and constant
+immigration. Sequential repeats the one-generation count-space transition,
+including the external transforms at each generation.
 
 ## Cost and reuse
 
@@ -69,11 +72,12 @@ factorization across basis vectors. The shift also depends on interval duration.
 | Dense LU for rational Krylov | $O(r^3)$ factorization; $O(r^2)$ per solve |
 | Source-mass encoding | $O(Mr)$ with the streamed polynomial recurrence |
 | Decoding | $O(Qr+QW+M)$ for stencil width $W$ |
+| One-generation expectation at $N$ probabilities | $O(Qr+QW+M+Nr)$ |
 | Stored quadrature geometry | $O(Qr+QW+M)$, with symmetry reducing constants |
 
-Encoding and decoding are paid at the interval boundaries rather than for every
-reduced step. A reduced matvec is dense, not an FFT. Benefits depend on how much
-repeated population-space work the reduction avoids and how well setup is
+With Krylov, encoding and decoding are paid at the interval boundaries rather
+than for every reduced step. A reduced matvec is dense, not an FFT. Benefits
+depend on how much repeated population-space work the reduction avoids and how well setup is
 amortized. Finite-tolerance rank bounds also contain accuracy and population-size
 factors; do not interpret $r$ as an unconditional constant times $\sqrt M$.
 
@@ -84,6 +88,10 @@ factors; do not interpret $r$ as an unconditional constant times $\sqrt M$.
 | `rank` | Retained interior polynomial modes |
 | `one_step_tolerance` | Plans ideal truncation and assembly padding separately |
 | `max_strength` | Static absolute bound on both diploid coefficients, used to plan padding |
+
+The `max_strength` bound and supported-map restrictions apply to reduced Krylov
+assembly. One-generation operations and Sequential evaluate the frequency map
+directly and accept any map producing valid probabilities.
 
 The error budget includes polynomial truncation, quadrature, binomial stencil
 truncation, padded assembly, and arithmetic. The default rank certificate covers
@@ -115,17 +123,20 @@ The external maps have defined transposes, and the full-state construction
 preserves mass. Endpoint rows are absorbing when the frequency map fixes zero
 and one; recurrent mutation generally removes that property. Segregating
 evolution still discards endpoint mass each generation. The approximation need
-not preserve positivity. An input-dependent Krylov approximation is not
-automatically a fixed linear map with a matched expectation transpose;
-demographic Jacobi evolution exposes forward propagation only.
+not preserve positivity. Sequential provides a matched expectation
+transpose for demographic evolution. An input-dependent Krylov approximation is
+not automatically a fixed linear map with a matched expectation transpose;
+Krylov demographic evolution exposes forward propagation only.
 
 ## Use in drifft
 
-Use `backend=Jacobi` with `PolynomialKrylov` or `RationalKrylov` in
-`DemographicTransition`. Supply an explicit FFT or NUFFT `boundary_backend` for
-size-changing steps. The [Jacobi API](../api/backends.md#jacobi) lists supported
-maps and parameter bounds. Use FFT or NUFFT for one-generation `Transition`
-operations and expected-visits solves.
+Use Jacobi in `Transition` for one-generation operations and expected-visits
+solves, or as `backend=Jacobi` in `DemographicTransition` with any epoch method.
+Sequential repeats the same one-generation approximation; PolynomialKrylov and
+RationalKrylov use the reduced assembly. The
+[Jacobi API](../api/backends.md#drifft.Jacobi) lists its supported maps and parameter
+bounds. Size-changing steps use Jacobi by default; an explicit FFT or NUFFT
+`boundary_backend` is also supported.
 
 See [choosing algorithms](../guide/backends.md) for a complete example,
 [direct epoch operations](epochs.md) for custom orchestration, and the

@@ -102,8 +102,8 @@ spectral_model = drifft.DemographicTransition(
 ```
 
 `backend` prepares constant-size geometry; `boundary_backend` prepares the
-one-generation size-changing transitions. With FFT or NUFFT, the boundary
-factory defaults to `backend`. Jacobi requires an explicit boundary factory.
+one-generation size-changing transitions. The boundary factory defaults to
+`backend` for all three backends.
 The method defaults to `Sequential()`. Factories receive **gene-copy counts**,
 even though the history uses diploid Ne.
 

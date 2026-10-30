@@ -11,10 +11,11 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 
-from ._frequency import AbstractFrequencyMap
+from ._frequency import AbstractFrequencyMap, Neutral, Underdominance
 from ._operator import Transition
 from ._power import _power_action
-from .backends import AbstractTransitionBackend
+from .backends import AbstractTransitionBackend, Jacobi
+from .backends.jacobi import _assemble, _assemble_diploid
 
 
 class EvolutionStatus(eqx.Enumeration):
@@ -22,7 +23,7 @@ class EvolutionStatus(eqx.Enumeration):
 
     successful = ""
     nonfinite = "Nonfinite evolution output; check input mass and numerical settings."
-    unconverged = "Power action did not converge; increase dimension or use FFT/NUFFT with Sequential."
+    unconverged = "Power action did not converge; increase dimension or use Sequential."
     linear_solve_failed = "Shifted linear solve failed; check the reduced operator."
 
 
@@ -156,7 +157,7 @@ def _epoch_result(distribution, error, tolerance, throw, solve_success=True):
             distribution,
             ~converged,
             "epoch failed: nonfinite output, failed shifted solve or unconverged power action; "
-            "check inputs and increase dimension or use FFT/NUFFT with Sequential",
+            "check inputs and increase dimension or use Sequential",
         )
     return EpochResult(distribution, error, converged, status)
 
@@ -208,9 +209,96 @@ def _prepare_transition(
     )
 
 
+@_prepare_epoch.register(Jacobi)
+def _prepare_jacobi(
+    backend, distribution, frequency_map, generations, segregating, immigration
+):
+    """Encode the reduced action and affine forcing without choosing a power algorithm."""
+    distribution, source = _epoch_inputs(
+        distribution, immigration, backend.gene_copies, generations, segregating
+    )
+    distribution, strength = backend._validate_mass(distribution, frequency_map)
+    if generations == 0:
+        operator = lx.IdentityLinearOperator(
+            jax.ShapeDtypeStruct(distribution.shape, distribution.dtype)
+        )
+        return _PowerProblem(
+            operator,
+            distribution,
+            0,
+            _identity,
+            jnp.zeros_like(distribution),
+            False,
+            jnp.asarray(1.0),
+        )
+    seed = backend._geometry.encode(distribution, frequency_map, segregating)
+    decode = eqx.Partial(backend._geometry.decode, segregating=segregating)
+    if generations == 1:
+        operator = lx.IdentityLinearOperator(
+            jax.ShapeDtypeStruct(seed.shape, seed.dtype)
+        )
+        return _PowerProblem(operator, seed, 0, decode, source, False, jnp.asarray(1.0))
+    if isinstance(frequency_map, (Neutral, Underdominance)):
+        matrix, forcing = _assemble(
+            strength, backend.gene_copies, backend.rank, backend.padded_rank
+        )
+        if not segregating:
+            extended = jnp.zeros((backend.rank + 2, backend.rank + 2))
+            extended = extended.at[:2, :2].set(jnp.eye(2))
+            extended = extended.at[2:, 1].set(forcing)
+            matrix = extended.at[2:, 2:].set(matrix)
+    else:
+        matrix = _assemble_diploid(
+            frequency_map,
+            backend.gene_copies,
+            backend.rank,
+            backend._diploid_padded_rank,
+        )
+        if segregating:
+            matrix = (
+                matrix[2:, 2:] + backend._geometry.endpoint_correction @ matrix[:2, 2:]
+            )
+    matrix = matrix.T
+    augmented = immigration is not None
+    if augmented:
+        encoded_source = backend._geometry.encode(source, frequency_map, segregating)
+        extended = jnp.zeros((seed.size + 1, seed.size + 1))
+        extended = extended.at[:-1, :-1].set(matrix)
+        extended = extended.at[:-1, -1].set(encoded_source)
+        matrix = extended.at[-1, -1].set(1)
+        seed = jnp.concatenate((seed, jnp.ones(1)))
+    defect_scale = (
+        1 + (generations - 1) * jnp.sum(jnp.abs(source))
+        if augmented
+        else jnp.asarray(1.0)
+    )
+    return _PowerProblem(
+        lx.MatrixLinearOperator(matrix),
+        seed,
+        generations - 1,
+        decode,
+        source,
+        augmented,
+        defect_scale,
+    )
+
+
+def _prepare_evolution(
+    method, backend, distribution, frequency_map, generations, segregating, immigration
+):
+    """Use the common transition for Sequential and backend reductions for powers."""
+    if isinstance(method, Sequential):
+        return _prepare_transition(
+            backend, distribution, frequency_map, generations, segregating, immigration
+        )
+    return _prepare_epoch(
+        backend, distribution, frequency_map, generations, segregating, immigration
+    )
+
+
 @final
 class Sequential(AbstractEpochMethod):
-    r"""Repeat FFT or NUFFT transitions without an additional power approximation.
+    r"""Repeat one-generation transitions without an additional power approximation.
 
     Construct as `Sequential()`. Geometry is supplied separately to `advance` or
     through `DemographicTransition`. The reported power-action error is zero.
@@ -221,7 +309,7 @@ class Sequential(AbstractEpochMethod):
     ) -> None:
         """Require a one-generation transition backend and frequency map."""
         if not isinstance(backend, AbstractTransitionBackend):
-            raise TypeError("Sequential requires an FFT or NUFFT transition backend")
+            raise TypeError("Sequential requires an AbstractTransitionBackend")
         if not isinstance(frequency_map, AbstractFrequencyMap):
             raise TypeError("frequency_map must be an AbstractFrequencyMap")
 
@@ -266,8 +354,14 @@ class Sequential(AbstractEpochMethod):
     ) -> EpochResult:
         r"""Evolve with the contracts of `AbstractEpochMethod.advance`."""
         self.validate(backend, frequency_map)
-        problem = _prepare_epoch(
-            backend, distribution, frequency_map, generations, segregating, immigration
+        problem = _prepare_evolution(
+            self,
+            backend,
+            distribution,
+            frequency_map,
+            generations,
+            segregating,
+            immigration,
         )
         return self.solve(problem, throw=throw)
 

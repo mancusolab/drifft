@@ -180,7 +180,7 @@ A failed sensitivity or pullback raises even with `throw=False`; there is no
 automatic fallback. A failing member under `vmap` can fail the batch.
 
 Higher-order differentiation through the Krylov Fréchet rule is not currently
-implemented and raises explicitly. Use Sequential with FFT or NUFFT for such
+implemented and raises explicitly. Use Sequential for such
 calculations. Sequential and the backend-level polynomial derivative rules
 retain their higher-order support.
 

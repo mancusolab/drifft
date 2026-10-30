@@ -25,9 +25,9 @@ def test_abstract_backend_and_removed_api():
     assert not hasattr(drifft, "build_transition_plan")
 
 
-@pytest.mark.parametrize("name", ["FFT", "NUFFT"])
+@pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi"])
 def test_backend_dense_adjoint_and_selection_derivatives(name):
-    """Check both backend contracts against dense transitions and finite differences."""
+    """Check all backend contracts against dense transitions and finite differences."""
     backend = getattr(drifft, name)(32)
     assert isinstance(backend, drifft.AbstractTransitionBackend)
     mass = jnp.arange(1.0, 26.0)
@@ -71,9 +71,9 @@ def test_backend_dense_adjoint_and_selection_derivatives(name):
     )
 
 
-@pytest.mark.parametrize("name", ["FFT", "NUFFT"])
+@pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi"])
 def test_large_backend_and_repeated_selection_gradient(name):
-    """Exercise interpolated FFT blocks and differentiation through a short epoch."""
+    """Exercise truncated geometry and differentiation through a short epoch."""
     backend = getattr(drifft, name)(1024)
     values = jnp.sin(jnp.arange(1025.0) / 17)
     rows = jnp.array([0.0, 0.001, 0.1, 0.499, 0.8, 0.999, 1.0])

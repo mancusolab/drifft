@@ -3,7 +3,7 @@
 # pattern: Functional Core
 import operator
 from collections.abc import Callable, Iterable
-from typing import NamedTuple, cast, final
+from typing import NamedTuple, final
 
 import equinox as eqx
 import jax
@@ -14,12 +14,11 @@ from ._epochs import (
     EvolutionStatus,
     Sequential,
     _epoch_result,
-    _prepare_epoch,
+    _prepare_evolution,
 )
 from ._frequency import AbstractFrequencyMap
-from ._jacobi import Jacobi
 from ._operator import Transition
-from .backends import AbstractTransitionBackend
+from .backends import AbstractTransitionBackend, Jacobi
 
 
 def _integer_schedule(values: Iterable[int] | jax.Array) -> tuple[int, ...]:
@@ -140,7 +139,7 @@ class DemographicTransition(eqx.Module):
     r"""Compose constant-size evolution and rectangular boundary transitions.
 
     An interval of g generations holds its source size for g-1 generations,
-    then changes size on its last generation. FFT/NUFFT with Sequential provide
+    then changes size on its last generation. Sequential provides
     a matched expectation transpose. Both Krylov methods support all three
     backends for forward evolution only. Frequency-map parameters remain differentiable array leaves.
     """
@@ -149,14 +148,14 @@ class DemographicTransition(eqx.Module):
     frequency_map: AbstractFrequencyMap
     method: AbstractEpochMethod
     _sizes: tuple[int, ...]
-    _backends: tuple[AbstractTransitionBackend | Jacobi, ...]
+    _backends: tuple[AbstractTransitionBackend, ...]
     _boundary_backends: tuple[AbstractTransitionBackend, ...]
 
     def __init__(
         self,
         demography: Demography,
         *,
-        backend: Callable[[int], AbstractTransitionBackend | Jacobi],
+        backend: Callable[[int], AbstractTransitionBackend],
         frequency_map: AbstractFrequencyMap,
         boundary_backend: Callable[[int], AbstractTransitionBackend] | None = None,
         method: AbstractEpochMethod | None = None,
@@ -169,7 +168,7 @@ class DemographicTransition(eqx.Module):
         - `backend`: Factory receiving a gene-copy count for constant-size geometry.
         - `frequency_map`: Process shared by every generation.
         - `boundary_backend`: Factory for rectangular transitions; defaults to the
-          hold geometry for FFT/NUFFT. Required explicitly for Jacobi.
+          hold geometry for all backends.
         - `method`: Geometry-free epoch algorithm; defaults to `Sequential()`.
 
         **Returns:**
@@ -201,21 +200,13 @@ class DemographicTransition(eqx.Module):
         self._sizes = tuple(dict.fromkeys(demography.ne))
         self._backends = tuple(backend(2 * size) for size in self._sizes)
         for size, geometry in zip(self._sizes, self._backends, strict=True):
-            if not isinstance(geometry, (AbstractTransitionBackend, Jacobi)):
-                raise TypeError("backend must return transition or Jacobi geometry")
+            if not isinstance(geometry, AbstractTransitionBackend):
+                raise TypeError("backend must return an AbstractTransitionBackend")
             if geometry.gene_copies != 2 * size:
                 raise ValueError("backend must preserve the requested gene-copy count")
             self.method.validate(geometry, frequency_map)
         if boundary_backend is None or boundary_backend is backend:
-            if not all(
-                isinstance(item, AbstractTransitionBackend) for item in self._backends
-            ):
-                raise TypeError(
-                    "Jacobi requires an explicit FFT or NUFFT boundary_backend"
-                )
-            self._boundary_backends = cast(
-                tuple[AbstractTransitionBackend, ...], self._backends
-            )
+            self._boundary_backends = self._backends
         else:
             self._boundary_backends = tuple(
                 boundary_backend(2 * size) for size in self._sizes
@@ -310,7 +301,7 @@ class DemographicTransition(eqx.Module):
             raise ValueError(f"distribution must have {size} entries")
         # Validate every prepared Jacobi domain even for identity/boundary-only histories.
         for backend in self._backends:
-            if isinstance(backend, Jacobi):
+            if isinstance(backend, Jacobi) and not isinstance(self.method, Sequential):
                 distribution, _ = backend._validate_mass(
                     distribution, self.frequency_map
                 )
@@ -331,7 +322,8 @@ class DemographicTransition(eqx.Module):
                     if segregating
                     else None
                 )
-                problem = _prepare_epoch(
+                problem = _prepare_evolution(
+                    self.method,
                     self._backends[self._sizes.index(source)],
                     distribution,
                     self.frequency_map,
@@ -376,7 +368,7 @@ class DemographicTransition(eqx.Module):
                 distribution,
                 ~converged,
                 "demographic evolution failed: inspect interval diagnostics with throw=False; "
-                "check input mass and increase dimension or use FFT/NUFFT with Sequential",
+                "check input mass and increase dimension or use Sequential",
             )
         return DemographicResult(distribution, converged, status, tuple(diagnostics))
 

@@ -30,7 +30,8 @@ final = result.distribution
 ```
 
 This applies the hold backend for all 250 generations.
-A `Demography([64, 64], [250])` interval instead uses 249 hold generations and one FFT boundary generation, following
+A `Demography([64, 64], [250])` interval instead uses 249 hold generations and one
+boundary generation using the configured boundary backend, following
 the history's interval convention even when the sizes are equal. They use
 different approximations to the same biological recurrence and can produce
 different results.
@@ -56,8 +57,9 @@ renormalized.
 ## Accuracy and failures
 
 Jacobi's `rank` controls polynomial truncation. Its default uses an ideal
-one-step tail bound. `max_strength` controls assembly padding and is checked at
-runtime against the absolute values of both diploid coefficients; choose it
+one-step tail bound. For reduced Krylov evolution, `max_strength` controls
+assembly padding and is checked at runtime against the absolute values of both
+diploid coefficients; choose it
 when preparing geometry for the parameter range you need. It must remain
 strictly below one. Neither setting certifies the final demographic result.
 
@@ -111,7 +113,8 @@ final = model.advance_segregating(initial, mutation_rate=1e-8).distribution
 ```
 
 Constant-size portions use the selected backend and method; the final, possibly
-rectangular step of each interval uses FFT/NUFFT. Immigration on that step uses the
+rectangular step of each interval uses the boundary backend (FFT in this example).
+It defaults to the hold backend when omitted. Immigration on that step uses the
 destination gene-copy count. `model.expect()` is available only with Sequential
 epochs. Equilibrium initialization remains explicit: use
 `Transition.expected_visits()` and scale its visits by the singleton input.
