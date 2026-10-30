@@ -40,7 +40,7 @@ def test_demography_benchmark_runs_isolated_cold_and_warm_passes(tmp_path):
     assert report["initialization"]["converged"]
     assert report["relative_l1_difference"] < 1e-7
     assert report["provenance"]["input_sha256"]
-    assert "src/drifft/backends/fft.py" in report["provenance"]["source_sha256"]
+    assert "src/drifft/_backend/fft.py" in report["provenance"]["source_sha256"]
     for name in ["fft", "krylov"]:
         worker = report["backends"][name]
         assert worker["setup_seconds"] > 0

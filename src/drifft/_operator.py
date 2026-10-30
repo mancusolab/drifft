@@ -8,9 +8,9 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 
+from ._backend import AbstractTransitionBackend
 from ._frequency import AbstractFrequencyMap
 from ._solve import ExpectedVisitsResult, _solve_expected_visits
-from .backends import AbstractTransitionBackend
 
 
 @final

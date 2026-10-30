@@ -5,12 +5,24 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 
-from .problem import EpochResult, _epoch_result, _working_problem
-from .projection import _matrix_power_matvec, _projected_result, project
+from .problem import EpochResult, _epoch_result, _KrylovConfig, _working_problem
+from .projection import (
+    _dense_shifted_solve,
+    _matrix_power_matvec,
+    _projected_result,
+    _rational_shift,
+    project,
+)
 
 
 def _sensitivity_projection(
-    method, operator, initial, steps, *, dimension=None, shifted_solve=None
+    method: _KrylovConfig,
+    operator,
+    initial,
+    steps,
+    *,
+    dimension=None,
+    shifted_solve=None,
 ):
     """Reuse the method's Arnoldi space, retaining its basis for adjoint factors."""
     problem = _working_problem(operator, initial, steps)
@@ -24,7 +36,9 @@ def _sensitivity_projection(
     )
 
 
-def _frechet_power(method, operator, perturbation, initial, tangent_initial, steps):
+def _frechet_power(
+    method: _KrylovConfig, operator, perturbation, initial, tangent_initial, steps
+):
     """Approximate the power sensitivity by a coupled block operator action.
 
     This numerical kernel is not a custom JVP: its adaptive space can depend on
@@ -41,30 +55,18 @@ def _frechet_power(method, operator, perturbation, initial, tangent_initial, ste
         # without differentiating how Arnoldi chose its basis.
         block = lx.MatrixLinearOperator(jnp.block([[a, e], [jnp.zeros_like(a), a]]))
         if not method._polynomial:
-            shift = steps / 8
-            shifted = lx.MatrixLinearOperator(
-                jnp.eye(size) + shift * (jnp.eye(size) - a)
-            )
-            solver = lx.LU()
-            factor = solver.init(shifted, {})
+            shift = _rational_shift(steps)
+            solve = _dense_shifted_solve(a, steps)
 
             def shifted_solve(rhs):
-                # Both diagonal blocks share the same shifted A. Reuse one LU,
-                # solve the lower block first, then feed its coupling upward.
-                lower = lx.linear_solve(
-                    shifted, rhs[size:], solver, state=factor, throw=False
+                # Both diagonal blocks share the same shifted A. Solve the
+                # lower block first, then reuse its factorization for the upper.
+                lower = solve(rhs[size:])
+                upper = solve(rhs[:size] + shift * perturbation.mv(lower.value))
+                return lower._replace(
+                    value=jnp.concatenate((upper.value, lower.value)),
+                    success=lower.success & upper.success,
                 )
-                upper = lx.linear_solve(
-                    shifted,
-                    rhs[:size] + shift * perturbation.mv(lower.value),
-                    solver,
-                    state=factor,
-                    throw=False,
-                )
-                success = (lower.result == lx.RESULTS.successful) & (
-                    upper.result == lx.RESULTS.successful
-                )
-                return jnp.concatenate((upper.value, lower.value)), success
     else:
 
         def action(state):
@@ -123,7 +125,9 @@ def _frechet_core(left_matrix, right_matrix, left_seed, right_seed, steps):
     return _matrix_power_matvec(block, seed, steps)[:n]
 
 
-def _frechet_adjoint_factors(method, operator, initial, cotangent, steps):
+def _frechet_adjoint_factors(
+    method: _KrylovConfig, operator, initial, cotangent, steps
+):
     """Approximate the operator pullback as left @ right.T without forming it.
 
     The two spaces use A.T and A, seeded by the output cotangent and input state.
@@ -207,7 +211,7 @@ def _frechet_adjoint_factors(method, operator, initial, cotangent, steps):
 
 
 def _frechet_operator_pullback(
-    method, operator, tangent_template, initial, cotangent, steps
+    method: _KrylovConfig, operator, tangent_template, initial, cotangent, steps
 ):
     """Contract low-rank adjoint factors into the active operator PyTree leaves.
 

@@ -1,6 +1,7 @@
 """Wright–Fisher transitions with reusable Equinox models."""
 
 # pattern: Functional Core
+from ._backend import FFT, NUFFT, AbstractTransitionBackend, Dense, Jacobi
 from ._demography import (
     DemographicResult,
     DemographicTransition,
@@ -31,7 +32,6 @@ from ._frequency import (
 )
 from ._operator import Transition
 from ._solve import ExpectedVisitsResult
-from .backends import FFT, NUFFT, AbstractTransitionBackend, Dense, Jacobi
 
 __all__ = [
     "AbstractEpochMethod",

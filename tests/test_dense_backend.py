@@ -17,7 +17,6 @@ def test_dense_public_backend_and_rectangular_operations():
     """Expose an independent full matrix through the common transition interface."""
     backend = drifft.Dense(12)
     assert isinstance(backend, drifft.AbstractTransitionBackend)
-    assert drifft.backends.Dense is drifft.Dense
     q = jnp.array([0.0, 1e-12, 0.2, 0.53, 0.9, 1 - 1e-12, 1.0])
     transition = drifft.Transition.from_probabilities(backend, q)
     matrix = jnp.asarray(binom.pmf(np.arange(13)[None, :], 12, np.asarray(q)[:, None]))

@@ -756,6 +756,45 @@ class Jacobi(AbstractTransitionBackend):
         """
         _map_parameters(frequency_map)
 
+    def _reduced_expectation(
+        self, frequency_map: AbstractFrequencyMap, *, segregating: bool
+    ) -> jax.Array:
+        """Assemble ED, including endpoint coupling for full or interior states.
+
+        Preparation validates the map and dynamic parameter bounds first. Keep
+        selection-family dispatch, padding, and endpoint corrections here so
+        evolution code need not know the representation's assembly details.
+        """
+        if isinstance(frequency_map, (Neutral, Underdominance)):
+            strength = (
+                jnp.asarray(0.0)
+                if isinstance(frequency_map, Neutral)
+                else frequency_map.strength
+            )
+            matrix, forcing = _assemble(
+                strength, self.gene_copies, self.rank, self.padded_rank
+            )
+            if not segregating:
+                extended = jnp.zeros((self.rank + 2, self.rank + 2))
+                extended = extended.at[:2, :2].set(jnp.eye(2))
+                extended = extended.at[2:, 1].set(forcing)
+                matrix = extended.at[2:, 2:].set(matrix)
+        else:
+            matrix = _assemble_diploid(
+                frequency_map,
+                self.gene_copies,
+                self.rank,
+                self._diploid_padded_rank,
+            )
+            if segregating:
+                # Recurrent mutation can produce nonzero endpoint coefficients.
+                # Fold their interior contribution into E_int D_int before discarding
+                # endpoints; simply slicing the full operator would lose that term.
+                matrix = (
+                    matrix[2:, 2:] + self._geometry.endpoint_correction @ matrix[:2, 2:]
+                )
+        return matrix
+
     def _validate_mass(
         self, distribution: jax.Array, frequency_map: AbstractFrequencyMap
     ) -> tuple[jax.Array, jax.Array]:

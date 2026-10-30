@@ -6,7 +6,7 @@ Frechet action and its operator pullback without differentiating Arnoldi bases.
 """
 
 # pattern: Functional Core
-from typing import cast
+from typing import Protocol, cast
 
 import equinox as eqx
 import equinox.internal as eqxi
@@ -14,6 +14,34 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 from jax.experimental import hijax
+
+from .problem import _KrylovConfig
+from .sensitivity import _frechet_operator_pullback, _frechet_power
+
+
+class _PowerMethod[State](Protocol):
+    """Internal primal and joint-JVP contract consumed by the HiJAX power rule."""
+
+    def _power_action(
+        self, operator: lx.AbstractLinearOperator, initial: State, steps: int
+    ) -> State:
+        """Evaluate a checked working-coordinate power."""
+        ...
+
+    def _power_jvp(
+        self,
+        operator: lx.AbstractLinearOperator,
+        tangent_operator: lx.TangentLinearOperator | None,
+        initial: State,
+        tangent_initial: State,
+        steps: int,
+    ) -> tuple[State, State]:
+        """Return the primal and its joint operator/state directional derivative."""
+        ...
+
+
+class _KrylovMethod(_PowerMethod[jax.Array], _KrylovConfig, Protocol):
+    """Power callbacks plus the settings needed by the Krylov derivative kernels."""
 
 
 def _is_ad_leaf(value):
@@ -142,12 +170,14 @@ def _bind_power(operator, initial, steps, method, *value):
     return _PowerAction(avals, static, cached=bool(value))(*dynamic)
 
 
-def _power_action(method, operator, initial, steps):
+def _power_action[State](
+    method: _PowerMethod[State], operator, initial: State, steps: int
+) -> State:
     """Apply a power with method-owned JVPs and an operator-level transpose."""
     return _bind_power(operator, initial, steps, method)
 
 
-def _cached_power_action(method, operator, initial, steps, value):
+def _cached_power_action(method: _KrylovMethod, operator, initial, steps, value):
     """Attach the mathematical power rule to an already computed primal value."""
     return _bind_power(operator, initial, steps, method, value)
 
@@ -167,7 +197,8 @@ class _FrechetAction(hijax.HiPrim):
         operator, initial, t_operator, t_initial, steps, method = eqx.combine(
             args, cast(tuple, self.params["static"])
         )
-        result = method._frechet_action(
+        result = _frechet_power(
+            method,
             operator,
             lx.TangentLinearOperator(operator, t_operator),
             initial,
@@ -214,8 +245,8 @@ class _FrechetAction(hijax.HiPrim):
                 t_operator,
                 is_leaf=_is_ad_leaf,
             )
-            operator_ct, _, converged = method._frechet_transpose(
-                operator, template, initial, cotangent, steps
+            operator_ct, _, converged = _frechet_operator_pullback(
+                method, operator, template, initial, cotangent, steps
             )
             operator_ct = eqx.error_if(
                 operator_ct,
@@ -232,7 +263,9 @@ class _FrechetAction(hijax.HiPrim):
         return jax.tree.map(lambda _: dim, self.out_aval)
 
 
-def _frechet_action(method, operator, initial, t_operator, t_initial, steps):
+def _frechet_action(
+    method: _KrylovConfig, operator, initial, t_operator, t_initial, steps
+):
     """Bind the linearized power with an explicit adjoint."""
     dynamic, static = eqx.partition(
         (operator, initial, t_operator, t_initial, steps, method), eqx.is_array

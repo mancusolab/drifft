@@ -5,7 +5,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
-from _reference import dense_transition
+from _reference import dense_history_derivatives, dense_transition
 
 import drifft
 
@@ -166,22 +166,56 @@ def test_composed_jacobi_history_gradients_match_dense_recurrence():
             updated.advance_segregating(mass, mutation_rate=rate).distribution @ values
         )
 
-    def reference(strength, mass, rate):
-        for source, destination, duration in ((4, 3, 4), (3, 5, 3)):
-            hold = dense_transition(source, source, strength)[1:-1, 1:-1]
-            for _ in range(duration - 1):
-                mass = (mass @ hold).at[0].add(2 * source * rate)
-            boundary = dense_transition(source, destination, strength)[1:-1, 1:-1]
-            mass = (mass @ boundary).at[0].add(2 * destination * rate)
-        return mass @ values
-
     inputs = (jnp.asarray(0.03), initial, jnp.asarray(1e-5))
     actual = eqx.filter_jit(jax.grad(objective, argnums=(0, 1, 2)))(*inputs)
-    expected = jax.grad(reference, argnums=(0, 1, 2))(*inputs)
+    direction = jax.tree.map(jnp.ones_like, inputs)
+    expected, reference_tangent = dense_history_derivatives(
+        inputs, direction, ((4, 3, 4), (3, 5, 3)), values
+    )
     for observed, target in zip(actual, expected, strict=True):
         assert jnp.allclose(observed, target, rtol=2e-8, atol=2e-8)
-    tangent = jax.jvp(objective, inputs, jax.tree.map(jnp.ones_like, inputs))[1]
-    reference_tangent = jax.jvp(reference, inputs, jax.tree.map(jnp.ones_like, inputs))[
-        1
-    ]
+    tangent = jax.jvp(objective, inputs, direction)[1]
     assert jnp.allclose(tangent, reference_tangent, rtol=2e-8, atol=2e-8)
+
+
+@pytest.mark.parametrize("history", [([4], []), ([4, 4], [1]), ([4, 4], [3])])
+def test_custom_population_method_uses_same_representation_in_demography(history):
+    """Honor method requirements for identity, boundary-only, and hold histories."""
+    from typing import ClassVar, final
+
+    from drifft._evolution.methods import _advance
+
+    @final
+    class PopulationMethod(drifft.AbstractEpochMethod):
+        """Exercise the public extension contract without inheriting Sequential."""
+
+        uses_reduced_representation: ClassVar[bool] = False
+
+        def validate(self, backend, frequency_map):
+            """Accept the population-coordinate backend/map combinations."""
+            drifft.Sequential().validate(backend, frequency_map)
+
+        def solve(self, problem, *, throw=True):
+            """Evaluate the prepared problem by repeated operator applications."""
+            return drifft.Sequential().solve(problem, throw=throw)
+
+        def advance(self, backend, distribution, **kwargs):
+            """Share preparation with the built-in methods."""
+            return _advance(self, backend, distribution, **kwargs)
+
+    frequency_map = drifft.FrequencyMap(lambda x: x**2)
+    initial = jnp.eye(9)[1]
+    backend = drifft.Jacobi(8)
+    method = PopulationMethod()
+    direct = method.advance(
+        backend, initial, frequency_map=frequency_map, generations=sum(history[1])
+    )
+    model = drifft.DemographicTransition(
+        drifft.Demography(*history),
+        backend=drifft.Jacobi,
+        method=method,
+        frequency_map=frequency_map,
+    )
+    result = model.advance(initial)
+    assert result.converged
+    assert jnp.allclose(result.distribution, direct.distribution, atol=1e-12)

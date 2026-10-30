@@ -95,7 +95,7 @@ def test_invalid_encoding(encoding):
 
 def test_lobatto_default_and_sharper_planning():
     """Keep the default encoding while reducing the conservative degree."""
-    from drifft.backends.nufft import _choose_degree
+    from drifft._backend.nufft import _choose_degree
 
     backend = drifft.NUFFT(10000)
     assert backend.encoding == "lobatto"
@@ -143,7 +143,7 @@ def test_planners_meet_budget_at_small_and_large_sizes(size, tolerance):
     """Check exact fallback boundaries and compressed rank selection."""
     import math
 
-    from drifft.backends.nufft import (
+    from drifft._backend.nufft import (
         _choose_degree,
         _choose_filtered_modes,
         _lobatto_bound,
@@ -163,7 +163,7 @@ def test_planners_meet_budget_at_small_and_large_sizes(size, tolerance):
 @pytest.mark.parametrize("size,tolerance", [(24, 2.5e-5), (54, 2.5e-14)])
 def test_lobatto_planner_does_not_skip_sharp_bound_near_exact_degree(size, tolerance):
     """The sharper bound stops before M-1; its last valid degree can suffice."""
-    from drifft.backends.nufft import _choose_degree, _lobatto_bound
+    from drifft._backend.nufft import _choose_degree, _lobatto_bound
 
     expected = next(
         d for d in range(1, size + 1) if _lobatto_bound(size, d) <= tolerance

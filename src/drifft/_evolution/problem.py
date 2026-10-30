@@ -1,12 +1,21 @@
 """Prepared power problems and numerical outcome contracts."""
 
 from collections.abc import Callable
-from typing import NamedTuple, final
+from typing import ClassVar, NamedTuple, Protocol, final
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import lineax as lx
+
+
+class _KrylovConfig(Protocol):
+    """Configuration consumed by projection and sensitivity kernels."""
+
+    dimension: int
+    rtol: float
+    atol: float
+    _polynomial: ClassVar[bool]
 
 
 class EvolutionStatus(eqx.Enumeration):

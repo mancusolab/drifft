@@ -10,15 +10,22 @@ import jax.numpy as jnp
 
 from .._frequency import AbstractFrequencyMap
 from .autodiff import _cached_power_action, _frechet_action, _power_action
-from .autodiff import _power_action as _operator_power_action
 from .preparation import _prepare_epoch, _prepare_transition, validate_representation
 from .problem import EpochResult, _epoch_result, _PowerProblem, _working_problem
 from .projection import _projected_result, project
-from .sensitivity import _frechet_operator_pullback, _frechet_power
 
 
 class AbstractEpochMethod(eqx.Module):
-    r"""An algorithm for a prepared linear power action, independent of geometry."""
+    r"""An algorithm for a prepared linear power action, independent of geometry.
+
+    Concrete methods declare `uses_reduced_representation`: true allows backend
+    reduction during preparation; false retains population coordinates. Direct
+    calls and demographic histories use the same declaration.
+    """
+
+    uses_reduced_representation: eqx.AbstractClassVar[bool]
+    # This is a preparation requirement, not a test of the concrete method type.
+    # Custom population-coordinate methods must declare False.
 
     @abstractmethod
     def validate(
@@ -109,8 +116,8 @@ class AbstractEpochMethod(eqx.Module):
 def _prepare_evolution(
     method, backend, distribution, frequency_map, generations, segregating, immigration
 ):
-    """Use the common transition for Sequential and backend reductions for powers."""
-    if isinstance(method, Sequential):
+    """Select preparation from the method's explicit representation requirement."""
+    if not method.uses_reduced_representation:
         return _prepare_transition(
             backend, distribution, frequency_map, generations, segregating, immigration
         )
@@ -126,6 +133,8 @@ class Sequential(AbstractEpochMethod):
     Construct as `Sequential()`. Geometry is supplied separately to `advance` or
     through `DemographicTransition`. The reported power-action error is zero.
     """
+
+    uses_reduced_representation: ClassVar[bool] = False
 
     def validate(
         self, backend: eqx.Module, frequency_map: AbstractFrequencyMap
@@ -284,9 +293,9 @@ def _krylov_power_jvp(
     self, operator, tangent_operator, initial, tangent_initial, steps
 ):
     """Approximate the mathematical power sensitivity without basis AD."""
-    value = _operator_power_action(self, operator, initial, steps)
+    value = _power_action(self, operator, initial, steps)
     if tangent_operator is None:
-        tangent = _operator_power_action(self, operator, tangent_initial, steps)
+        tangent = _power_action(self, operator, tangent_initial, steps)
     else:
         tangent = _frechet_action(
             self,
@@ -297,20 +306,6 @@ def _krylov_power_jvp(
             steps,
         )
     return value, tangent
-
-
-def _krylov_frechet_action(
-    self, operator, perturbation, initial, tangent_initial, steps
-):
-    """Compute the coupled power sensitivity using this method's space."""
-    return _frechet_power(self, operator, perturbation, initial, tangent_initial, steps)
-
-
-def _krylov_frechet_transpose(self, operator, template, initial, cotangent, steps):
-    """Compute the operator pullback in its filtered PyTree representation."""
-    return _frechet_operator_pullback(
-        self, operator, template, initial, cotangent, steps
-    )
 
 
 def _advance(
@@ -402,6 +397,7 @@ class RationalKrylov(AbstractEpochMethod):
     The input-dependent primal approximation has no matched expectation transpose.
     """
 
+    uses_reduced_representation: ClassVar[bool] = True
     _polynomial: ClassVar[bool] = False
 
     dimension: int = 64
@@ -417,10 +413,6 @@ class RationalKrylov(AbstractEpochMethod):
     _power_action = _krylov_power_action
 
     _power_jvp = _krylov_power_jvp
-
-    _frechet_action = _krylov_frechet_action
-
-    _frechet_transpose = _krylov_frechet_transpose
 
     @eqx.filter_jit
     def advance(
@@ -506,6 +498,7 @@ class PolynomialKrylov(AbstractEpochMethod):
     not provide a matched expectation transpose of its primal approximation.
     """
 
+    uses_reduced_representation: ClassVar[bool] = True
     _polynomial: ClassVar[bool] = True
 
     dimension: int = 64
@@ -521,10 +514,6 @@ class PolynomialKrylov(AbstractEpochMethod):
     _power_action = _krylov_power_action
 
     _power_jvp = _krylov_power_jvp
-
-    _frechet_action = _krylov_frechet_action
-
-    _frechet_transpose = _krylov_frechet_transpose
 
     @eqx.filter_jit
     def advance(

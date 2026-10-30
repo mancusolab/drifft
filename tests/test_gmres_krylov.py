@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 import pytest
-from _reference import dense_transition
+from _reference import dense_history_derivatives, dense_transition
 
 import drifft
 from drifft._evolution.problem import _PowerProblem
@@ -76,22 +76,17 @@ def test_gmres_composed_demography_gradients(backend_type):
         updated = eqx.tree_at(lambda m: m.frequency_map.strength, model, s)
         return updated.advance_segregating(p, mutation_rate=rate).distribution @ weights
 
-    def reference(s, p, rate):
-        for a, b, g in ((4, 3, 4), (3, 5, 3)):
-            for _ in range(g - 1):
-                p = (p @ dense_transition(a, a, s)[1:-1, 1:-1]).at[0].add(2 * a * rate)
-            p = (p @ dense_transition(a, b, s)[1:-1, 1:-1]).at[0].add(2 * b * rate)
-        return p @ weights
-
     args = (jnp.asarray(0.03), mass, jnp.asarray(1e-5))
     actual = eqx.filter_jit(jax.grad(objective, argnums=(0, 1, 2)))(*args)
-    expected = jax.grad(reference, argnums=(0, 1, 2))(*args)
+    tangent = jax.tree.map(jnp.ones_like, args)
+    expected, reference_tangent = dense_history_derivatives(
+        args, tangent, ((4, 3, 4), (3, 5, 3)), weights
+    )
     for a, b in zip(actual, expected, strict=True):
         assert jnp.allclose(a, b, rtol=2e-7, atol=2e-8)
-    tangent = jax.tree.map(jnp.ones_like, args)
     assert jnp.allclose(
         jax.jvp(objective, args, tangent)[1],
-        jax.jvp(reference, args, tangent)[1],
+        reference_tangent,
         atol=2e-8,
         rtol=2e-7,
     )

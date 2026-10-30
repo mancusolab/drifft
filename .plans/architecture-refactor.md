@@ -47,7 +47,7 @@ numerical behavior. Work through one verified milestone at a time.
 
 Depends on: no earlier milestone.
 
-Inspect `backends/jacobi.py` and `backends/_spectral.py`. Introduce one private
+Inspect `_backend/jacobi.py` and `_backend/_spectral.py`. Introduce one private
 `src/drifft/_polynomial.py` for family-specific recurrence and coefficient
 operations; a new module is justified by independent mathematical contracts and
 multiple consumers. Do not start with a subpackage.
@@ -105,7 +105,7 @@ of private functions and retain compatibility shims where needed.
 
 Depends on: milestone 2 verified and reviewed.
 
-Inspect `_epochs.py`, `_demography.py` and `backends/jacobi.py`. Use the existing
+Inspect `_epochs.py`, `_demography.py` and `_backend/jacobi.py`. Use the existing
 `_PowerProblem` contract to separate backend-specific preparation from methods
 and demographic chronology.
 
@@ -119,7 +119,7 @@ and demographic chronology.
 - Preserve Sequential's exact transition path and matched expectation transpose;
   do not broaden Krylov's expectation contract.
 - Review the duplicated biological parameter conversion in
-  `backends/jacobi.py::_selection_parameters`. Centralize it with frequency maps
+  `_backend/jacobi.py::_selection_parameters`. Centralize it with frequency maps
   only if a small private conversion has a clear contract. Jacobi-specific
   supported compositions and domain restrictions remain in its adapter. Record
   any deferred conversion explicitly rather than inventing a public protocol.

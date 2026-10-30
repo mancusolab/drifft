@@ -1,4 +1,4 @@
-"""Optimized and dense reference transition implementations."""
+"""Private optimized and dense reference transition implementations."""
 
 # pattern: Functional Core
 from ._base import AbstractTransitionBackend

@@ -10,6 +10,27 @@ uv run pre-commit run --all-files
 uv build
 ```
 
+## Test selections and timing
+
+During development, run the affected test files first. For the numerical suite
+without benchmark integration or the marked large-population checks, use:
+
+```bash
+uv run pytest -q -m "not benchmark and not slow"
+```
+
+Default pytest and CI still run the complete suite. Run that suite before
+merging, and use per-test timings when investigating runtime:
+
+```bash
+uv run pytest -q --durations=30
+```
+
+JAX compiles different programs for different static shapes, configurations,
+and derivative transformations. Test count alone is therefore a poor runtime
+measure. Reuse compiled callables across equivalent parameter cases while
+retaining checks of distinct numerical regimes and failure paths.
+
 ## Naming and code organization
 
 Use nouns for models, prepared geometry, and results; use verbs for operations.
@@ -50,7 +71,7 @@ The private implementation is organized by responsibility:
 | Module | Responsibility |
 | --- | --- |
 | `_polynomial.py` | Normalized Gegenbauer recurrences, streaming moments and their HiJAX rules; Chebyshev coefficient operations |
-| `backends/` | Population geometry, sampling, accelerated evaluation and representation-specific assembly |
+| `_backend/` | Population geometry, sampling, accelerated evaluation and representation-specific assembly |
 | `_evolution/preparation.py` | Adapt representations to power problems and route representation validation |
 | `_evolution/problem.py` | Working coordinates, reconstruction, error norms and evolution results |
 | `_evolution/projection.py` | Arnoldi bases, projected powers and convergence diagnostics |
@@ -64,9 +85,17 @@ the representation boundary; Sequential uses the one-generation transition,
 while Krylov methods may use a reduced representation. Keep Dense's reference
 calculation independent of the optimized polynomial kernels.
 
+Evolution methods declare `uses_reduced_representation` on the abstract method
+contract. Preparation and demographic validation use that declaration rather
+than concrete method-type checks. The internal power protocol owns primal/JVP
+callbacks; HiJAX calls the sensitivity kernels directly for Krylov pullbacks.
+Dense and GMRES resolvent applications share one rational Arnoldi loop, while
+Jacobi owns its reduced expectation assembly in `_backend/jacobi.py`.
+
 Internal callers import from the owning modules. The former `_epochs`,
 `_krylov`, `_power` and `_jacobi` compatibility modules have been removed;
-public classes remain available directly from `drifft`.
+public classes remain available directly from `drifft`. Backend implementations
+live in `_backend`; import public backend classes from the package root.
 
 Every class, method, and function needs a docstring describing its contract or
 purpose. Ruff checks missing docstrings; comments explain numerical identities,

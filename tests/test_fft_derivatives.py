@@ -9,7 +9,7 @@ import pytest
 from scipy.stats import binom
 
 from drifft import Transition, Underdominance
-from drifft.backends.fft import FFT
+from drifft._backend.fft import FFT
 
 jax.config.update("jax_enable_x64", True)
 

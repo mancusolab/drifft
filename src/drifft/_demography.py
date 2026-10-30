@@ -9,12 +9,12 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
+from ._backend import AbstractTransitionBackend
 from ._evolution.methods import AbstractEpochMethod, Sequential, _prepare_evolution
 from ._evolution.preparation import validate_domain
 from ._evolution.problem import EvolutionStatus, _epoch_result
 from ._frequency import AbstractFrequencyMap
 from ._operator import Transition
-from .backends import AbstractTransitionBackend
 
 
 def _integer_schedule(values: Iterable[int] | jax.Array) -> tuple[int, ...]:
@@ -350,7 +350,7 @@ class DemographicTransition(eqx.Module):
                 backend,
                 distribution,
                 self.frequency_map,
-                reduced=not isinstance(self.method, Sequential),
+                reduced=self.method.uses_reduced_representation,
             )
         initial_result = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
         status = initial_result.status

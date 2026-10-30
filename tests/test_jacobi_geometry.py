@@ -9,8 +9,8 @@ from jax.scipy.special import gammaln, xlog1py, xlogy
 from scipy.special import roots_jacobi
 
 import drifft
+from drifft._backend.jacobi import _JacobiGeometry
 from drifft._polynomial import gegenbauer_values
-from drifft.backends.jacobi import _JacobiGeometry
 
 jax.config.update("jax_enable_x64", True)
 

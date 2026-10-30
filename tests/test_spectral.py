@@ -42,7 +42,7 @@ def test_cosine_coefficients(degree):
 @pytest.mark.parametrize("size", [2, 16, 256, 4096])
 def test_binomial_samples(size):
     """Match retained-stencil samples against exact binomial expectations."""
-    from drifft.backends._spectral import sample_bernstein
+    from drifft._backend._spectral import sample_bernstein
 
     backend = drifft.NUFFT(size)
     values = jnp.asarray(np.random.default_rng(size).normal(size=size + 1))
@@ -64,7 +64,7 @@ def test_binomial_samples(size):
 
 def test_endpoint_derivatives_and_nufft_modes():
     """Keep first and second polynomial derivatives finite at both endpoints."""
-    from drifft.backends._spectral import evaluate_cosine
+    from drifft._backend._spectral import evaluate_cosine
 
     q = jnp.array([0.0, 1e-15, 0.1, 0.5, 0.9, 1 - 1e-15, 1.0])
     # q**2 = 3/8 - T1(1-2q)/2 + T2(1-2q)/8.

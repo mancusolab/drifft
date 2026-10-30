@@ -15,11 +15,8 @@ jax.config.update("jax_enable_x64", True)
 
 def test_jacobi_is_a_transition_backend():
     """Expose Jacobi through the same public backend contract and exports."""
-    from drifft import backends
-
     backend = drifft.Jacobi(16)
     assert isinstance(backend, drifft.AbstractTransitionBackend)
-    assert backends.Jacobi is drifft.Jacobi
 
 
 def test_jacobi_expect_and_rectangular_transpose_match_binomial():

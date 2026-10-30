@@ -121,7 +121,7 @@ def run_worker(args):
     import jax.numpy as jnp
 
     import drifft
-    import drifft.backends.nufft as nufft_module
+    import drifft._backend.nufft as nufft_module
 
     imported = time.perf_counter()
     jax.config.update("jax_enable_x64", True)

@@ -11,7 +11,7 @@ import pytest
 from scipy.stats import binom
 
 from drifft import NUFFT
-from drifft.backends._spectral import sample_bernstein
+from drifft._backend._spectral import sample_bernstein
 
 jax.config.update("jax_enable_x64", True)
 

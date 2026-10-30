@@ -7,10 +7,9 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 
-from .._frequency import AbstractFrequencyMap, Neutral, Underdominance
+from .._backend import AbstractTransitionBackend, Jacobi
+from .._frequency import AbstractFrequencyMap
 from .._operator import Transition
-from ..backends import AbstractTransitionBackend, Jacobi
-from ..backends.jacobi import _assemble, _assemble_diploid
 from .problem import _epoch_inputs, _PowerProblem
 
 
@@ -89,7 +88,7 @@ def _prepare_jacobi(
     distribution, source = _epoch_inputs(
         distribution, immigration, backend.gene_copies, generations, segregating
     )
-    distribution, strength = backend._validate_mass(distribution, frequency_map)
+    distribution, _ = backend._validate_mass(distribution, frequency_map)
     if generations == 0:
         operator = lx.IdentityLinearOperator(
             jax.ShapeDtypeStruct(distribution.shape, distribution.dtype)
@@ -113,29 +112,7 @@ def _prepare_jacobi(
             jax.ShapeDtypeStruct(seed.shape, seed.dtype)
         )
         return _PowerProblem(operator, seed, 0, decode, source, False, jnp.asarray(1.0))
-    if isinstance(frequency_map, (Neutral, Underdominance)):
-        matrix, forcing = _assemble(
-            strength, backend.gene_copies, backend.rank, backend.padded_rank
-        )
-        if not segregating:
-            extended = jnp.zeros((backend.rank + 2, backend.rank + 2))
-            extended = extended.at[:2, :2].set(jnp.eye(2))
-            extended = extended.at[2:, 1].set(forcing)
-            matrix = extended.at[2:, 2:].set(matrix)
-    else:
-        matrix = _assemble_diploid(
-            frequency_map,
-            backend.gene_copies,
-            backend.rank,
-            backend._diploid_padded_rank,
-        )
-        if segregating:
-            # Recurrent mutation can produce nonzero endpoint coefficients.
-            # Fold their interior contribution into E_int D_int before discarding
-            # endpoints; simply slicing the full operator would lose that term.
-            matrix = (
-                matrix[2:, 2:] + backend._geometry.endpoint_correction @ matrix[:2, 2:]
-            )
+    matrix = backend._reduced_expectation(frequency_map, segregating=segregating)
     matrix = matrix.T
     augmented = immigration is not None
     if augmented:

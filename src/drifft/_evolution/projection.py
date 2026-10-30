@@ -146,58 +146,88 @@ def _guard_krylov_derivative(value, basis, norm_squared):
     return _require_krylov_derivative(value, supported)
 
 
-def _power_action_with_status(
-    matrix: jax.Array,
-    seed: jax.Array,
-    steps: int,
-    dimension: int,
-    *,
-    return_basis=False,
-    shifted_solve=None,
-):
-    """Project the original matrix onto a twice-reorthogonalized resolvent basis."""
-    size = seed.size
-    dimension = min(size, dimension)
-    shift = steps / 8
-    if shifted_solve is None:
-        identity = jnp.eye(size)
-        operator = lx.MatrixLinearOperator(identity + shift * (identity - matrix))
-        solver = lx.LU()
-        factor = solver.init(operator, {})
-    # Keep primal zero seeds finite; the derivative guard rejects these branches.
+class _ShiftedSolveResult(NamedTuple):
+    """Checked resolvent application with solver-specific diagnostic counters."""
+
+    value: jax.Array
+    success: jax.Array
+    num_steps: jax.Array
+    residual_norm: jax.Array
+
+
+def _rational_shift(steps: int) -> float:
+    """Choose the common resolvent shift for a prepared exponent."""
+    return steps / 8
+
+
+def _dense_shifted_solve(matrix, steps):
+    """Factor the dense resolvent once and return checked, reusable solves."""
+    identity = jnp.eye(matrix.shape[0], dtype=matrix.dtype)
+    shifted = lx.MatrixLinearOperator(
+        identity + _rational_shift(steps) * (identity - matrix)
+    )
+    solver = lx.LU()
+    factor = solver.init(shifted, {})
+
+    def solve(rhs):
+        """Reuse LU state and retain failure status without throwing inside Arnoldi."""
+        result = lx.linear_solve(shifted, rhs, solver, state=factor, throw=False)
+        return _ShiftedSolveResult(
+            result.value,
+            result.result == lx.RESULTS.successful,
+            jnp.asarray(0),
+            jnp.asarray(0.0, dtype=rhs.dtype),
+        )
+
+    return solve
+
+
+def _rational_projection(problem, dimension, shifted_solve, *, return_basis):
+    """Build one resolvent Arnoldi space using a checked solve callback."""
+    seed = problem.initial
+    dimension = min(seed.size, dimension)
+    # Zero seeds and invariant-subspace breakdown leave zero columns. Preserve
+    # that convention for both dense and matrix-free resolvent applications.
     norm_squared = seed @ seed
     norm = jnp.sqrt(jnp.where(norm_squared > 0, norm_squared, 1.0))
-    basis = jnp.zeros((size, dimension)).at[:, 0].set(seed / norm)
+    basis = jnp.zeros((seed.size, dimension), dtype=seed.dtype)
+    basis = basis.at[:, 0].set(seed / norm)
 
     def step(index, carry):
-        """Add a resolvent Arnoldi vector, leaving unused columns zero at breakdown."""
-        basis, success = carry
-        if shifted_solve is None:
-            solution = lx.linear_solve(
-                operator, basis[:, index], solver, state=factor, throw=False
-            )
-            candidate = solution.value
-            solved = solution.result == lx.RESULTS.successful
-        else:
-            candidate, solved = shifted_solve(basis[:, index])
-        success = success & solved & jnp.all(jnp.isfinite(candidate))
-        return basis.at[:, index + 1].set(_orthogonalize(basis, candidate)), success
+        """Apply the resolvent and accumulate checks before reorthogonalization."""
+        basis, success, num_steps, max_residual = carry
+        solution = shifted_solve(basis[:, index])
+        success = success & solution.success & jnp.all(jnp.isfinite(solution.value))
+        basis = basis.at[:, index + 1].set(_orthogonalize(basis, solution.value))
+        return (
+            basis,
+            success,
+            num_steps + solution.num_steps,
+            jnp.maximum(max_residual, solution.residual_norm),
+        )
 
-    basis, success = jax.lax.fori_loop(
-        0, dimension - 1, step, (basis, jnp.asarray(True))
+    basis, success, num_steps, max_residual = jax.lax.fori_loop(
+        0,
+        dimension - 1,
+        step,
+        (basis, jnp.asarray(True), jnp.asarray(0), jnp.asarray(0.0, dtype=seed.dtype)),
     )
-    # Project A itself: inverting the projected resolvent gives a different,
-    # potentially unstable power approximation for this nonnormal operator.
-    images = matrix @ basis
-    return _project_basis(
+    # Project the original operator, not an inverted projected resolvent.
+    images = (
+        problem.operator.matrix @ basis
+        if isinstance(problem.operator, lx.MatrixLinearOperator)
+        else jax.lax.map(problem.operator.mv, basis.T).T
+    )
+    action = _project_basis(
         basis,
         images,
         seed,
-        steps,
-        exact=dimension == size,
+        problem.steps,
+        exact=dimension == seed.size,
         success=success,
         return_basis=return_basis,
     )
+    return action, {"num_steps": num_steps, "max_residual_norm": max_residual}
 
 
 def _gmres_power_action(
@@ -216,8 +246,7 @@ def _gmres_power_action(
     on the public method. Statistics count GMRES restart cycles, not matvecs.
     """
     seed = problem.initial
-    dimension = min(seed.size, dimension)
-    shift = problem.steps / 8
+    shift = _rational_shift(problem.steps)
     population_size = seed.size - int(problem.augmented)
     spec = jax.ShapeDtypeStruct((population_size,), seed.dtype)
 
@@ -242,59 +271,28 @@ def _gmres_power_action(
         if problem.augmented
         else jnp.zeros_like(seed)
     )
-    norm_squared = seed @ seed
-    norm = jnp.sqrt(jnp.where(norm_squared > 0, norm_squared, 1.0))
-    basis = (
-        jnp.zeros((seed.size, dimension), dtype=seed.dtype).at[:, 0].set(seed / norm)
-    )
 
-    def step(index, carry):
-        """Solve a shifted system and retain its status before orthogonalization."""
-        basis, success, num_steps, max_residual = carry
-        vector = basis[:, index]
-        # The augmented resolvent is block triangular with lower-right entry 1.
-        # Eliminate that coordinate analytically: solve only the population
-        # block with rhs_pop + shift*source*rhs_aux, then restore rhs_aux.
+    def solve(vector):
+        """Eliminate affine coordinates, solve the population block, and check residuals."""
+        # The auxiliary diagonal of the augmented resolvent is one. Eliminate
+        # it analytically rather than asking GMRES to resolve the source scale.
         rhs = vector[:-1] + shift * source * vector[-1] if problem.augmented else vector
         solution = lx.linear_solve(shifted, rhs, solver, state=state, throw=False)
         residual = jnp.max(jnp.abs(shifted.mv(solution.value) - rhs))
         tolerance = atol + rtol * jnp.max(jnp.abs(rhs))
-        success = (
-            success
-            & (solution.result == lx.RESULTS.successful)
-            & jnp.all(jnp.isfinite(solution.value))
-            & (residual <= tolerance)
-        )
-        num_steps += solution.stats["num_steps"]
-        max_residual = jnp.maximum(max_residual, residual)
-        candidate = (
+        value = (
             jnp.concatenate((solution.value, vector[-1:]))
             if problem.augmented
             else solution.value
         )
-        basis = basis.at[:, index + 1].set(_orthogonalize(basis, candidate))
-        return basis, success, num_steps, max_residual
+        return _ShiftedSolveResult(
+            value,
+            (solution.result == lx.RESULTS.successful) & (residual <= tolerance),
+            solution.stats["num_steps"],
+            residual,
+        )
 
-    basis, success, num_steps, max_residual = jax.lax.fori_loop(
-        0,
-        dimension - 1,
-        step,
-        (basis, jnp.asarray(True), jnp.asarray(0), jnp.asarray(0.0)),
-    )
-    images = jax.lax.map(problem.operator.mv, basis.T).T
-    action = _project_basis(
-        basis,
-        images,
-        seed,
-        problem.steps,
-        exact=dimension == seed.size,
-        success=success,
-        return_basis=return_basis,
-    )
-    return action, {
-        "num_steps": num_steps,
-        "max_residual_norm": max_residual,
-    }
+    return _rational_projection(problem, dimension, solve, return_basis=return_basis)
 
 
 def _projected_result(problem, projection, rtol, atol, throw):
@@ -375,13 +373,14 @@ def project(problem, dimension, *, polynomial, return_basis=False, shifted_solve
     if polynomial:
         return _polynomial_power_action(problem, dimension, return_basis=return_basis)
     if isinstance(problem.operator, lx.MatrixLinearOperator):
-        return _power_action_with_status(
-            problem.operator.matrix,
-            problem.initial,
-            problem.steps,
-            dimension,
-            return_basis=return_basis,
-            shifted_solve=shifted_solve,
+        solve = (
+            _dense_shifted_solve(problem.operator.matrix, problem.steps)
+            if shifted_solve is None
+            else shifted_solve
         )
+        action, _ = _rational_projection(
+            problem, dimension, solve, return_basis=return_basis
+        )
+        return action
     action, _ = _gmres_power_action(problem, dimension, return_basis=return_basis)
     return action
