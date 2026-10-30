@@ -55,6 +55,9 @@ under tighter settings: one-step agreement is not sufficient.
 
 ## Which settings control which errors?
 
+Choose controls for the component whose accuracy you want to test. Tightening
+a power or solve tolerance does not improve the transition representation.
+
 | Component | Controls | What to check |
 | --- | --- | --- |
 | FFT | `tail_tol`, `interp_order` | Omitted binomial tails and local interpolation |
@@ -63,21 +66,14 @@ under tighter settings: one-step agreement is not sufficient.
 | Krylov methods | `dimension`, `rtol`, `atol` | Approximation of repeated evolution |
 | Expected visits | Solver tolerances and iteration limits | Linear-solve residual and amplification of transition errors |
 
-Jacobi's `one_step_tolerance` plans ideal polynomial truncation and assembly
-padding separately. It is not a total implemented-error guarantee.
-`max_strength` bounds the absolute values of both diploid selection
-coefficients, including those derived by constrained selection classes. Prepare
-geometry with a bound covering the parameters you will evaluate in reduced
-Krylov evolution. Jacobi checks these assembly bounds and the mutation-rate
-domain at runtime, even for identity Krylov histories. One-generation operations
-and Sequential do not use the reduced assembly. See
-[supported frequency maps](../api/backends.md#drifft.Jacobi).
+For reduced Jacobi evolution, prepare `max_strength` to cover the absolute
+values of both diploid selection coefficients over your parameter range.
+See the [Jacobi API](../api/backends.md#drifft.Jacobi) for assembly restrictions.
 
-Krylov's `error_estimate` combines a smaller-basis comparison with a check of
-the reduced recurrence. The default acceptance threshold is
-`atol + rtol * sum(abs(distribution))`. With `throw=False`, inspect
-`converged` and `status` before using the result. Domain errors still raise;
-a failing member under `vmap` can fail the batch when throwing is enabled.
+With Krylov, inspect `converged` and `status` when using `throw=False`.
+Its `error_estimate` assesses the power approximation; the
+[Krylov chapter](../methods/jacobi_krylov.md#accuracy-and-controls) defines its
+acceptance criterion. Expected-visits results instead report a solve residual.
 
 !!! warning "Convergence is not total accuracy"
 
@@ -106,25 +102,21 @@ from the numerical approximation.
 
 ## Differentiating biological parameters
 
-The [autodiff chapter](../methods/autodiff.md) derives finite-time sensitivities
-and explains JAX's differentiation of transitions, Krylov bases, and linear solves.
+Differentiate biological parameters while holding numerical settings and
+prepared geometry fixed. Gradient accuracy needs its own checks, even when the forward result
+has converged.
 
-Frequency-map parameters, input distributions, and immigration can be dynamic
-array leaves. Prepared geometry, population sizes, durations, and numerical
-dimensions are fixed configuration. Construct geometry outside differentiated
-functions, then replace model leaves or construct a frequency map inside the
-function being differentiated. See the [population-history example](demography.md#expectations-and-selection-gradients).
+Selection and mutation parameters, initial mass, and immigration can be
+array-valued inputs to a differentiated function. Population sizes, durations,
+and numerical dimensions are fixed configuration. Construct backends outside
+the function, then create or update the frequency map inside it; the
+[population-history example](demography.md#expectations-and-selection-gradients)
+shows this pattern with `jax.grad`.
 
-NUFFT differentiates its polynomial in the offspring probability rather than
-through the singular angle coordinate at endpoints. These are derivatives of
-the approximation. Derivatives of its sampling nodes are unsupported.
-
-Krylov derivatives use separate approximations to the mathematical power
-sensitivity and its operator pullback. They do not differentiate Arnoldi bases.
-Zero and invariant seeds are supported, but a failed sensitivity or pullback
-raises even with `throw=False`. Higher-order operator sensitivities currently
-raise; use Sequential for those calculations. See the
-[autodiff chapter](../methods/autodiff.md#accuracy-and-limitations) for details.
+Krylov operator sensitivities support first derivatives; use Sequential for
+higher-order calculations. Sensitivity failures raise even with `throw=False`.
+See the [autodiff accuracy contract](../methods/autodiff.md#accuracy-and-limitations)
+for the derivative targets and limitations.
 
 !!! tip "Validate derivatives on a small reference problem"
 

@@ -5,7 +5,14 @@ population histories. This supports all frequency maps, forward propagation,
 and conditional expectations. Keep that configuration until its time or memory
 cost becomes a limitation.
 
+A backend represents one generation; an evolution method applies that
+representation across an interval. The [computational overview](../methods/overview.md)
+explains the distinction and the errors each introduces.
+
 ## Alternatives
+
+Switch algorithms to address a measured cost in your calculation. These choices
+offer different tradeoffs; check compatibility before comparing performance.
 
 | Calculation | Alternative |
 | --- | --- |
@@ -31,6 +38,5 @@ then tighten the numerical settings and compare again. Agreement of a mean
 alone can hide errors in probabilities or gradients. See
 [accuracy and differentiation](numerics.md) for the validation procedure.
 
-For timing, include preparation and compilation on the first call, and measure
-warm execution separately. Synchronize JAX outputs before stopping the clock.
-A faster configuration for one model need not be faster for another.
+Use the [timing guidance](numerics.md#memory-and-timing) to compare first-call
+and repeated-use costs consistently.

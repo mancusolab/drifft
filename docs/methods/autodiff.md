@@ -1,223 +1,369 @@
 # Automatic differentiation and gradients
 
-Let $T=T(\theta)$ be a forward transition operator, acting on a column
-distribution $v_0$. For a fixed population size and frequency map, evolution
-through $K$ generations gives
+Here we present the mathematical aspects of differentiating Wright–Fisher
+evolution and how drifft computes these derivatives. We distinguish the
+one-generation transition, the power used to evolve through an interval, and
+the encoding and reconstruction around that power. Each derivative identity
+below is paired with the operation that implements it.
+
+!!! note "Advanced: matrix-power differentiation"
+
+    The derivations introduce Fréchet derivatives and use Krylov projection to
+    compute sensitivities without forming a matrix-sized operator cotangent.
+    Read the [Krylov chapter](jacobi_krylov.md) for the projection construction,
+    or start with the [selection-sensitivity example](../examples/selection_sensitivity.md)
+    and [derivative support](#accuracy-and-limitations) for practical use.
+
+## Problem and representation
+
+Evolution derivatives combine changes in the transition operator with changes
+in the input mass. Separating those contributions gives rules that work for
+both population and reduced coordinates.
+
+Let $\theta$ collect the differentiable model parameters and $v$ be a column
+vector of population mass, following the [shared notation](../guide/notation.md).
+The [model chapter](../guide/model.md) defines the exact expectation matrix $P$.
+For $g$ generations at fixed size and parameters, the exact target is
+$v_g=(P^T)^g v_0$.
+
+Write $T=\widetilde P^T$ for the represented forward operator. The calculations
+below use
 
 $$
-v_K=T(T(\cdots T v_0))=T^K v_0.
+v_{t+1}=T(\theta)v_t,
 $$
 
-For a scalar parameter $\theta$ and a parameter-independent initial state,
-the product rule gives
+and differentiate this numerical representation. Its approximation error is
+separate from the error of a method used to compute the power $T^g$.
 
-$$
-\frac{\partial v_K}{\partial\theta}
-=\sum_{j=0}^{K-1}
-T^{K-1-j}\frac{\partial T}{\partial\theta}T^j v_0.
-$$
-
-Each term accounts for changing one generation's transition and propagating
-that change to the final time. This is a finite-time sensitivity: it does not
-require recurrent mutation, ergodicity, or a stationary distribution. If
-$v_0$ depends on $\theta$, add $T^K\partial v_0/\partial\theta$.
-
-## Forward sensitivities and demographic histories
-
-Write $\dot v_t=\partial v_t/\partial\theta$ and
-$\dot T=\partial T/\partial\theta$. The same derivative follows the recurrence
-
-$$
-v_{t+1}=Tv_t,\qquad
-\dot v_{t+1}=T\dot v_t+\dot T v_t.
-$$
-
-Equivalently, the state and sensitivity evolve together:
-
-$$
-\begin{pmatrix}T&\dot T\\0&T\end{pmatrix}^{K}
-\begin{pmatrix}\dot v_0\\v_0\end{pmatrix}
-=\begin{pmatrix}\dot v_K\\v_K\end{pmatrix}.
-$$
-
-Across a demographic history, replace $T$ by the generation-specific operator
-$T_t$. The recurrence still applies when a population-size change makes
-$T_t$ rectangular. drifft holds the source size for all but the final
-generation of each interval, then applies a boundary transition to the
-destination size. Derivatives pass through both portions and into the next
-interval. For immigration $v_{t+1}=T_t v_t+b_t$, the sensitivity also includes
-$\dot b_t$.
-
-Population sizes and integer generation counts are fixed configuration in
-drifft. Differentiable inputs include selection coefficients, mutation rates,
-initial distributions, and immigration. Differentiating a selection parameter
-through a demographic history does not differentiate the history's sizes or
-durations.
-
-## JAX transformations
-
-[`jax.jvp`](https://docs.jax.dev/en/latest/_autosummary/jax.jvp.html) computes
-a Jacobian-vector product: the output change in a specified parameter
-direction. This propagates a state and tangent, as in the recurrence above.
-For several parameters, one JVP can evaluate their combined directional
-effect without forming a full Jacobian.
-
-[`jax.grad`](https://docs.jax.dev/en/latest/_autosummary/jax.grad.html) uses
-reverse mode for a scalar output, such as a log likelihood. It propagates
-sensitivities backward through the calculation and returns derivatives with
-respect to the requested inputs. Reverse mode is usually preferable for a
-scalar objective with many parameters, but can retain more intermediate state.
-`jax.jit` compiles either calculation; compilation does not change which
-parameters are differentiated.
-
-The [selection-sensitivity example](../examples/selection_sensitivity.md)
-shows a complete finite-time calculation with `jax.value_and_grad` and
-finite-difference checks. Construct geometry outside the differentiated
-function and replace dynamic parameter leaves inside it.
-
-## What drifft differentiates
-
-With `Sequential`, an operator-level primitive supplies a coupled state/tangent
-recurrence and an explicit initial-state transpose using the transposed
-operator. Operator tangents come from filtered JVPs of its matrix-vector
-action, so dense and callable representations follow the same rule. Ordinary
-AD still differentiates preparation and reconstruction, including immigration.
-This boundary is internal; existing JAX and Equinox transformations use it
-without an additional user option.
-With either Krylov method, custom first-order rules approximate the sensitivity
-of the prepared power action. They do not differentiate Arnoldi basis construction.
-A coupled block action computes the JVP, using up to twice `dimension` basis
-vectors for the doubled working state. The operator pullback uses two Krylov
-spaces, each with up to `dimension` vectors, seeded by the initial state and
-output cotangent. Their small projected matrices determine low-rank adjoint
-factors; contractions with operator VJPs return cotangents in the original
-operator PyTree without forming a population-sized matrix.
-
-`DemographicTransition` composes these operations through ordinary AD. Jacobi's
-parameter-dependent encoding and reduced operator, immigration, and population-size
-boundaries remain in the differentiated calculation. The same method rules
-apply to FFT, NUFFT, Jacobi, and Dense representations.
-
-At finite basis dimension, these derivatives need not equal the derivative of
-the executed primal Krylov approximation. They approximate the underlying
-power's sensitivity. Forward and reverse approximations must be checked for
-accuracy and adjoint consistency as the basis dimension increases.
-
-All drifft-owned custom differentiation uses
-[`jax.experimental.hijax.HiPrim`](https://docs.jax.dev/en/latest/301/custom-derivatives.html).
-Each primitive owns its primal operation, JVP, and batching rule; linearization
-and reverse mode are derived from the JVP. Operations linear in selected inputs
-also provide explicit transpose rules.
-
-Selection maps have analytic JVP rules:
-
-| Function | Purpose |
+| Mathematical operation | drifft operation |
 | --- | --- |
-| Diploid selection | Analytic frequency and coefficient derivatives, factored to reduce overflow and cancellation; shared by the constrained diploid models |
-| Multiplicative selection | Analytic frequency and fitness-ratio derivatives without squaring the mean fitness |
+| $\widetilde P f$: destination values to source expectations | `Transition.expect(values)` |
+| $Tv$: source mass to destination mass | `Transition.advance(distribution)` |
+| $T^g v$: evolution across a constant-size interval | An evolution method's `advance(...)` |
+| Composition of intervals and size changes | `DemographicTransition.advance(...)` |
 
-JAX uses these JVP rules for forward mode and constructs reverse-mode rules
-from them.
+Selection coefficients, mutation rates, initial mass and immigration can be
+differentiated. Population sizes, generation counts, ranks and method settings
+are fixed configuration. Prepared backend geometry is held fixed while dynamic
+model parameters change.
 
-Power actions use the same HiJAX interface, with Equinox partitioning to keep
-operator arrays dynamic and Python configuration static. The cached-power path
-attaches the mathematical derivative to an existing primal without differentiating
-the cached value. The Fréchet primitive supplies the explicit operator pullback
-and rejects unsupported higher derivatives. Symbolic zero tangents remain absent
-operator directions; state tangents are materialized when required.
+### The prepared power
 
-Custom kernels in the three optimized backends follow this convention too.
-Kernels linear in values or mass provide matched transpose rules; other backend
-operations use ordinary JAX differentiation.
-Dense uses ordinary JAX differentiation throughout its binomial recurrence,
-providing an independent small-population reference for these custom kernels.
+Encoding and reconstruction surround the power calculation. Keeping them
+explicit ensures their parameter dependence is included in the derivative.
+An evolution method receives a working-state problem
 
-| Backend | Custom kernels |
-| --- | --- |
-| FFT | Binomial weights with finite polynomial derivatives at probabilities zero and one |
-| NUFFT | Fixed-node binomial sampling, endpoint-safe polynomial evaluation, and its transpose |
-| Jacobi | Streaming polynomial moments and their evaluation transpose |
+$$
+y=A^k z,\qquad v_{\mathrm{out}}=Ry+c.
+$$
 
-The FFT binomial rule uses
-$\partial B_{n,j}(q)/\partial q=n[B_{n-1,j-1}(q)-B_{n-1,j}(q)]$,
-with out-of-range binomial indices interpreted as zero.
+Here $A$ is the working-state operator, $z$ the encoded initial state, $k$ a
+nonnegative integer exponent, $R$ a linear reconstruction map, and $c$ an
+output offset. These need not have the same dimensions as the population state.
 
-Jacobi's JVP differentiates both the evaluation points and input mass using
-polynomial derivative recurrences. These rules support higher derivatives and avoid
-retaining a population-sized vector for every polynomial degree in reverse
-mode. For fixed derivative order, encoder working storage is $O(M+r)$ for
-$M$ gene copies and rank $r$; arithmetic remains $O(Mr)$. Separate recurrence
-passes can increase execution time compared with retaining intermediates.
+For an interval without immigration:
+
+| Representation | $z$ | $A$ | $k$ | $R$ |
+| --- | --- | --- | --- | --- |
+| Population coordinates: Sequential with any backend; Krylov with FFT, NUFFT or Dense | $v_0$ | $T$ | $g$ | $I$ |
+| Reduced coordinates: Jacobi with Krylov, $g\ge1$ | $D^T v_0$ | $H_{\mathrm J}^T$, where $H_{\mathrm J}=ED$ | $g-1$ | $E^T$ |
+
+The Jacobi encoding includes one selected transition factor, hence $k=g-1$;
+zero generations is an identity. The [Jacobi chapter](jacobi.md) derives this
+representation and its approximation error.
+
+## Forward sensitivities: the JVP
+
+A JVP measures how the output changes along one parameter or state perturbation.
+For a matrix power, that change is a sum over the steps at which the operator
+can be perturbed.
+
+A dot denotes a directional derivative along a supplied perturbation of
+$\theta$. For $y=A^k z$, define the Fréchet derivative of the matrix power by
+
+$$
+\mathcal L_k(A,\Delta A)
+=\sum_{j=0}^{k-1}A^{k-1-j}(\Delta A)A^j,
+\qquad \mathcal L_0(A,\Delta A)=0.
+$$
+
+The joint operator-and-state derivative is
+
+$$
+\boxed{\dot y=\mathcal L_k(A,\dot A)z+A^k\dot z.}
+$$
+
+The first term changes the operator at each possible step; the second changes
+the initial state. This is a finite-time derivative and requires neither a
+stationary distribution nor ergodicity.
+
+### Sequential: evolve the state and tangent together
+
+Sequential evolution can carry a tangent alongside the state, applying the
+product rule at each generation. Set $z_0=z$ and $\dot z_0=\dot z$. Differentiate each step:
+
+$$
+\begin{aligned}
+z_{t+1}&=Az_t,\\
+\dot z_{t+1}&=A\dot z_t+\dot A z_t.
+\end{aligned}
+$$
+
+`Sequential` implements this coupled recurrence. The action $\dot A z_t$
+comes from a filtered JVP of the operator's matrix-vector action, so the same
+rule works for explicit matrices and callable operators.
+
+### Krylov: approximate a coupled block power
+
+Stacking the state and tangent turns the sensitivity into another power
+problem, which either Krylov method can approximate. The recurrence becomes:
+
+$$
+\boxed{
+\begin{pmatrix}A&\dot A\\0&A\end{pmatrix}^{k}
+\begin{pmatrix}\dot z\\z\end{pmatrix}
+=
+\begin{pmatrix}\dot y\\y\end{pmatrix}.
+}
+$$
+
+Both Krylov methods approximate this block action with their respective
+projection algorithms. The doubled state can use up to twice `dimension`
+basis vectors. For a pure state perturbation, $\dot A=0$, the derivative
+reduces to another power action $A^k\dot z$.
+
+## Reverse sensitivities: the VJP
+
+Reverse mode propagates sensitivity from a scalar objective back to the
+initial state and model parameters. It avoids a separate forward sensitivity
+calculation for every parameter.
+
+Let $\ell(y)$ be a scalar objective and let $\bar y=\nabla_y\ell$ be the
+cotangent arriving at the power action. Define the forward and backward orbits
+
+$$
+z_j=A^j z,\qquad
+\lambda_j=(A^T)^{k-j}\bar y,\qquad j=0,\ldots,k.
+$$
+
+Pairing the JVP with $\bar y$ gives the reverse sensitivities.
+
+Thus the input cotangent and matrix cotangent are
+
+$$
+\boxed{\bar z=(A^T)^k\bar y,\qquad
+G=\sum_{j=0}^{k-1}\lambda_{j+1}z_j^T,}
+$$
+
+where $\dot\ell=\bar z^T\dot z+\langle G,\dot A\rangle_F$ and
+$\langle U,V\rangle_F=\operatorname{tr}(U^TV)$.
+For $k=0$, $\bar z=\bar y$ and $G=0$.
+
+### Compute operator cotangents without forming a large matrix
+
+The matrix cotangent can be population-sized even when the final objective
+is scalar. A factored approximation lets drifft contract it with operator
+parameters without constructing that matrix.
+
+!!! note "Advanced: low-rank adjoints"
+
+    This derivation uses two Krylov projections and a block matrix power.
+    The [accuracy contract](#accuracy-and-limitations) is sufficient if you
+    only need to use and validate gradients.
+
+Sequential obtains reverse mode by transposing its coupled derivative rule;
+the initial-state transpose applies the transposed operator repeatedly.
+
+Krylov approximates $G$ in two spaces: a basis $U$ for the backward orbit
+under $A^T$, and a basis $V$ for the forward orbit under $A$. Each space uses
+at most $m=$ `dimension` vectors. With
+
+$$
+H_{m,\mathrm L}=U^TA^TU,\quad H_{m,\mathrm R}=V^TAV,\quad
+\alpha=U^T\bar y,\quad \beta=V^Tz,
+$$
+
+the projected matrix cotangent is
+
+$$
+G\approx UCV^T,\qquad
+C=\sum_{j=0}^{k-1}H_{m,\mathrm L}^{k-1-j}\alpha\beta^T(H_{m,\mathrm R}^T)^j.
+$$
+
+The small matrix $C$ is the upper-right block of
+
+$$
+\begin{pmatrix}H_{m,\mathrm L}&\alpha\beta^T\\0&H_{m,\mathrm R}^T\end{pmatrix}^{k}.
+$$
+
+drifft retains the factors $F=UC$ and $V$. For operator parameters $\theta$,
+it contracts their columns through VJPs of the operator action:
+
+$$
+\bar\theta_A\approx
+\sum_i
+\left(\frac{\partial\,[A(\theta)V_i]}{\partial\theta}\right)^T F_i.
+$$
+
+Here $F_i$ and $V_i$ are held fixed during each contraction. This returns
+cotangents in the operator's original parameter PyTree without materializing
+$G$ or a population-sized Jacobian.
+
+## Encoding, immigration and demographic histories
+
+Parameters can affect the transforms and source terms as well as the power.
+The chain rule connects those contributions across an entire demographic history.
+For
+$v_{\mathrm{out}}=Ry+c$ and $y=A^k z$,
+
+$$
+\dot v_{\mathrm{out}}
+=\dot R\,y
+ +R\left[\mathcal L_k(A,\dot A)z+A^k\dot z\right]
+ +\dot c.
+$$
+
+For example, Jacobi's encoded state $z=D^Tv_0$ contributes
+
+$$
+\dot z=\dot D^T v_0+D^T\dot v_0.
+$$
+
+Ordinary JAX differentiation handles preparation and reconstruction around
+the custom power rule. Selection-dependent encoding, reduced assembly and
+source terms therefore remain connected to model parameters.
+
+### Immigration is an affine recurrence
+
+Immigration adds mass after each generation. Augmenting the state with a
+constant coordinate lets the same power machinery handle this affine update.
+For $v_{t+1}=Tv_t+b$, the derivative is
+
+$$
+\dot v_{t+1}=T\dot v_t+\dot T v_t+\dot b.
+$$
+
+A constant source can be included in a linear power by augmenting the state:
+
+$$
+\begin{pmatrix}v_{t+1}\\1\end{pmatrix}
+=
+\begin{pmatrix}T&b\\0&1\end{pmatrix}
+\begin{pmatrix}v_t\\1\end{pmatrix}.
+$$
+
+The prepared power uses this construction. In Jacobi coordinates, earlier
+source events are encoded into the reduced recurrence and the last event is
+added by the output offset $c$. The
+[epoch operations page](../guide/epochs.md#mass-and-immigration) specifies the timing.
+
+### Size changes compose through the chain rule
+
+Population-size changes alter the state dimension but still compose through
+the chain rule. For a generation-specific, possibly rectangular forward operator $T_t$,
+
+$$
+\dot v_{t+1}=T_t\dot v_t+\dot T_t v_t+\dot b_t.
+$$
+
+`DemographicTransition` applies the interval method for the first $g-1$
+generations, then a boundary transition for the final generation. Ordinary AD
+composes their derivatives in chronological order, and their pullbacks in
+reverse order. Population sizes and durations remain fixed.
+
+## How drifft connects these rules to JAX
+
+Custom derivative rules let JAX use the power identities above without
+tracing through the adaptive Krylov basis. All drifft-owned custom
+differentiation uses `jax.experimental.hijax.HiPrim`.
+
+HiJAX derives linearization and reverse mode from JVP rules; explicit
+transposes handle linear inputs. The Krylov Fréchet primitive supplies its
+operator pullback explicitly. Ordinary JAX differentiation connects these
+rules to preparation, reconstruction, and the frequency map; Dense uses
+ordinary JAX AD as an independent binomial reference.
+
+!!! warning "Derivative of the power versus derivative of the algorithm"
+
+    At finite basis dimension, drifft approximates $\mathrm d(A^k z)$.
+    It does **not** differentiate the executed approximation
+    $V(V^TAV)^kV^Tz$, whose basis depends on its inputs. These derivatives need
+    not agree until the approximations are sufficiently accurate.
+
+Use `jax.jvp` for a parameter direction and `jax.grad` or
+`jax.value_and_grad` for a scalar objective. The
+[selection-sensitivity example](../examples/selection_sensitivity.md) shows
+parameter replacement and gradient validation. Backend chapters describe the
+one-generation derivative rules.
 
 ## Implicit derivatives of linear solves
 
-Rational Krylov constructs its basis using shifted systems
+Linear solves appear in expected visits and rational Krylov construction.
+Their derivatives follow from the defining equation, so they do not require
+differentiating an iterative solver trajectory.
+
+A solve $Bz=b$ has directional derivative and reverse solve
 
 $$
-B x=b,\qquad B=I+\tau(I-A),\quad \tau>0,
+\boxed{B\dot z=\dot b-\dot Bz,\qquad B^T\lambda=\bar z.}
 $$
 
-where $A$ is the prepared working-state operator. Jacobi uses dense LU solves;
-FFT and NUFFT use GMRES. Through Lineax, these solves differentiate the
-defining equation:
+Consequently, $\bar b=\lambda$ and $\bar B=-\lambda z^T$.
+Lineax differentiates this defining equation rather than the factorization or
+iterative-solver trajectory.
 
-$$
-B\dot x=\dot b-\dot B x.
-$$
+| Use of a solve | Role in differentiation |
+| --- | --- |
+| Expected visits: $(I-Q^T)u=e_1$ | Lineax's implicit rule differentiates the occupation vector $u$ |
+| Rational Krylov: $[I+\tau(I-A)]z=b$ | Builds the primal and sensitivity spaces; the outer power derivative uses the custom rules above |
 
-The derivative requires another solve, rather than differentiation through
-the factorization or GMRES iterations. Reverse mode uses a transposed system.
-Expected-visits derivatives use this implicit solve rule. Krylov power
-derivatives instead apply their own mathematical sensitivity rule; they do not
-differentiate basis construction. Dense rational block sensitivities reuse one
-factorization of the original shifted operator for both diagonal blocks.
-
-Invertibility of $B$ is the relevant condition. Absorption does not itself
-cause singularity: an eigenvalue $1$ of $A$ becomes eigenvalue $1$ of $B$.
-For a stochastic $A$, the positive shift gives an invertible system; reduced
-numerical operators still require numerical validation.
-
-Expected-visits calculations also use Lineax's implicit solve derivatives.
-Their transient system is invertible when eventual absorption occurs with
-probability one. This differs from differentiating a stationary distribution:
-without recurrent mutation, the full chain has multiple stationary
-distributions supported on its absorbing boundaries.
+These equations require invertible $B$. For rational Krylov, an eigenvalue
+$1$ of $A$ becomes eigenvalue $1$ of $B=I+\tau(I-A)$; absorption alone does
+not make this shifted system singular. Expected visits instead require a
+transient interior kernel. Solve strategies are described in the
+[Krylov chapter](jacobi_krylov.md#computation).
 
 ## Accuracy and limitations
 
-Sequential differentiates its repeated numerical transition. Krylov methods
-approximate the sensitivity of the prepared power, so finite differences of an
-underresolved primal approximation are not sufficient validation. Increase
-backend accuracy and Krylov dimension separately; use dense references and
-JVP/VJP adjoint-pairing checks where feasible.
+A successful forward calculation does not establish derivative accuracy.
+The derivative target and supported derivative orders depend on the evolution
+method, and Krylov sensitivities have their own convergence checks.
 
-Zero seeds and exact invariant-subspace breakdown are supported by the new
-first-order Krylov rules. The sensitivity and operator pullback have separate
-convergence estimates. The coupled action checks a combined error estimate
-against both the state and sensitivity tolerances. The operator pullback combines a nested-space Frobenius difference with
-recurrence-defect estimates along both intermediate trajectories. This avoids
-accepting two vanishing projected pullbacks when propagation is unresolved.
-The defect estimate uses unit amplification and is heuristic for general
-nonnormal operators. These diagnostics are not certificates.
-A failed sensitivity or pullback raises even with `throw=False`; there is no
-automatic fallback. A failing member under `vmap` can fail the batch.
+| Calculation | Derivative target | Higher-order support |
+| --- | --- | --- |
+| Sequential | Repeated numerical transition, including its backend approximation | Supported through the recurrence and supported backend rules |
+| PolynomialKrylov / RationalKrylov | Approximate sensitivity of the prepared power $A^k z$ | Higher-order differentiation through the Fréchet rule raises explicitly |
 
-Higher-order differentiation through the Krylov Fréchet rule is not currently
-implemented and raises explicitly. Use Sequential for such
-calculations. Sequential and the backend-level polynomial derivative rules
-retain their higher-order support.
+Zero seeds and invariant-subspace breakdown are supported by the first-order
+Krylov rules when their convergence checks pass. Derivative checks are separate
+from the primal checks:
 
-Error estimates and status fields are numerical diagnostics rather than
-differentiation targets. Measure derivative runtime and memory separately from
-forward evaluation. Neither primal nor derivative convergence establishes total
-accuracy for the exact Wright–Fisher model.
+- The coupled JVP's combined error estimate must satisfy both the state and
+  sensitivity tolerances.
+- The operator pullback combines a nested-space Frobenius difference with
+  recurrence defects along both projected orbits. This detects unresolved
+  propagation even when both projected pullbacks vanish.
+- A failed sensitivity or pullback raises even with `throw=False`; a failing
+  member under `vmap` can fail the batch. There is no automatic fallback.
 
-See [accuracy and differentiation](../guide/numerics.md) for validation
-controls and [Krylov power methods](jacobi_krylov.md) for the forward algorithm.
+Defect estimates use unit amplification and are heuristic for general nonnormal
+operators. They do not certify total Wright–Fisher model accuracy. Error
+estimates and status fields are diagnostics, not differentiation targets.
+
+Validate by increasing backend accuracy and Krylov dimension separately,
+comparing against small dense references, and checking JVP/VJP adjoint pairing.
+Finite differences of an underresolved Krylov primal need not match its custom
+derivative. Measure derivative time and memory separately from forward costs.
+See [accuracy and differentiation](../guide/numerics.md) for the validation
+procedure and [Krylov power methods](jacobi_krylov.md) for the primal algorithms.
 
 ## References
 
+The JAX and Lineax references describe the differentiation interfaces;
+Kandolf et al. develop the low-rank matrix-function derivative approach.
+
 - [JAX automatic differentiation](https://docs.jax.dev/en/latest/automatic-differentiation.html).
-- [JAX custom derivative rules](https://docs.jax.dev/en/latest/notebooks/Custom_derivative_rules_for_Python_code.html).
+- [JAX custom derivative rules and HiJAX](https://docs.jax.dev/en/latest/301/custom-derivatives.html).
 - [Lineax linear solves](https://docs.kidger.site/lineax/api/linear_solve/).
 - [Kandolf et al., low-rank Fréchet derivative approximations](https://arxiv.org/abs/2008.12926).

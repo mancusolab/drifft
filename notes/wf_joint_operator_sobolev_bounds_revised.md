@@ -1,5 +1,19 @@
 # Joint one-step and multi-step error bounds for filtered DCT approximation of the Wright–Fisher operator
 
+## Notation crosswalk
+
+This derivation retains its local symbols. The [shared documentation notation](../docs/guide/notation.md)
+uses the following corresponding quantities.
+
+| This note | Shared docs convention |
+| --- | --- |
+| Source frequency $p_i$ | $x_i$ |
+| Observable vector $x$ | $f$ |
+| Angular coordinate $\theta$ | $\vartheta$ |
+| Epoch duration $K$ | $g$ |
+| Retained cosine mode count $L$ | $n_{\mathrm{modes}}$; output degree is $L_{\mathrm{docs}}=L-1$ |
+| Scalar selection parameter $s$ in $P_s,q_s$ | A selected component of the model parameters $\theta$ |
+
 *A supplemental note — revised 24 October 2026*
 
 ## 1. Motivation and scope

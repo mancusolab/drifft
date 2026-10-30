@@ -1,5 +1,17 @@
 # Wright–Fisher FFT/NUFFT compression: sharper row-$\ell_1$ bounds
 
+## Notation crosswalk
+
+This derivation retains its local symbols. The [shared documentation notation](../docs/guide/notation.md)
+uses the following corresponding quantities.
+
+| This note | Shared docs convention |
+| --- | --- |
+| Angular coordinate $\theta$ | $\vartheta$ |
+| Retained mode count $L$ | $n_{\mathrm{modes}}$; output degree is $L_{\mathrm{docs}}=L-1$ |
+| Filter weights $v_k$ | Local taper weights, not population mass $v_t$ |
+| Complex-strip displacement $t$ | Local analytic variable, not a generation index |
+
 ## Scope and status
 
 These are derivations for the Bernstein-to-Chebyshev codec, not for rational Jacobi reduction. The explicit WF-specific bounds below are derived here. They do not claim optimal numerical constants or a lower bound for every possible low-rank representation. The reference Python file checks finite sets of rows; those checks are not substitutes for the proof and exclude a production JAX implementation.

@@ -1,8 +1,9 @@
 # Population histories
 
 `Demography` describes population sizes and timing. `DemographicTransition`
-combines that history with a numerical backend, an epoch method, and a shared
-frequency map. It evaluates allele-count distributions deterministically. For a
+combines that history with a numerical backend, an evolution method, and one
+frequency map used throughout the history. Supply an initial distribution to
+compute the distribution at the final population size. For a
 complete biological comparison, see the [bottleneck example](../examples/bottleneck.md).
 
 ```python
@@ -31,8 +32,7 @@ final = result.distribution
 
 Sizes run oldest to newest and are positive integer **diploid** effective
 population sizes. The allele-count grid has `2 * ne + 1` entries. Lists or
-concrete one-dimensional integer arrays are accepted; floating-point sizes are
-not silently rounded.
+concrete one-dimensional integer arrays are accepted.
 
 There must be one fewer duration than sizes. Each positive integer duration
 counts the generations **between population boundaries**: hold the source size
@@ -81,15 +81,15 @@ def expected_frequency(strength):
 gradient = jax.grad(expected_frequency)(jnp.asarray(0.01))
 ```
 
-Construct histories and prepared models outside JIT. Numerical methods compile
-automatically. Sizes and durations are fixed, not differentiable parameters;
-changing them can trigger recompilation. Gradient memory use can grow with the
-number of generations.
+Construct the history and model outside the differentiated function; update
+only biological parameters inside it. See [differentiating biological parameters](numerics.md#differentiating-biological-parameters)
+for supported inputs and gradient checks.
 
 ## Backend configuration and limits
 
-One backend is prepared per distinct size within each model. Use `drifft.NUFFT`
-instead of `drifft.FFT`, or supply a factory with custom settings:
+A history needs transition geometry for several population sizes, so pass a
+backend constructor or factory rather than a single backend instance. To
+customize its settings, supply a factory such as:
 
 ```python
 from functools import partial
@@ -110,29 +110,33 @@ even though the history uses diploid Ne.
 For other backend and method combinations, see
 [choosing numerical algorithms](backends.md). The
 [Schiffels–Durbin example](../examples/schiffels_durbin.md) uses Jacobi with
-RationalKrylov and an explicit FFT boundary backend. `model.expect()` requires
-Sequential. For custom orchestration, see [direct epoch operations](../methods/epochs.md).
+RationalKrylov and an explicit FFT boundary backend. For custom orchestration,
+see [direct epoch operations](epochs.md).
 
 ## Segregating mass and mutation input
 
-`model.advance_segregating(initial, mutation_rate=1e-8)` discards endpoint mass
-each generation and adds singleton input equal to the destination gene-copy
-count times the mutation rate. Its input and output contain interior counts
-only (`2 * ne - 1` entries). This source is distinct from recurrent mutation in
-a frequency map. With recurrent mutation, use full-state `advance()` when
-endpoint mass should be able to return to the interior. Equilibrium
-initialization is supplied by the caller.
+Singleton input represents new mutations entering the segregating population
+each generation. It is a source of new mass, distinct from recurrent mutation
+of alleles already represented in the distribution.
+
+`model.advance_segregating(initial, mutation_rate=1e-8)` adds singleton mass
+equal to the destination gene-copy count times the mutation rate after each
+generation. Input and output contain interior counts only (`2 * ne - 1`
+entries), with [endpoint mass discarded](transitions.md#restricting-to-segregating-counts).
+Use full-state `advance()` when recurrent mutation should allow endpoint re-entry.
+For arbitrary source vectors, see [direct epoch operations](epochs.md#mass-and-immigration).
 
 ## Results and failures
 
-The current API uses one frequency map throughout the history. Forward methods
-return a `DemographicResult` containing `distribution`, `converged`, `status`,
-and per-interval `diagnostics`. No intermediate distributions or solver
-factorizations are retained in the result. With `throw=True` (the default), a
-numerical failure raises; with `throw=False`, inspect the result before using
-the distribution. Domain errors still raise. A failing member under `vmap`
-may fail the whole batch when throwing is enabled.
+Forward methods return the final distribution together with convergence
+information. Check that status before using a result from a call that disables
+exceptions.
 
-Before using a result in an analysis, compare its final statistic and gradient
-under tighter settings. The [accuracy guide](numerics.md) explains what interval
-diagnostics do and do not establish.
+The `DemographicResult` contains `distribution`, `converged`, `status`, and
+per-interval `diagnostics`. It does not retain intermediate distributions.
+Numerical failure raises by default; with `throw=False`, inspect `converged`
+and `status`. Domain errors still raise, and a failing member under `vmap`
+may fail the batch when throwing is enabled.
+
+The [accuracy guide](numerics.md) explains how to validate the final statistic
+and gradient beyond checking convergence.
