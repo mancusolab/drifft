@@ -1,6 +1,7 @@
 """Transition operations driven by frequency maps."""
 
 # pattern: Functional Core; pure operations over a prepared transition backend.
+from functools import partial
 from typing import Literal, final
 
 import equinox as eqx
@@ -29,7 +30,7 @@ class Transition(eqx.Module):
     discard endpoint mass. They require complete, ordered allele-count grids;
     sampled probability rows are for full-state operations. For a square
     interior kernel $Q$, `expected_visits`
-    solves $(I-Q^T)g=e_1$, including the initial generation. Finite visits require
+    solves $(I-Q^T)u=e_1$, including the initial generation. Finite visits require
     eventual endpoint hitting; mutation does not restore discarded trajectories.
     """
 
@@ -55,7 +56,8 @@ class Transition(eqx.Module):
         - `source_gene_copies`: Source size, at least two for a map. Defaults to the
           backend size, or `len(probabilities) - 1` for explicit rows.
         - `probabilities`: Optional nonempty vector of source probabilities in `[0, 1]`;
-          converted to float64.
+          converted to float64. Rows may be arbitrary sampled probabilities for
+          full-state operations; segregating operations require ordered count grids.
 
         **Returns:**
 
@@ -108,30 +110,6 @@ class Transition(eqx.Module):
             if self._probabilities.size != self.source_gene_copies + 1:
                 raise ValueError("source_gene_copies must match the probability vector")
 
-    @classmethod
-    def from_probabilities(
-        cls, backend: AbstractTransitionBackend, probabilities: jax.Array
-    ) -> "Transition":
-        r"""Construct a transition from explicit source-row probabilities.
-
-        **Arguments:**
-
-        - `backend`: Prepared destination backend.
-        - `probabilities`: Nonempty vector of probabilities in `[0, 1]`. Rows may
-          represent sampled probabilities rather than a complete allele-count grid.
-
-        **Returns:**
-
-        A `Transition` with float64 probability leaves and
-        `source_gene_copies = len(probabilities) - 1`.
-
-        **Raises:**
-
-        `ValueError` if the probability array is empty or not one-dimensional.
-        `TypeError` for an invalid backend. Probability values are not range-checked.
-        """
-        return cls(backend, probabilities=probabilities)
-
     @property
     def probabilities(self) -> jax.Array:
         r"""Current float64 source probabilities, shape `(source_gene_copies + 1,)`.
@@ -156,100 +134,80 @@ class Transition(eqx.Module):
         return probabilities
 
     @eqx.filter_jit
-    def expect(self, values: jax.Array) -> jax.Array:
+    def expect(self, values: jax.Array, *, segregating: bool = False) -> jax.Array:
         r"""Compute destination-value expectations at each source state.
 
         **Arguments:**
 
         - `values`: Finite real vector of length `backend.gene_copies + 1`,
-          converted to float64. Signed entries are supported.
+          or `backend.gene_copies - 1` when segregating. Converted to float64;
+          signed entries are supported.
+        - `segregating`: Use interior states with endpoint values fixed to zero.
 
         **Returns:**
 
-        A float64 vector of length `source_gene_copies + 1`.
+        A float64 vector of length `source_gene_copies + 1`, or
+        `source_gene_copies - 1` when segregating. No survival conditioning.
 
         **Raises:**
 
-        `ValueError` for incompatible input or map-output shapes.
+        `ValueError` for incompatible input/map-output shapes or a nonboolean flag.
         """
-        return self.backend.expect(
-            self.probabilities, jnp.asarray(values, dtype=jnp.float64)
-        )
+        if not isinstance(segregating, bool):
+            raise ValueError("segregating must be a Python bool")
+        values = jnp.asarray(values, dtype=jnp.float64)
+        if segregating:
+            if self.source_gene_copies < 2 or values.shape != (
+                self.backend.gene_copies - 1,
+            ):
+                raise ValueError(
+                    "segregating values must match the destination interior"
+                )
+            expectations = self.backend.expect(
+                self.probabilities, jnp.pad(values, (1, 1))
+            )
+            return expectations[1:-1]
+        return self.backend.expect(self.probabilities, values)
 
     @eqx.filter_jit
-    def advance(self, distribution: jax.Array) -> jax.Array:
+    def advance(
+        self, distribution: jax.Array, *, segregating: bool = False
+    ) -> jax.Array:
         r"""Propagate source mass by one generation.
 
         **Arguments:**
 
         - `distribution`: Finite real vector of length `source_gene_copies + 1`,
-          converted to float64. Signed entries are supported.
+          or `source_gene_copies - 1` when segregating. Converted to float64;
+          signed entries are supported.
+        - `segregating`: Discard endpoint hits after the transition.
 
         **Returns:**
 
-        A float64 vector of length `backend.gene_copies + 1`.
+        A float64 vector of length `backend.gene_copies + 1`, or
+        `backend.gene_copies - 1` when segregating. No renormalization occurs.
 
         **Raises:**
 
-        `ValueError` for incompatible input or map-output shapes.
+        `ValueError` for incompatible input/map-output shapes or a nonboolean flag.
         """
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
-        if distribution.shape != (self.source_gene_copies + 1,):
-            raise ValueError("distribution must have source_gene_copies + 1 entries")
-        spec = jax.ShapeDtypeStruct((self.backend.gene_copies + 1,), jnp.float64)
+        if not isinstance(segregating, bool):
+            raise ValueError("segregating must be a Python bool")
+        offset = -1 if segregating else 1
+        if segregating and self.source_gene_copies < 2:
+            raise ValueError("segregating distribution requires source interior states")
+        if distribution.shape != (self.source_gene_copies + offset,):
+            raise ValueError(
+                f"distribution must have {self.source_gene_copies + offset} entries "
+                f"for the {'interior' if segregating else 'full'} source grid"
+            )
+        spec = jax.ShapeDtypeStruct((self.backend.gene_copies + offset,), jnp.float64)
         # Transpose the actual approximate expectation map, rather than a
         # separately implemented forward kernel, to preserve adjoint pairing.
-        return jax.linear_transpose(self.expect, spec)(distribution)[0]
-
-    @eqx.filter_jit
-    def expect_segregating(self, values: jax.Array) -> jax.Array:
-        r"""Compute interior expectations with endpoint values set to zero.
-
-        **Arguments:**
-
-        - `values`: Finite real vector of length `backend.gene_copies - 1`,
-          converted to float64. Signed entries are supported.
-
-        **Returns:**
-
-        A float64 vector of length `source_gene_copies - 1`. No conditioning on survival.
-
-        **Raises:**
-
-        `ValueError` for incompatible input or map-output shapes.
-        """
-        values = jnp.asarray(values, dtype=jnp.float64)
-        if self.source_gene_copies < 2 or values.shape != (
-            self.backend.gene_copies - 1,
-        ):
-            raise ValueError(
-                "segregating values require interior source and destination states"
-            )
-        return self.expect(jnp.pad(values, (1, 1)))[1:-1]
-
-    @eqx.filter_jit
-    def advance_segregating(self, distribution: jax.Array) -> jax.Array:
-        r"""Propagate interior mass, discarding endpoint hits.
-
-        **Arguments:**
-
-        - `distribution`: Finite real vector of length `source_gene_copies - 1`,
-          converted to float64. Signed entries are supported.
-
-        **Returns:**
-
-        A float64 vector of length `backend.gene_copies - 1`. No renormalization or re-entry from endpoints.
-
-        **Raises:**
-
-        `ValueError` for incompatible input or map-output shapes.
-        """
-        distribution = jnp.asarray(distribution, dtype=jnp.float64)
-        if self.source_gene_copies < 2 or distribution.shape != (
-            self.source_gene_copies - 1,
-        ):
-            raise ValueError("segregating distribution must match the source interior")
-        return self.advance(jnp.pad(distribution, (1, 1)))[1:-1]
+        return jax.linear_transpose(
+            partial(self.expect, segregating=segregating), spec
+        )(distribution)[0]
 
     def as_lineax(self, *, segregating: bool = False) -> lx.FunctionLinearOperator:
         r"""Expose the expectation operation as a Lineax operator.
@@ -266,15 +224,17 @@ class Transition(eqx.Module):
 
         **Raises:**
 
-        `ValueError` for incompatible dimensions or map-output shape.
+        `ValueError` for incompatible dimensions/map-output shape or a nonboolean flag.
         """
+        if not isinstance(segregating, bool):
+            raise ValueError("segregating must be a Python bool")
         size = (
             self.backend.gene_copies - 1
             if segregating
             else self.backend.gene_copies + 1
         )
         return lx.FunctionLinearOperator(
-            self.expect_segregating if segregating else self.expect,
+            partial(self.expect, segregating=segregating),
             jax.ShapeDtypeStruct((size,), jnp.float64),
         )
 
@@ -287,6 +247,7 @@ class Transition(eqx.Module):
         atol: float = 1e-11,
         max_steps: int = 2000,
         restart: int = 50,
+        throw: bool = True,
     ) -> ExpectedVisitsResult:
         r"""Compute interior visits from one copy, including the initial generation.
 
@@ -299,6 +260,8 @@ class Transition(eqx.Module):
         - `max_steps`: Positive iteration limit; default 2000 (outer steps for GMRES).
         - `restart`: Positive GMRES subspace size; default 50, capped at the number
           of interior states. Validated but unused for BiCGStab.
+        - `throw`: Raise on numerical failure by default. False returns the
+          candidate and diagnostics; under vmap, true may fail the whole batch.
 
         **Returns:**
 
@@ -308,12 +271,13 @@ class Transition(eqx.Module):
         **Raises:**
 
         `ValueError` for a nonsquare transition, invalid solver controls, or map shape.
+        Runtime errors for failed solves, nonfinite output, or rejected residuals
+        with `throw=True`.
 
         !!! warning "Numerical limitations"
 
-            The internal solve uses `throw=False`; numerical failure is returned.
-            Check `converged` before
-            using visits; under vmap, check each result. Visits stop at the first endpoint
+            With `throw=False`, check `converged` before using visits; under vmap,
+            check each result. Visits stop at the first endpoint
             hit, even with mutation. Global differentiability of solves is not certified.
         """
         if self.source_gene_copies != self.backend.gene_copies:
@@ -326,4 +290,5 @@ class Transition(eqx.Module):
             atol=atol,
             max_steps=max_steps,
             restart=restart,
+            throw=throw,
         )

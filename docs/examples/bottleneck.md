@@ -31,7 +31,7 @@ fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
 for index, (label, history) in enumerate(histories.items()):
     model = drifft.DemographicTransition(
         history,
-        backend=drifft.FFT,
+        backend_factory=drifft.FFT,
         method=drifft.Sequential(),
         frequency_map=drifft.Neutral(),
     )

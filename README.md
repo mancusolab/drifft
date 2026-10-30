@@ -53,11 +53,12 @@ generation. Reuse the backend across selection strengths, or substitute
 
 The guide covers [selection and mutation](docs/guide/frequency_maps.md),
 [demographic histories](docs/guide/demography.md),
-[constant-size epochs and immigration](docs/methods/epochs.md),
+[constant-size epochs and immigration](docs/guide/epochs.md),
 [backend tradeoffs](docs/guide/backends.md),
 [accuracy settings](docs/guide/numerics.md), and
 [expected visits and solver limitations](docs/guide/solves.md).
-Always check `result.converged` when using `transition.expected_visits()`.
+`transition.expected_visits()` raises on numerical failure by default. Use
+`throw=False` to inspect a candidate and check `result.converged` before using it.
 
 ## Development
 

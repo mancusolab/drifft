@@ -8,10 +8,17 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
+from .._backend import AbstractTransitionBackend
 from .._frequency import AbstractFrequencyMap
 from .autodiff import _cached_power_action, _frechet_action, _power_action
 from .preparation import _prepare_epoch, _prepare_transition, validate_representation
-from .problem import EpochResult, _epoch_result, _PowerProblem, _working_problem
+from .problem import (
+    EpochProblem,
+    EpochResult,
+    _epoch_result,
+    _PowerProblem,
+    _working_problem,
+)
 from .projection import _projected_result, project
 
 
@@ -29,7 +36,7 @@ class AbstractEpochMethod(eqx.Module):
 
     @abstractmethod
     def validate(
-        self, backend: eqx.Module, frequency_map: AbstractFrequencyMap
+        self, backend: AbstractTransitionBackend, frequency_map: AbstractFrequencyMap
     ) -> None:
         r"""Reject unsupported representation and process combinations.
 
@@ -51,13 +58,15 @@ class AbstractEpochMethod(eqx.Module):
         ...
 
     @abstractmethod
-    def solve(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
-        r"""Evaluate a power problem prepared internally by drifft.
+    def solve(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
+        r"""Evaluate a power problem returned by `prepare_epoch`.
 
         **Arguments:**
 
-        - `problem`: Internal operator, initial state, static exponent and
-          reconstruction map. Use `advance` to supply population-space inputs.
+        - `problem`: Read-only `EpochProblem` with the working operator, initial
+          state, exponent, reconstruction and result checks. Use `prepare_epoch`
+          to obtain it from population-space inputs; custom methods should use
+          `problem.result` to finish the action.
         - `throw`: Raise on numerical failure when true; otherwise return status.
 
         **Returns:**
@@ -76,7 +85,7 @@ class AbstractEpochMethod(eqx.Module):
     @abstractmethod
     def advance(
         self,
-        backend: eqx.Module,
+        backend: AbstractTransitionBackend,
         distribution: jax.Array,
         *,
         frequency_map: AbstractFrequencyMap,
@@ -113,10 +122,42 @@ class AbstractEpochMethod(eqx.Module):
         ...
 
 
-def _prepare_evolution(
-    method, backend, distribution, frequency_map, generations, segregating, immigration
-):
-    """Select preparation from the method's explicit representation requirement."""
+def prepare_epoch(
+    method: AbstractEpochMethod,
+    backend: AbstractTransitionBackend,
+    distribution: jax.Array,
+    *,
+    frequency_map: AbstractFrequencyMap,
+    generations: int,
+    segregating: bool = False,
+    immigration: jax.Array | None = None,
+) -> EpochProblem:
+    r"""Prepare a method's working problem from population-space inputs.
+
+    **Arguments:**
+
+    - `method`: Epoch algorithm whose representation requirement selects preparation.
+    - `backend`: Prepared geometry, constructed outside JIT.
+    - `distribution`: Full or interior mass, as in `AbstractEpochMethod.advance`.
+    - `frequency_map`, `generations`, `segregating`, `immigration`: Process, static
+      duration, state layout and per-generation source as in that interface.
+
+    **Returns:**
+
+    A PyTree implementing the read-only `EpochProblem` contract. Pass it to
+    `method.solve`; custom `advance` implementations can use this function
+    inside JIT or differentiation. Preparation preserves biological parameter
+    links and owns source timing and representation-specific reconstruction.
+
+    **Raises:**
+
+    `TypeError` for invalid methods or unsupported combinations; `ValueError`
+    for invalid static shapes/configuration. Runtime process-domain checks raise
+    independently of the later solve's `throw` setting, even for zero generations.
+    """
+    if not isinstance(method, AbstractEpochMethod):
+        raise TypeError("method must be an AbstractEpochMethod")
+    method.validate(backend, frequency_map)
     if not method.uses_reduced_representation:
         return _prepare_transition(
             backend, distribution, frequency_map, generations, segregating, immigration
@@ -137,7 +178,7 @@ class Sequential(AbstractEpochMethod):
     uses_reduced_representation: ClassVar[bool] = False
 
     def validate(
-        self, backend: eqx.Module, frequency_map: AbstractFrequencyMap
+        self, backend: AbstractTransitionBackend, frequency_map: AbstractFrequencyMap
     ) -> None:
         r"""Check the types required by `AbstractEpochMethod.validate`.
 
@@ -157,12 +198,12 @@ class Sequential(AbstractEpochMethod):
             backend, frequency_map, reduced=False, method_name="Sequential"
         )
 
-    def solve(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
+    def solve(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
         r"""Iterate in working coordinates and reconstruct population mass.
 
         **Arguments:**
 
-        - `problem`: Internal prepared problem; see `AbstractEpochMethod.solve`.
+        - `problem`: Prepared problem; see `AbstractEpochMethod.solve`.
         - `throw`: Raise on nonfinite output when true.
 
         **Returns:**
@@ -171,7 +212,7 @@ class Sequential(AbstractEpochMethod):
         measure accumulated backend error or floating-point roundoff.
         """
         state = _power_action(self, problem.operator, problem.initial, problem.steps)
-        return _epoch_result(problem.reconstruct(state), jnp.asarray(0.0), 0.0, throw)
+        return problem.result(state, throw=throw)
 
     def _power_action(self, operator, initial, steps):
         """Apply repeated operator actions in working coordinates."""
@@ -200,7 +241,7 @@ class Sequential(AbstractEpochMethod):
     @eqx.filter_jit
     def advance(
         self,
-        backend: eqx.Module,
+        backend: AbstractTransitionBackend,
         distribution: jax.Array,
         *,
         frequency_map: AbstractFrequencyMap,
@@ -222,17 +263,16 @@ class Sequential(AbstractEpochMethod):
         An `EpochResult` with zero power-approximation error. Backend errors and
         roundoff remain; Sequential supports higher-order differentiation.
         """
-        self.validate(backend, frequency_map)
-        problem = _prepare_evolution(
+        return _advance(
             self,
             backend,
             distribution,
-            frequency_map,
-            generations,
-            segregating,
-            immigration,
+            frequency_map=frequency_map,
+            generations=generations,
+            segregating=segregating,
+            immigration=immigration,
+            throw=throw,
         )
-        return self.solve(problem, throw=throw)
 
 
 Sequential.__init__.__doc__ = r"""Configure repeated one-generation evolution.
@@ -261,7 +301,7 @@ def _check_krylov_configuration(self) -> None:
 
 
 def _validate_krylov(
-    self, backend: eqx.Module, frequency_map: AbstractFrequencyMap
+    self, backend: AbstractTransitionBackend, frequency_map: AbstractFrequencyMap
 ) -> None:
     r"""Check backend and map compatibility for reduced power evolution.
 
@@ -310,7 +350,7 @@ def _krylov_power_jvp(
 
 def _advance(
     self,
-    backend: eqx.Module,
+    backend: AbstractTransitionBackend,
     distribution: jax.Array,
     *,
     frequency_map: AbstractFrequencyMap,
@@ -319,31 +359,25 @@ def _advance(
     immigration: jax.Array | None = None,
     throw: bool = True,
 ) -> EpochResult:
-    r"""Evolve with the contracts of `AbstractEpochMethod.advance`.
-
-    Jacobi process-domain checks apply even when `throw=False`. Power
-    estimates exclude representation, quadrature and assembly error. Increase
-    rank and dimension independently when validating a new numerical regime.
-    """
-    self.validate(backend, frequency_map)
-    problem = _prepare_evolution(
+    """Prepare the selected representation and solve through the method's contract."""
+    problem = prepare_epoch(
         self,
         backend,
         distribution,
-        frequency_map,
-        generations,
-        segregating,
-        immigration,
+        frequency_map=frequency_map,
+        generations=generations,
+        segregating=segregating,
+        immigration=immigration,
     )
     return self.solve(problem, throw=throw)
 
 
-def _solve_krylov(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
+def _solve_krylov(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
     r"""Approximate a prepared power and attach its mathematical sensitivities.
 
     **Arguments:**
 
-    - `problem`: Internal prepared problem; see `AbstractEpochMethod.solve`.
+    - `problem`: Prepared problem; see `AbstractEpochMethod.solve`.
     - `throw`: Raise on a failed primal action when true.
 
     **Returns:**
@@ -358,6 +392,8 @@ def _solve_krylov(self, problem: _PowerProblem, *, throw: bool = True) -> EpochR
     sensitivities regardless of `throw`. Higher-order operator sensitivities
     raise explicitly; use Sequential when they are needed.
     """
+    if not isinstance(problem, _PowerProblem):
+        raise TypeError("Krylov methods require a problem returned by prepare_epoch")
     if problem.steps == 0:
         return _epoch_result(
             problem.reconstruct(problem.initial), jnp.asarray(0.0), self.atol, throw
@@ -380,8 +416,8 @@ def _solve_krylov(self, problem: _PowerProblem, *, throw: bool = True) -> EpochR
 class RationalKrylov(AbstractEpochMethod):
     r"""Approximate a prepared power action using a resolvent Krylov basis.
 
-    Each basis vector solves $[I+\tau(I-A)]z=v$, with $\tau=g/8$ for
-    working exponent $g$. Jacobi uses a reusable dense LU factorization;
+    Each basis vector solves $[I+\tau(I-A)]y=z$, with $\tau=k/8$ for
+    working exponent $k$. Jacobi uses a reusable dense LU factorization;
     other transition backends use unpreconditioned Lineax GMRES. Solver choice is
     internal. Inner failures are reported as `linear_solve_failed`.
 
@@ -417,7 +453,7 @@ class RationalKrylov(AbstractEpochMethod):
     @eqx.filter_jit
     def advance(
         self,
-        backend: eqx.Module,
+        backend: AbstractTransitionBackend,
         distribution: jax.Array,
         *,
         frequency_map: AbstractFrequencyMap,
@@ -482,13 +518,14 @@ other transition backends. Solver selection is internal.
 class PolynomialKrylov(AbstractEpochMethod):
     r"""Approximate repeated evolution with matrix-free polynomial Arnoldi.
 
-    For a prepared operator $A$, seed $b$, and $g$ steps, build an orthonormal
-    basis $V$ for $\mathcal K_m(A,b)=\mathrm{span}(b,Ab,\ldots,A^{m-1}b)$.
-    With $H=V^TAV$, approximate $A^g b\approx VH^gV^Tb$. Only operator
+    For a prepared operator $A$, initial working state $z$, and exponent $k$,
+    build an orthonormal basis $V_m$ for
+    $\mathcal K_m(A,z)=\mathrm{span}(z,Az,\ldots,A^{m-1}z)$.
+    With $H_m=V_m^TAV_m$, approximate $A^k z\approx V_mH_m^kV_m^Tz$. Only operator
     applications are needed; there are no shifted solves. All transition backends
     are supported, including Dense for small reference calculations.
 
-    The basis uses O(n m) storage for working-state size n and dimension m.
+    The basis uses O(d m) storage for working-state size d and dimension m.
     Larger dimensions can be necessary for long intervals; no restart or
     automatic Sequential fallback is performed. Convergence checks exclude
     backend approximation error. First-order derivatives use a coupled Krylov
@@ -518,7 +555,7 @@ class PolynomialKrylov(AbstractEpochMethod):
     @eqx.filter_jit
     def advance(
         self,
-        backend: eqx.Module,
+        backend: AbstractTransitionBackend,
         distribution: jax.Array,
         *,
         frequency_map: AbstractFrequencyMap,

@@ -136,8 +136,8 @@ def test_polynomial_demography_and_gradients(backend_type):
     """Differentiate selected demographic evolution, mass and immigration."""
     model = drifft.DemographicTransition(
         drifft.Demography([4, 3, 5], [4, 3]),
-        backend=backend_type,
-        boundary_backend=drifft.FFT,
+        backend_factory=backend_type,
+        boundary_backend_factory=drifft.FFT,
         method=drifft.PolynomialKrylov(dimension=16),
         frequency_map=drifft.Underdominance(0.03),
     )
@@ -146,7 +146,12 @@ def test_polynomial_demography_and_gradients(backend_type):
 
     def objective(s, p, rate):
         updated = eqx.tree_at(lambda m: m.frequency_map.strength, model, s)
-        return updated.advance_segregating(p, mutation_rate=rate).distribution @ weights
+        return (
+            updated.advance(
+                p, segregating=True, singleton_mutation_rate=rate
+            ).distribution
+            @ weights
+        )
 
     args = (jnp.asarray(0.03), mass, jnp.asarray(1e-5))
     actual = eqx.filter_jit(jax.grad(objective, argnums=(0, 1, 2)))(*args)
@@ -163,7 +168,7 @@ def test_polynomial_demography_and_gradients(backend_type):
         atol=2e-8,
     )
     batched = eqx.filter_jit(
-        jax.vmap(lambda p: model.advance_segregating(p).distribution)
+        jax.vmap(lambda p: model.advance(p, segregating=True).distribution)
     )(jnp.stack((mass, 2 * mass)))
     assert jnp.allclose(batched[1], 2 * batched[0], atol=1e-10)
     with pytest.raises(ValueError, match="Sequential"):

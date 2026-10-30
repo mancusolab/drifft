@@ -12,6 +12,11 @@ import jax.numpy as jnp
 from jax.experimental import hijax
 
 
+def _as_float64(value: float | jax.Array) -> jax.Array:
+    """Normalize parameter leaves and retain useful generated constructor types."""
+    return jnp.asarray(value, dtype=jnp.float64)
+
+
 class AbstractFrequencyMap(eqx.Module):
     r"""Interface for transforming source frequencies into offspring probabilities.
 
@@ -189,8 +194,8 @@ class DiploidSelection(AbstractFrequencyMap):
     is a separate map, applied in the order specified by `Composition`.
     """
 
-    s_het: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
-    s_hom: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+    s_het: jax.Array = eqx.field(converter=_as_float64)
+    s_hom: jax.Array = eqx.field(converter=_as_float64)
 
     def __check_init__(self) -> None:
         """Require scalar coefficients without inspecting traced values."""
@@ -280,17 +285,14 @@ None.
 class Mutation(AbstractFrequencyMap):
     r"""Apply forward and back mutation to an allele frequency.
 
-    For allele-1 frequency $p$, forward rate $u$, and backward rate $v$,
+    For allele-1 frequency $x$ and directional rates
+    $\mu_{0\to1}$ (`forward_rate`) and $\mu_{1\to0}$ (`backward_rate`),
 
-    $$q(p) = p(1-v) + (1-p)u.$$
+    $$q(x)=x(1-\mu_{1\to0})+(1-x)\mu_{0\to1}.$$
     """
 
-    forward_rate: jax.Array = eqx.field(
-        default=0.0, converter=lambda x: jnp.asarray(x, dtype=jnp.float64)
-    )
-    backward_rate: jax.Array = eqx.field(
-        default=0.0, converter=lambda x: jnp.asarray(x, dtype=jnp.float64)
-    )
+    forward_rate: jax.Array = eqx.field(default=0.0, converter=_as_float64)
+    backward_rate: jax.Array = eqx.field(default=0.0, converter=_as_float64)
 
     def __check_init__(self) -> None:
         """Require scalar rates without inspecting traced values."""
@@ -401,8 +403,8 @@ class Underdominance(AbstractFrequencyMap):
 
     Genotypes 0/0, 0/1, and 1/1 have fitnesses $1$, $1-s$, and $1$.
     This is the constrained diploid rule `DiploidSelection(s_het=s, s_hom=0)`;
-    both homozygotes have equal fitness. `AdditiveSelection(s_het=s)` instead
-    assigns derived homozygotes fitness $1-2s$.
+    both homozygotes have equal fitness. `AdditiveSelection(s)` instead
+    assigns fitnesses $1$, $1-s/2$, and $1-s$.
 
     For allele frequency $x$ and heterozygote disadvantage $s$,
 
@@ -412,9 +414,7 @@ class Underdominance(AbstractFrequencyMap):
     the specialized underdominance assembly supported by the Jacobi backend.
     """
 
-    strength: jax.Array = eqx.field(
-        converter=lambda x: jnp.asarray(x, dtype=jnp.float64)
-    )
+    strength: jax.Array = eqx.field(converter=_as_float64)
 
     def __check_init__(self) -> None:
         """Require scalar selection without inspecting traced values."""
@@ -462,17 +462,18 @@ Underdominance.__init__.__doc__ = r"""Initialize Underdominance.
 class AdditiveSelection(AbstractFrequencyMap):
     r"""Additive diploid fitness effects.
 
-    Genotype fitnesses are $1$, $1-s_{\mathrm{het}}$, and $1-2s_{\mathrm{het}}$.
+    Genotype fitnesses are $1$, $1-s/2$, and $1-s$. The coefficient is the
+    derived-homozygote fitness reduction, as in `DominanceSelection(s, h=0.5)`.
 
     Uses the `DiploidSelection` numerical rule with coefficients derived from
     the current parameter leaves on every call.
     """
 
-    s_het: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+    s: jax.Array = eqx.field(converter=_as_float64)
 
     def __check_init__(self) -> None:
         """Require scalar parameters without inspecting traced values."""
-        if self.s_het.ndim != 0:
+        if self.s.ndim != 0:
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
@@ -486,7 +487,7 @@ class AdditiveSelection(AbstractFrequencyMap):
 
         Selected frequencies with the same shape as the input.
         """
-        return _diploid_selection(self.s_het, 2 * self.s_het, frequencies)
+        return _diploid_selection(self.s / 2, self.s, frequencies)
 
 
 # Document the generated constructor without replacing its implementation.
@@ -494,8 +495,8 @@ AdditiveSelection.__init__.__doc__ = r"""Initialize AdditiveSelection.
 
 **Arguments:**
 
-- `s_het`: Heterozygote fitness reduction, finite and strictly below `0.5`,
-  with finite derived coefficient `2 * s_het`.
+- `s`: Derived-homozygote fitness reduction, finite and strictly below `1`.
+  The heterozygote reduction is `s / 2`; negative values represent advantages.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
 construction. Value constraints are caller preconditions, including under JIT
@@ -521,9 +522,9 @@ class DominanceSelection(AbstractFrequencyMap):
     the current parameter leaves on every call.
     """
 
-    s: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+    s: jax.Array = eqx.field(converter=_as_float64)
 
-    h: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+    h: jax.Array = eqx.field(converter=_as_float64)
 
     def __check_init__(self) -> None:
         """Require scalar parameters without inspecting traced values."""
@@ -576,7 +577,7 @@ class RecessiveSelection(AbstractFrequencyMap):
     the current parameter leaves on every call.
     """
 
-    s: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+    s: jax.Array = eqx.field(converter=_as_float64)
 
     def __check_init__(self) -> None:
         """Require scalar parameters without inspecting traced values."""
@@ -628,7 +629,7 @@ class DominantSelection(AbstractFrequencyMap):
     the current parameter leaves on every call.
     """
 
-    s: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+    s: jax.Array = eqx.field(converter=_as_float64)
 
     def __check_init__(self) -> None:
         """Require scalar parameters without inspecting traced values."""
@@ -680,9 +681,7 @@ class Overdominance(AbstractFrequencyMap):
     the current parameter leaves on every call.
     """
 
-    strength: jax.Array = eqx.field(
-        converter=lambda x: jnp.asarray(x, dtype=jnp.float64)
-    )
+    strength: jax.Array = eqx.field(converter=_as_float64)
 
     def __check_init__(self) -> None:
         """Require scalar parameters without inspecting traced values."""
@@ -778,14 +777,15 @@ def _multiplicative_selection(*args):
 
 @final
 class MultiplicativeSelection(AbstractFrequencyMap):
-    r"""Multiplicative fitness effects with fitnesses $1$, $r$, and $r^2$.
+    r"""Multiplicative fitness effects with fitnesses $1$, $\rho$, and $\rho^2$.
 
-    This is the diploid rule with coefficients $1-r$ and $1-r^2$. Cancelling
-    the common factor gives $q(x)=rx/(1-x+rx)$, avoiding cancellation in the
-    coefficients when fitness is small and overflow from squaring large $r$.
+    The API parameter `r` is the fitness ratio $\rho$. This is the diploid rule
+    with coefficients $1-\rho$ and $1-\rho^2$. Cancelling the common factor gives
+    $q(x)=\rho x/(1-x+\rho x)$, avoiding cancellation in the coefficients when
+    fitness is small and overflow from squaring large $\rho$.
     """
 
-    r: jax.Array = eqx.field(converter=lambda x: jnp.asarray(x, dtype=jnp.float64))
+    r: jax.Array = eqx.field(converter=_as_float64)
 
     def __check_init__(self) -> None:
         """Require scalar parameters without inspecting traced values."""

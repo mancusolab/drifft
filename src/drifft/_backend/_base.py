@@ -10,10 +10,10 @@ import jax
 class AbstractTransitionBackend(eqx.Module):
     r"""Interface for prepared geometry with a linear expectation operation.
 
-    For destination gene-copy count $M$ and values $v_j$, backends evaluate the
+    For destination gene-copy count $M$ and values $f_j$, backends evaluate the
     binomial expectation
 
-    $$B_M[v](q)=\sum_{j=0}^{M}\binom{M}{j}q^j(1-q)^{M-j}v_j.$$
+    $$B_M[f](q)=\sum_{j=0}^{M}\binom{M}{j}q^j(1-q)^{M-j}f_j.$$
 
     Implementations provide `gene_copies` and an `expect` operation linear in
     destination values, supporting transposition, JVP, VJP, and batching.

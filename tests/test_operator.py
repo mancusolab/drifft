@@ -35,9 +35,9 @@ def test_full_and_transient(M):
             actual = np.asarray(apply(jnp.asarray(s), jnp.asarray(v)))
             assert np.max(np.abs(actual - exact @ v)) / max(1, np.max(np.abs(v))) < 1e-9
             np.testing.assert_array_equal(actual[[0, -1]], v[[0, -1]])
-        transient = wf.Transition(
-            backend, wf.Underdominance(jnp.asarray(s))
-        ).expect_segregating(jnp.ones(M - 1))
+        transient = wf.Transition(backend, wf.Underdominance(jnp.asarray(s))).expect(
+            jnp.ones(M - 1), segregating=True
+        )
         np.testing.assert_allclose(
             transient, exact[1:-1, 1:-1].sum(axis=1), atol=1e-9, rtol=0
         )
@@ -54,7 +54,7 @@ def test_dynamic_selection_linearity_vmap_and_transpose():
     def apply(s, v):
         """Apply a transition with dynamic selection under the tested transform."""
         traces.append(None)
-        return wf.Transition(backend, wf.Underdominance(s)).expect_segregating(v)
+        return wf.Transition(backend, wf.Underdominance(s)).expect(v, segregating=True)
 
     compiled = jax.jit(apply)
     u, v = np.random.default_rng(1).normal(size=(2, M - 1))
@@ -71,8 +71,8 @@ def test_dynamic_selection_linearity_vmap_and_transpose():
     )
     mapped = jax.jit(
         jax.vmap(
-            lambda s: wf.Transition(backend, wf.Underdominance(s)).expect_segregating(
-                jnp.asarray(v)
+            lambda s: wf.Transition(backend, wf.Underdominance(s)).expect(
+                jnp.asarray(v), segregating=True
             )
         )
     )(jnp.array([0.0, 0.5, 1.0]))
@@ -87,7 +87,7 @@ def test_sampled_kernel_coefficients_and_negative_mass():
     M = 4096
     backend = wf.NUFFT(M)
     p = jnp.array([0.0, 1e-8, 0.01, 0.25, 0.5, 0.9, 1 - 1e-8, 1.0])
-    transition = wf.Transition.from_probabilities(backend, p)
+    transition = wf.Transition(backend, probabilities=p)
     actual = np.asarray(jax.jit(jax.vmap(transition.advance))(jnp.eye(len(p))))
     exact = binom.pmf(np.arange(M + 1)[None, :], M, np.asarray(p)[:, None])
     error = np.sum(np.abs(actual - exact), axis=1).max()

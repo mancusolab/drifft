@@ -18,7 +18,7 @@ def test_dense_public_backend_and_rectangular_operations():
     backend = drifft.Dense(12)
     assert isinstance(backend, drifft.AbstractTransitionBackend)
     q = jnp.array([0.0, 1e-12, 0.2, 0.53, 0.9, 1 - 1e-12, 1.0])
-    transition = drifft.Transition.from_probabilities(backend, q)
+    transition = drifft.Transition(backend, probabilities=q)
     matrix = jnp.asarray(binom.pmf(np.arange(13)[None, :], 12, np.asarray(q)[:, None]))
     actual_matrix = jax.jit(jax.vmap(transition.expect, out_axes=1))(jnp.eye(13))
     np.testing.assert_allclose(actual_matrix, matrix, atol=2e-15, rtol=2e-14)
@@ -80,23 +80,27 @@ def test_dense_demography_with_mutation_selection_and_immigration(segregating):
     """Support changing sizes, matched expectations, and shared frequency parameters."""
     history = drifft.Demography([5, 3, 4], [3, 2])
     rule = drifft.Composition(
-        drifft.Mutation(0.003, 0.006), drifft.AdditiveSelection(0.02)
+        drifft.Mutation(0.003, 0.006), drifft.AdditiveSelection(0.04)
     )
     dense = drifft.DemographicTransition(
-        history, backend=drifft.Dense, frequency_map=rule
+        history, backend_factory=drifft.Dense, frequency_map=rule
     )
-    fft = drifft.DemographicTransition(history, backend=drifft.FFT, frequency_map=rule)
+    fft = drifft.DemographicTransition(
+        history, backend_factory=drifft.FFT, frequency_map=rule
+    )
     initial = jnp.eye(9 if segregating else 11)[2]
     values = jnp.cos(jnp.arange(7 if segregating else 9) * 0.4)
 
     def objective(model, strength):
         """Update selection without rebuilding the backend or demographic schedule."""
-        updated = eqx.tree_at(lambda m: m.frequency_map.maps[1].s_het, model, strength)
+        updated = eqx.tree_at(lambda m: m.frequency_map.maps[1].s, model, strength)
         if segregating:
-            return updated.advance_segregating(initial, mutation_rate=1e-5).distribution
+            return updated.advance(
+                initial, segregating=True, singleton_mutation_rate=1e-5
+            ).distribution
         return updated.advance(initial).distribution
 
-    strength = jnp.asarray(0.02)
+    strength = jnp.asarray(0.04)
     actual, tangent = eqx.filter_jit(
         lambda s: jax.jvp(lambda x: objective(dense, x), (s,), (jnp.ones_like(s),))
     )(strength)

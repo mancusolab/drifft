@@ -73,6 +73,94 @@ result automatically; constructing it directly performs no numerical checks.
 """
 
 
+class EpochProblem(Protocol):
+    r"""Read-only algorithm inputs returned by `prepare_epoch`.
+
+    Approximate `operator**steps @ initial` in the provided working coordinates,
+    then use `result` to reconstruct population mass and check convergence.
+    `steps` is the prepared exponent; reduced representations may absorb an
+    initial generation into encoding. Use this exponent rather than the original
+    requested generation count. Immigration may add an auxiliary coordinate.
+
+    This protocol describes drifft's prepared PyTree; obtain instances through
+    `prepare_epoch`. It is not a constructor or an interface for supplying
+    arbitrary user-defined problem objects to built-in methods.
+    """
+
+    @property
+    def operator(self) -> lx.AbstractLinearOperator:
+        r"""Linear one-step action in the prepared working coordinates."""
+        ...
+
+    @property
+    def initial(self) -> jax.Array:
+        r"""Initial working-state vector, including any auxiliary coordinate."""
+        ...
+
+    @property
+    def steps(self) -> int:
+        r"""Nonnegative static exponent for the prepared linear action."""
+        ...
+
+    def reconstruct(self, state: jax.Array) -> jax.Array:
+        r"""Convert a final working state to full or interior population mass.
+
+        **Arguments:**
+
+        - `state`: Vector matching `initial.shape`.
+
+        **Returns:**
+
+        Population mass including any final source event and affine offset.
+        """
+        ...
+
+    def error_norm(self, delta: jax.Array) -> jax.Array:
+        r"""Measure working-state error in the representation's acceptance norm.
+
+        **Arguments:**
+
+        - `delta`: Error vector matching `initial.shape`.
+
+        **Returns:**
+
+        Scalar absolute L1 error in population coordinates, including any
+        auxiliary-coordinate defect. Reconstruction's affine offset is excluded.
+        """
+        ...
+
+    def result(
+        self,
+        state: jax.Array,
+        *,
+        error_estimate: float | jax.Array = 0.0,
+        tolerance: float | jax.Array = 0.0,
+        throw: bool = True,
+    ) -> EpochResult:
+        r"""Reconstruct mass and apply the shared finite-output/error checks.
+
+        **Arguments:**
+
+        - `state`: Final working vector, matching `initial.shape`.
+        - `error_estimate`: Nonnegative absolute power-error estimate in population
+          coordinates; zero for exact iteration. Excludes backend error.
+        - `tolerance`: Nonnegative absolute acceptance threshold for that estimate.
+        - `throw`: Raise on failure by default; false retains the candidate.
+
+        **Returns:**
+
+        An `EpochResult` with reconstructed mass, estimate, status and convergence.
+
+        **Raises:**
+
+        `ValueError` for incompatible state or scalar shapes. Negative estimates
+        or invalid tolerances raise regardless of `throw`.
+        Runtime errors for nonfinite mass/estimate or an excessive estimate when
+        `throw=True`. A failed batch member may fail the whole batch.
+        """
+        ...
+
+
 @final
 class _PowerProblem(eqx.Module):
     """A linear power in working coordinates with an affine output reconstruction."""
@@ -97,6 +185,31 @@ class _PowerProblem(eqx.Module):
         """Measure physical and auxiliary-coordinate recurrence defects."""
         auxiliary = jnp.abs(delta[-1]) if self.augmented else 0.0
         return jnp.sum(jnp.abs(self.decode(delta))) + auxiliary
+
+    def result(
+        self,
+        state: jax.Array,
+        *,
+        error_estimate: float | jax.Array = 0.0,
+        tolerance: float | jax.Array = 0.0,
+        throw: bool = True,
+    ) -> EpochResult:
+        """Implement the public prepared-problem result contract."""
+        state = jnp.asarray(state, dtype=self.initial.dtype)
+        error_estimate = jnp.asarray(error_estimate, dtype=jnp.float64)
+        tolerance = jnp.asarray(tolerance, dtype=jnp.float64)
+        if state.shape != self.initial.shape:
+            raise ValueError("state must match the prepared initial shape")
+        if error_estimate.shape != () or tolerance.shape != ():
+            raise ValueError("error_estimate and tolerance must be scalars")
+        # These are algorithm-domain preconditions. A nonfinite estimate remains
+        # a recoverable numerical outcome, while a negative one is invalid input.
+        state = eqx.error_if(
+            state,
+            (error_estimate < 0) | ~jnp.isfinite(tolerance) | (tolerance < 0),
+            "error_estimate must be nonnegative; tolerance must be finite and nonnegative",
+        )
+        return _epoch_result(self.reconstruct(state), error_estimate, tolerance, throw)
 
 
 def _epoch_inputs(distribution, immigration, gene_copies, generations, segregating):

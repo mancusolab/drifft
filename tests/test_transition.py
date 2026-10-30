@@ -31,19 +31,19 @@ def test_selection_model_and_both_transition_directions():
         transition.advance(distribution=mass), matrix.T @ mass, atol=1e-12
     )
     np.testing.assert_allclose(
-        transition.expect_segregating(values=values[1:-1]),
+        transition.expect(segregating=True, values=values[1:-1]),
         matrix[1:-1, 1:-1] @ values[1:-1],
         atol=1e-12,
     )
     np.testing.assert_allclose(
-        transition.advance_segregating(distribution=mass[1:-1]),
+        transition.advance(segregating=True, distribution=mass[1:-1]),
         matrix[1:-1, 1:-1].T @ mass[1:-1],
         atol=1e-12,
     )
     np.testing.assert_allclose(
         transition.as_lineax().T.mv(mass), matrix.T @ mass, atol=1e-12
     )
-    assert float(transition.advance_segregating(mass[1:-1]).sum()) < float(
+    assert float(transition.advance(mass[1:-1], segregating=True).sum()) < float(
         mass[1:-1].sum()
     )
 
@@ -52,7 +52,7 @@ def test_explicit_probabilities_preserve_rectangular_transitions():
     """Allow sampled source rows with a different destination dimension."""
     backend = drifft.NUFFT(8)
     p = jnp.array([0.0, 0.15, 0.7, 1.0])
-    transition = drifft.Transition.from_probabilities(backend, p)
+    transition = drifft.Transition(backend, probabilities=p)
     matrix = binom.pmf(np.arange(9)[None, :], 8, np.asarray(p)[:, None])
     values = jnp.arange(9, dtype=jnp.float64)
     mass = jnp.array([0.1, 0.2, 0.3, 0.4])
@@ -120,7 +120,7 @@ def test_custom_probabilities_drive_expected_visits():
     """Use caller-supplied probabilities in the occupation system."""
     backend = drifft.NUFFT(16)
     p = jnp.arange(17, dtype=jnp.float64) / 16
-    transition = drifft.Transition.from_probabilities(backend, p)
+    transition = drifft.Transition(backend, probabilities=p)
     matrix = binom.pmf(np.arange(17)[None, :], 16, np.asarray(p)[:, None])
     rhs = np.zeros(15)
     rhs[0] = 1
@@ -136,9 +136,9 @@ def test_transition_rejects_ambiguous_or_invalid_configuration():
     with pytest.raises(ValueError):
         drifft.Transition(backend)
     with pytest.raises(ValueError):
-        drifft.Transition.from_probabilities(backend, jnp.ones((2, 2)))
+        drifft.Transition(backend, probabilities=jnp.ones((2, 2)))
     with pytest.raises(ValueError):
-        drifft.Transition.from_probabilities(backend, jnp.array([]))
+        drifft.Transition(backend, probabilities=jnp.array([]))
     with pytest.raises(ValueError):
         drifft.Transition(backend, drifft.Underdominance(0.1), source_gene_copies=0)
     with pytest.raises(ValueError):
@@ -177,7 +177,7 @@ def test_transition_shape_errors_are_explicit():
     with pytest.raises(ValueError, match="distribution"):
         model.advance(jnp.ones(16))
     with pytest.raises(ValueError, match="interior"):
-        model.advance_segregating(jnp.ones(16))
+        model.advance(jnp.ones(16), segregating=True)
     with pytest.raises(ValueError, match="probability"):
         drifft.Transition(
             backend, frequency_map=drifft.FrequencyMap(lambda x: jnp.asarray(0.5))

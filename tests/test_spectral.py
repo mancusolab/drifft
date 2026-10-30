@@ -88,7 +88,7 @@ def test_full_endpoint_probability_derivative():
 
     def fun(q):
         """Evaluate the full transition at explicitly supplied probabilities."""
-        return drifft.Transition.from_probabilities(backend, q).expect(values)
+        return drifft.Transition(backend, probabilities=q).expect(values)
 
     tangent = jax.jit(lambda q: jax.jvp(fun, (q,), (jnp.ones_like(q),))[1])(q)
     exact = (
@@ -108,7 +108,7 @@ def test_transpose_endpoint_gradients_match_bernstein_identity():
 
     def loss(q):
         """Contract propagated mass with values to check transpose differentiation."""
-        return drifft.Transition.from_probabilities(backend, q).advance(mass) @ values
+        return drifft.Transition(backend, probabilities=q).advance(mass) @ values
 
     actual = jax.jit(jax.grad(loss))(q)
     exact = mass * (

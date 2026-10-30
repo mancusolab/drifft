@@ -71,15 +71,13 @@ def test_filtered_derivatives_are_of_one_endpoint_corrected_polynomial():
         atol=2e-11,
     )
     mass = jnp.asarray(np.random.default_rng(10).normal(size=q.size))
-    transition = drifft.Transition.from_probabilities(backend, q)
+    transition = drifft.Transition(backend, probabilities=q)
     np.testing.assert_allclose(
         transition.advance(mass) @ values, mass @ evaluate(q), atol=2e-12
     )
     np.testing.assert_allclose(
         jax.grad(
-            lambda p: (
-                drifft.Transition.from_probabilities(backend, p).advance(mass) @ values
-            )
+            lambda p: drifft.Transition(backend, probabilities=p).advance(mass) @ values
         )(q),
         mass * jax.jvp(evaluate, (q,), (jnp.ones_like(q),))[1],
         atol=2e-10,

@@ -15,7 +15,6 @@ import jax.numpy as jnp
 import numpy as np
 from jax.experimental import hijax
 from jax.scipy.special import xlog1py, xlogy
-from numpy.typing import DTypeLike
 from scipy.special import expit, logit
 from scipy.stats import binom
 
@@ -131,20 +130,20 @@ class _FFTBucket(eqx.Module):
 class FFT(AbstractTransitionBackend):
     r"""Binomial expectations through local FFT convolutions.
 
-    For destination values $v_j$ and gene-copy count $M$, approximate
-    $B_M[v](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}v_j$.
+    For destination values $f_j$ and gene-copy count $M$, approximate
+    $B_M[f](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}f_j$.
     On each local log-odds grid, the retained binomial kernel factors as
 
-    $$y_r=a_r\sum_j e^{-h(r-(j-j_0))^2/2}\,b_jv_j.$$
+    $$y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jf_j.$$
 
-    Here $j_0$ is the reference allele count, $h$ is the log-odds spacing,
-    and $a_r,b_j$ are diagonal scaling weights. The sum is a convolution,
+    Here $j_0$ is the reference allele count, $\Delta_{\mathrm{logit}}$ is the
+    log-odds spacing, and $a_r,b_j$ are diagonal scaling weights. The sum is a convolution,
     evaluated by zero-padded FFTs; local polynomial interpolation supplies
     expectations at arbitrary $q$. Near zero and one, direct binomial sums
     replace log-odds interpolation.
 
     For offspring probabilities $q_i$, `Transition` uses
-    $(Pv)_i=B_M[v](q_i)$ for expectations and the transpose $P^Tp$ for forward
+    $(Pf)_i=B_M[f](q_i)$ for expectations and the transpose $P^Tv$ for forward
     mass. The approximation comes from tail truncation and interpolation;
     the Gaussian-shaped convolution above is a factorization of the binomial
     kernel, not a normal approximation to it.
@@ -176,7 +175,6 @@ class FFT(AbstractTransitionBackend):
         min_mode_count: int = 128,
         block_spacing: float = 1.0,
         balance: bool = True,
-        dtype: DTypeLike = jnp.float64,
     ) -> None:
         r"""Plan local binomial FFTs over all success probabilities, independent of selection.
 
@@ -188,7 +186,6 @@ class FFT(AbstractTransitionBackend):
         - `min_mode_count`: Boundary cutoff in expected copies, at least 8, default 128.
         - `block_spacing`: Center separation in local standard deviations, `(0, 4]`.
         - `balance`: Whether to recenter the diagonal multipliers, default true.
-        - `dtype`: Must be float64, with `jax_enable_x64` already enabled.
 
         **Returns:**
 
@@ -210,7 +207,6 @@ class FFT(AbstractTransitionBackend):
         ):
             raise ValueError("gene_copies must be an integer >= 2")
         # These are host configuration checks, not operations on traced values.
-        # NumPy also handles dtype inspection before geometry becomes JAX arrays.
         if not (np.isfinite(tail_tol) and 1e-15 <= tail_tol < 0.1):
             raise ValueError("tail_tol must be finite and in [1e-15, 0.1)")
         if (
@@ -226,8 +222,8 @@ class FFT(AbstractTransitionBackend):
             raise ValueError("block_spacing must be in (0, 4]")
         if not isinstance(balance, bool):
             raise TypeError("balance must be a bool")
-        if np.dtype(dtype) != np.dtype("float64") or not jax.config.x64_enabled:
-            raise ValueError("Enable jax_enable_x64 and use dtype=float64")
+        if not jax.config.x64_enabled:
+            raise ValueError("FFT requires jax_enable_x64=True")
         cutoff = min_mode_count / gene_copies
         groups: dict[int, list[tuple[int, _FFTBlock, int]]] = {}
         offsets, rmins = [], []

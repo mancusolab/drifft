@@ -58,7 +58,7 @@ jax.config.update("jax_enable_x64", True)
 
 # 32 diploid individuals carry 64 gene copies.
 backend = drifft.FFT(gene_copies=64)
-selection = drifft.AdditiveSelection(s_het=0.01)
+selection = drifft.AdditiveSelection(s=0.02)
 transition = drifft.Transition(backend, frequency_map=selection)
 
 # Exactly one copy of the derived allele is present initially.
@@ -79,14 +79,14 @@ Put the same calculation in a function of the selection coefficient and apply
 `jax.grad`:
 
 ```python
-def loss_probability(s_het):
+def loss_probability(s):
     selected = drifft.Transition(
-        backend, drifft.AdditiveSelection(s_het=s_het)
+        backend, drifft.AdditiveSelection(s=s)
     )
     return selected.advance(initial)[0]
 
-sensitivity = jax.grad(loss_probability)(jnp.asarray(0.01))
-print(f"Sensitivity to s_het: {sensitivity:.4f}")
+sensitivity = jax.grad(loss_probability)(jnp.asarray(0.02))
+print(f"Sensitivity to s: {sensitivity:.4f}")
 ```
 
 The derivative is positive: increasing the fitness penalty makes immediate loss
@@ -106,7 +106,7 @@ history = drifft.Demography(ne=[32, 16, 32], generations=[20, 20])
 model = drifft.DemographicTransition(
     history,
     frequency_map=frequency_map,
-    backend=drifft.FFT,
+    backend_factory=drifft.FFT,
     method=drifft.Sequential(),
 )
 result = model.advance(initial)
@@ -115,7 +115,7 @@ print(f"Probability of zero copies after 40 generations: {result.distribution[0]
 
 `Composition` applies selection first, then mutation. Each demographic interval
 holds its source size until its final generation, when the population changes
-size. Here, `backend` is a factory: drifft prepares geometry for each distinct
+size. `backend_factory` prepares geometry for each distinct
 population size. The frequency map and method are reused across the history.
 
 The same history and frequency map can be used with other numerical components.

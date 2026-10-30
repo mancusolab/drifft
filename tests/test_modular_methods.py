@@ -16,8 +16,8 @@ def test_modular_selected_history_and_diagnostics():
     """Preserve selected chronology, immigration and per-interval diagnostics."""
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5, 9], [7, 3]),
-        backend=drifft.Jacobi,
-        boundary_backend=drifft.FFT,
+        backend_factory=drifft.Jacobi,
+        boundary_backend_factory=drifft.FFT,
         method=drifft.RationalKrylov(dimension=32),
         frequency_map=drifft.Underdominance(0.04),
     )
@@ -29,7 +29,7 @@ def test_modular_selected_history_and_diagnostics():
             expected = expected.at[0].add(2 * source * 1e-5)
         expected = expected @ dense_transition(source, destination, 0.04)[1:-1, 1:-1]
         expected = expected.at[0].add(2 * destination * 1e-5)
-    result = model.advance_segregating(initial, mutation_rate=1e-5)
+    result = model.advance(initial, segregating=True, singleton_mutation_rate=1e-5)
     assert result.converged
     assert result.status == drifft.EvolutionStatus.successful
     assert len(result.diagnostics) == 2
@@ -60,7 +60,7 @@ def test_jacobi_default_boundary_and_reduced_map_validation_without_holds(histor
     """Reject invalid combinations even when no hold would execute."""
     model = drifft.DemographicTransition(
         history,
-        backend=drifft.Jacobi,
+        backend_factory=drifft.Jacobi,
         method=drifft.RationalKrylov(),
         frequency_map=drifft.Neutral(),
     )
@@ -70,8 +70,8 @@ def test_jacobi_default_boundary_and_reduced_map_validation_without_holds(histor
     with pytest.raises(TypeError, match="diploid selection"):
         drifft.DemographicTransition(
             history,
-            backend=drifft.Jacobi,
-            boundary_backend=drifft.FFT,
+            backend_factory=drifft.Jacobi,
+            boundary_backend_factory=drifft.FFT,
             method=drifft.RationalKrylov(),
             frequency_map=drifft.FrequencyMap(lambda x: x),
         )
@@ -81,14 +81,14 @@ def test_failed_power_status_survives_demography_and_batching():
     """Retain unsuccessful hold status after a finite boundary transition."""
     model = drifft.DemographicTransition(
         drifft.Demography([40, 40], [100]),
-        backend=drifft.Jacobi,
-        boundary_backend=drifft.FFT,
+        backend_factory=drifft.Jacobi,
+        boundary_backend_factory=drifft.FFT,
         method=drifft.RationalKrylov(dimension=2),
         frequency_map=drifft.Neutral(),
     )
     initial = jnp.eye(79)[0]
     result = eqx.filter_jit(
-        eqx.filter_vmap(lambda p: model.advance_segregating(p, throw=False))
+        eqx.filter_vmap(lambda p: model.advance(p, segregating=True, throw=False))
     )(jnp.stack([initial, initial * 2]))
     assert not jnp.any(result.converged)
     assert jnp.all(result.status == drifft.EvolutionStatus.unconverged)
@@ -98,7 +98,9 @@ def test_failed_power_status_survives_demography_and_batching():
 def test_identity_history_reports_nonfinite_mass():
     """Check identity inputs despite having no interval diagnostics."""
     model = drifft.DemographicTransition(
-        drifft.Demography([8], []), backend=drifft.FFT, frequency_map=drifft.Neutral()
+        drifft.Demography([8], []),
+        backend_factory=drifft.FFT,
+        frequency_map=drifft.Neutral(),
     )
     result = model.advance(jnp.full(17, jnp.nan), throw=False)
     assert not result.converged
@@ -132,8 +134,8 @@ def test_jacobi_domain_validation_survives_no_hold_histories(generations):
     sizes = [8] if not generations else [8, 5]
     model = drifft.DemographicTransition(
         drifft.Demography(sizes, generations),
-        backend=drifft.Jacobi,
-        boundary_backend=drifft.FFT,
+        backend_factory=drifft.Jacobi,
+        boundary_backend_factory=drifft.FFT,
         method=drifft.RationalKrylov(),
         frequency_map=drifft.Underdominance(0.2),
     )
@@ -152,8 +154,8 @@ def test_composed_jacobi_history_gradients_match_dense_recurrence():
     """Differentiate selection, initial mass and immigration through size changes."""
     model = drifft.DemographicTransition(
         drifft.Demography([4, 3, 5], [4, 3]),
-        backend=drifft.Jacobi,
-        boundary_backend=drifft.FFT,
+        backend_factory=drifft.Jacobi,
+        boundary_backend_factory=drifft.FFT,
         method=drifft.RationalKrylov(dimension=16),
         frequency_map=drifft.Underdominance(0.03),
     )
@@ -163,7 +165,10 @@ def test_composed_jacobi_history_gradients_match_dense_recurrence():
     def objective(strength, mass, rate):
         updated = eqx.tree_at(lambda m: m.frequency_map.strength, model, strength)
         return (
-            updated.advance_segregating(mass, mutation_rate=rate).distribution @ values
+            updated.advance(
+                mass, segregating=True, singleton_mutation_rate=rate
+            ).distribution
+            @ values
         )
 
     inputs = (jnp.asarray(0.03), initial, jnp.asarray(1e-5))
@@ -183,8 +188,6 @@ def test_custom_population_method_uses_same_representation_in_demography(history
     """Honor method requirements for identity, boundary-only, and hold histories."""
     from typing import ClassVar, final
 
-    from drifft._evolution.methods import _advance
-
     @final
     class PopulationMethod(drifft.AbstractEpochMethod):
         """Exercise the public extension contract without inheriting Sequential."""
@@ -195,13 +198,18 @@ def test_custom_population_method_uses_same_representation_in_demography(history
             """Accept the population-coordinate backend/map combinations."""
             drifft.Sequential().validate(backend, frequency_map)
 
-        def solve(self, problem, *, throw=True):
+        def solve(self, problem: drifft.EpochProblem, *, throw=True):
             """Evaluate the prepared problem by repeated operator applications."""
-            return drifft.Sequential().solve(problem, throw=throw)
+            state = jax.lax.fori_loop(
+                0, problem.steps, lambda _, x: problem.operator.mv(x), problem.initial
+            )
+            return problem.result(state, throw=throw)
 
-        def advance(self, backend, distribution, **kwargs):
+        @eqx.filter_jit
+        def advance(self, backend, distribution, *, throw=True, **kwargs):
             """Share preparation with the built-in methods."""
-            return _advance(self, backend, distribution, **kwargs)
+            problem = drifft.prepare_epoch(self, backend, distribution, **kwargs)
+            return self.solve(problem, throw=throw)
 
     frequency_map = drifft.FrequencyMap(lambda x: x**2)
     initial = jnp.eye(9)[1]
@@ -212,10 +220,64 @@ def test_custom_population_method_uses_same_representation_in_demography(history
     )
     model = drifft.DemographicTransition(
         drifft.Demography(*history),
-        backend=drifft.Jacobi,
+        backend_factory=drifft.Jacobi,
         method=method,
         frequency_map=frequency_map,
     )
     result = model.advance(initial)
     assert result.converged
     assert jnp.allclose(result.distribution, direct.distribution, atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "method", [drifft.Sequential(), drifft.RationalKrylov(dimension=16)]
+)
+@pytest.mark.parametrize("generations", [0, 1, 5])
+def test_public_prepared_problem_reconstructs_interior_source(method, generations):
+    """Public preparation retains the initial/final source events in reduced coordinates."""
+    copies = 8
+    initial = jnp.linspace(0.01, 0.03, copies - 1)
+    source = jnp.zeros_like(initial).at[0].set(0.002)
+    frequency_map = drifft.Neutral()
+    problem = drifft.prepare_epoch(
+        method,
+        drifft.Jacobi(copies),
+        initial,
+        frequency_map=frequency_map,
+        generations=generations,
+        segregating=True,
+        immigration=source,
+    )
+    reference = initial
+    matrix = dense_transition(copies // 2, copies // 2, 0)[1:-1, 1:-1]
+    for _ in range(generations):
+        reference = matrix.T @ reference + source
+    result = eqx.filter_jit(method.solve)(problem)
+    assert result.converged
+    assert jnp.allclose(result.distribution, reference, atol=2e-12)
+
+
+def test_public_problem_result_applies_shared_failure_checks():
+    """Custom methods can finish with the same convergence and throwing contract."""
+    problem = drifft.prepare_epoch(
+        drifft.Sequential(),
+        drifft.Dense(4),
+        jnp.ones(5),
+        frequency_map=drifft.Neutral(),
+        generations=0,
+    )
+    result = problem.result(
+        problem.initial, error_estimate=0.1, tolerance=0.01, throw=False
+    )
+    assert not result.converged
+    assert result.status == drifft.EvolutionStatus.unconverged
+    with pytest.raises(eqx.EquinoxRuntimeError, match="epoch failed"):
+        eqx.filter_jit(problem.result)(
+            jnp.full(5, jnp.nan)
+        ).distribution.block_until_ready()
+    with pytest.raises(eqx.EquinoxRuntimeError, match="tolerance must be finite"):
+        eqx.filter_jit(problem.result)(
+            problem.initial, tolerance=-0.01, throw=False
+        ).distribution.block_until_ready()
+    with pytest.raises(ValueError, match="prepared initial shape"):
+        problem.result(jnp.ones(4))

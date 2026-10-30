@@ -11,7 +11,6 @@ from typing import Literal, final
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jax.typing import DTypeLike
 
 from .._polynomial import compute_cosine_coefficients, filter_cosine_coefficients
 from ._base import AbstractTransitionBackend
@@ -22,11 +21,11 @@ from ._spectral import _evaluate, sample_bernstein
 class NUFFT(AbstractTransitionBackend):
     r"""Binomial expectations through Chebyshev approximation and NUFFT evaluation.
 
-    For destination values $v_j$ and gene-copy count $M$, approximate
-    $B_M[v](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}v_j$ by
+    For destination values $f_j$ and gene-copy count $M$, approximate
+    $B_M[f](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}f_j$ by
 
-    $$B_M[v](q)\approx\sum_{k=0}^L c_kT_k(1-2q)
-      =\sum_{k=0}^L c_k\cos(k\theta),\qquad\theta=\arccos(1-2q).$$
+    $$B_M[f](q)\approx\sum_{k=0}^L c_kT_k(1-2q)
+      =\sum_{k=0}^L c_k\cos(k\vartheta),\qquad\vartheta=\arccos(1-2q).$$
 
     Here $T_k$ is the degree-$k$ Chebyshev polynomial and $L$ is the prepared
     approximation degree. The coefficients $c_k$ come from binomial sampling
@@ -34,12 +33,12 @@ class NUFFT(AbstractTransitionBackend):
     evaluates the cosine series at arbitrary offspring probabilities.
     `encoding="lobatto"` interpolates the samples. `encoding="filtered"`
     tapers the modes and adds a linear endpoint correction before evaluation.
-    Endpoint expectations are set directly to $v_0$ and $v_M$ to suppress
+    Endpoint expectations are set directly to $f_0$ and $f_M$ to suppress
     evaluation roundoff. `degree` always means the output polynomial degree;
     compressed filtered encoding uses `degree + 2` sampling nodes.
 
     For offspring probabilities $q_i$, `Transition` uses
-    $(Pv)_i=B_M[v](q_i)$ for expectations and the transpose $P^Tp$ for forward
+    $(Pf)_i=B_M[f](q_i)$ for expectations and the transpose $P^Tv$ for forward
     mass. Polynomial truncation, truncated binomial sampling, and NUFFT
     evaluation each contribute approximation error.
     """
@@ -70,7 +69,6 @@ class NUFFT(AbstractTransitionBackend):
         nufft_tol: float | None = None,
         batch_size: int = 32,
         derivative_accuracy: bool = False,
-        dtype: DTypeLike = jnp.float64,
     ) -> None:
         r"""Prepare a fixed-degree Bernstein/Chebyshev/NUFFT transition.
 
@@ -87,7 +85,6 @@ class NUFFT(AbstractTransitionBackend):
         - `batch_size`: Number of sampling nodes processed together.
         - `derivative_accuracy`: Increase the fixed degree by 50 percent (capped at
           the exact degree). This is a conservative heuristic, not a derivative bound.
-        - `dtype`: Only float64 is supported; enable JAX x64 before construction.
 
         **Returns:**
 
@@ -98,7 +95,8 @@ class NUFFT(AbstractTransitionBackend):
 
         **Raises:**
 
-        `ValueError` for invalid configuration, disabled x64 or unsupported dtype.
+        `ValueError` for invalid configuration or disabled x64. Only float64 is
+        supported; enable JAX x64 before construction.
         FFT-specific settings belong to the FFT backend.
         """
         if (
@@ -121,10 +119,8 @@ class NUFFT(AbstractTransitionBackend):
         # these tolerances and dimensions are not differentiable model inputs.
         if not math.isfinite(accuracy) or not 1e-13 <= accuracy < 0.1:
             raise ValueError("accuracy must be finite and in [1e-13, 0.1)")
-        if jnp.dtype(dtype) != jnp.dtype(jnp.float64) or not jax.config.read(
-            "jax_enable_x64"
-        ):
-            raise ValueError("float64 and jax_enable_x64=True are required")
+        if not jax.config.x64_enabled:
+            raise ValueError("NUFFT requires jax_enable_x64=True")
         # Bound planners act on unit-bounded input values; allocating the budget
         # does not certify FINUFFT or roundoff errors for a particular device.
         budget = accuracy / 4

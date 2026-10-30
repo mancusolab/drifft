@@ -23,28 +23,28 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 model = drifft.DemographicTransition(
     drifft.Demography(ne=[32, 32], generations=[20]),
-    backend=drifft.FFT,
+    backend_factory=drifft.FFT,
     method=drifft.Sequential(),
-    frequency_map=drifft.AdditiveSelection(s_het=0.01),
+    frequency_map=drifft.AdditiveSelection(s=0.02),
 )
 initial = jnp.zeros(65).at[1].set(1.0)
 
-def loss_probability(s_het):
-    updated = eqx.tree_at(lambda m: m.frequency_map.s_het, model, s_het)
+def loss_probability(s):
+    updated = eqx.tree_at(lambda m: m.frequency_map.s, model, s)
     return updated.advance(initial).distribution[0]
 
 value_and_gradient = jax.jit(jax.value_and_grad(loss_probability))
-strengths = jnp.linspace(0.0, 0.04, 9)
+strengths = jnp.linspace(0.0, 0.08, 9)
 values, gradients = [], []
 for strength in strengths:
     value, gradient = value_and_gradient(strength)
     values.append(float(value))
     gradients.append(float(gradient))
 
-strength = jnp.asarray(0.01)
+strength = jnp.asarray(0.02)
 value, gradient = value_and_gradient(strength)
 print(f"Loss after 20 generations: {value:.6f}")
-print(f"Derivative at s_het=0.01: {gradient:.6f}")
+print(f"Derivative at s=0.02: {gradient:.6f}")
 for step in [1e-4, 1e-5, 1e-6]:
     finite_difference = (
         loss_probability(strength + step) - loss_probability(strength - step)
@@ -54,9 +54,9 @@ for step in [1e-4, 1e-5, 1e-6]:
 
 fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
 axes[0].plot(strengths, values, marker="o")
-axes[0].set(xlabel="Heterozygote fitness reduction", ylabel="Loss probability")
+axes[0].set(xlabel="Derived-homozygote fitness reduction", ylabel="Loss probability")
 axes[1].plot(strengths, gradients, marker="o")
-axes[1].set(xlabel="Heterozygote fitness reduction", ylabel="Derivative of loss probability")
+axes[1].set(xlabel="Derived-homozygote fitness reduction", ylabel="Derivative of loss probability")
 fig.tight_layout()
 fig.savefig("selection_sensitivity.svg")
 plt.show()
@@ -66,7 +66,7 @@ plt.show()
 
 A positive derivative means that increasing the fitness penalty increases loss
 probability locally. Its magnitude is in probability per unit of
-$s_{\mathrm{het}}$: multiply it by a small coefficient change to estimate the
+$s$: multiply it by a small coefficient change to estimate the
 change in loss probability. It is not a confidence interval or an estimate of
 the selection coefficient.
 

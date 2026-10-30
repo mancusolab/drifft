@@ -40,7 +40,7 @@ Keep names aligned with the direction of the transition:
 | --- | --- |
 | `backend` | Transition representation (`FFT`, `NUFFT`, `Jacobi`, or reference `Dense`); Jacobi also supplies reduced Krylov geometry |
 | `method` | Geometry-free epoch algorithm (`Sequential`, `PolynomialKrylov`, or `RationalKrylov`) |
-| `boundary_backend` | Transition backend factory for demographic size changes |
+| `backend_factory`, `boundary_backend_factory` | Prepare transition geometry for demographic holds and size changes |
 | `frequency_map` | Selection, mutation, or a composition of both |
 | `transition` | Backend bound to selection or explicit source probabilities |
 | `probabilities`, `stencil_width` | Computed quantities exposed as properties |
@@ -48,6 +48,7 @@ Keep names aligned with the direction of the transition:
 | `advance(distribution)` | Source mass to destination mass; demographic calls return a result |
 | `as_lineax()` | Convert to the linear-operator interface |
 | `expected_visits()` | Domain-named solve returning values and convergence diagnostics |
+| `prepare_epoch()` | Population inputs to an opaque working problem for a method |
 
 Private helpers use verbs such as `build`, `compute`, `evaluate`, `sample`, and
 `solve`. Benchmark entrypoints use `run`; timing functions use `measure`.
@@ -55,9 +56,11 @@ Published benchmark JSON retains historical `plan_*` field names so reports
 remain comparable; live code calls the prepared object a backend.
 
 `DemographicTransition` composes geometry, frequency maps, and epoch methods.
-Do not introduce a public epoch wrapper. Internal prepared problems describe
-the working-coordinate operator, initial state, reconstruction, and physical
-error measurements. The method computes a power action without knowing the
+Do not introduce a public epoch wrapper. `prepare_epoch` returns a PyTree
+described by the read-only `EpochProblem` protocol: the working operator,
+initial state, exponent, reconstruction, and physical error measurements.
+Custom methods use this public contract; projection bookkeeping remains private.
+The method computes a power action without knowing the
 biological observation likelihood. Shifted linear solves use Lineax internally;
 their solver selection is not a public configuration option.
 
@@ -93,10 +96,9 @@ callbacks; HiJAX calls the sensitivity kernels directly for Krylov pullbacks.
 Dense and GMRES resolvent applications share one rational Arnoldi loop, while
 Jacobi owns its reduced expectation assembly in `_backend/jacobi.py`.
 
-Internal callers import from the owning modules. The former `_epochs`,
-`_krylov`, `_power` and `_jacobi` compatibility modules have been removed;
-public classes remain available directly from `drifft`. Backend implementations
-live in `_backend`; import public backend classes from the package root.
+Internal callers import from the owning modules. Public classes are available
+directly from `drifft`. Backend implementations live in `_backend`; import
+public backend classes from the package root.
 
 Every class, method, and function needs a docstring describing its contract or
 purpose. Ruff checks missing docstrings; comments explain numerical identities,

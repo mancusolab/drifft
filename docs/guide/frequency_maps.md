@@ -8,12 +8,13 @@ import jax
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-selection = drifft.AdditiveSelection(s_het=0.01)
+selection = drifft.AdditiveSelection(s=0.02)
 transition = drifft.Transition(drifft.FFT(64), frequency_map=selection)
 ```
 
-The genotype fitnesses are $(1,0.99,0.98)$. `AdditiveSelection` assigns twice
-the heterozygote penalty to the derived homozygote.
+The genotype fitnesses are $(1,0.99,0.98)$. The coefficient `s` is the
+derived-homozygote penalty; the heterozygote penalty is `s / 2`, matching
+`DominanceSelection(s=0.02, h=0.5)`.
 
 ## Choose genotype fitnesses
 

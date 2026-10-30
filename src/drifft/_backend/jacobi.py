@@ -41,7 +41,7 @@ def _selection_parameters(frequency_map):
     if isinstance(frequency_map, Overdominance):
         return -frequency_map.strength, jnp.asarray(0.0)
     if isinstance(frequency_map, AdditiveSelection):
-        return frequency_map.s_het, 2 * frequency_map.s_het
+        return frequency_map.s / 2, frequency_map.s
     if isinstance(frequency_map, DominanceSelection):
         return frequency_map.h * frequency_map.s, frequency_map.s
     if isinstance(frequency_map, RecessiveSelection):
@@ -533,31 +533,31 @@ class _JacobiGeometry(eqx.Module):
 class Jacobi(AbstractTransitionBackend):
     r"""Jacobi geometry for binomial expectations and reduced Krylov evolution.
 
-    For gene-copy count $M$ and destination values $v_j$, the binomial expectation is
+    For gene-copy count $M$ and destination values $f_j$, the binomial expectation is
 
-    $$B_M[v](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}v_j.$$
+    $$B_M[f](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}f_j.$$
 
-    Write $z=2q-1$. After separating the linear interpolant between $v_0$ and
-    $v_M$, approximate the remaining function in the basis
-    $(1-z^2)\phi_k(z)$, $k=0,\ldots,r-1$. Here $r$ is `rank` and $\phi_k$
+    Write $\xi=2q-1$. After separating the linear interpolant between $f_0$ and
+    $f_M$, approximate the remaining function in the basis
+    $(1-\xi^2)\phi_k(\xi)$, $k=0,\ldots,r-1$. Here $r$ is `rank` and $\phi_k$
     is a normalized Jacobi polynomial $P_k^{(1,1)}$, orthonormal for weight
-    $3(1-z^2)/4$ on $[-1,1]$. The envelope makes every interior basis function
+    $3(1-\xi^2)/4$ on $[-1,1]$. The envelope makes every interior basis function
     vanish at the count endpoints. Gauss–Jacobi quadrature and binomial
     stencils map count-space values to these coefficients.
 
     Let $E$ denote this coefficient map and $D$ evaluation at the offspring
-    probabilities $q_i=f(i/M)$. The expectation operator factors as
+    probabilities $q_i=q(i/M)$. The expectation operator factors as
     $P\approx DE$, so forward mass evolves by its transpose. For $g\geq1$
     generations with a fixed frequency map and no immigration,
 
-    $$p_g\approx E^T(H^T)^{g-1}D^Tp_0,\qquad H=ED.$$
+    $$v_g\approx E^T(H_{\mathrm J}^T)^{g-1}D^Tv_0,\qquad H_{\mathrm J}=ED.$$
 
     The reduced operator has $r$ interior coordinates, plus two endpoint
     coordinates for full-state evolution. It is assembled using polynomial
     recurrences and a padded tridiagonal coordinate matrix, without forming
     the population-sized transition matrix. A separate epoch method computes
-    the power of $H^T$; representation rank and padding control different
-    approximations from the method's power tolerance.
+    the power of $H_{\mathrm J}^T$; representation rank and padding control
+    different approximations from the method's power tolerance.
 
     `Transition` and `Sequential` accept arbitrary valid offspring probabilities
     through the common expectation interface. Reduced Krylov assembly supports
@@ -571,7 +571,7 @@ class Jacobi(AbstractTransitionBackend):
     Reduced epoch domains are checked at runtime, including for zero generations:
     selection must stay within the configured bound, and mutation rates must be
     finite and in [0, 1]. In `DemographicTransition`, size-changing steps use the
-    same backend by default; an explicit FFT or NUFFT `boundary_backend` can be
+    same backend by default; an explicit FFT or NUFFT `boundary_backend_factory` can be
     supplied instead.
     """
 

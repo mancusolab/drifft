@@ -163,8 +163,8 @@ def test_composed_demography_matches_changing_size_dense_history():
         )
     model = drifft.DemographicTransition(
         history,
-        backend=drifft.Jacobi,
-        boundary_backend=drifft.FFT,
+        backend_factory=drifft.Jacobi,
+        boundary_backend_factory=drifft.FFT,
         method=drifft.RationalKrylov(dimension=24),
         frequency_map=composed_map(parameters),
     )
@@ -198,7 +198,7 @@ def test_mutation_only_including_constant_and_reversing_maps(forward, backward):
     "selection,het,hom",
     [
         (drifft.DiploidSelection(-0.03, 0.04), -0.03, 0.04),
-        (drifft.AdditiveSelection(0.02), 0.02, 0.04),
+        (drifft.AdditiveSelection(0.04), 0.02, 0.04),
         (drifft.DominanceSelection(0.04, 0.3), 0.012, 0.04),
         (drifft.RecessiveSelection(0.04), 0.0, 0.04),
         (drifft.DominantSelection(0.04), 0.04, 0.04),

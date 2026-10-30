@@ -22,6 +22,7 @@ transitions. The matrix orientation fixes how propagation and expectation relate
 | Offspring frequency after the full frequency map | $q_\theta(x)$; omit the subscript when parameters are implicit |
 | Model parameter collection and its dimension | $\theta,n_\theta$ |
 | Selection coefficients and dominance | $s_{\mathrm{het}},s_{\mathrm{hom}},h$ |
+| Directional selection coefficient | $s=s_{\mathrm{hom}}$, with $s_{\mathrm{het}}=hs$; additive selection fixes $h=1/2$ |
 | Multiplicative fitness ratio | $\rho$ (API parameter `r`) |
 | Directional mutation rates | $\mu_{0\to1},\mu_{1\to0}$ |
 | One-generation transition and its numerical approximation | $P,\widetilde P$ |

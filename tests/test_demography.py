@@ -12,6 +12,24 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 
 
+def test_factories_reuse_geometry_for_repeated_sizes_and_shared_boundaries():
+    """Prepare each distinct size once when hold and boundary factories agree."""
+    calls = []
+
+    def factory(copies):
+        """Observe preparation requests in gene-copy units."""
+        calls.append(copies)
+        return drifft.Dense(copies)
+
+    drifft.DemographicTransition(
+        drifft.Demography([4, 3, 4], [2, 2]),
+        backend_factory=factory,
+        boundary_backend_factory=factory,
+        frequency_map=drifft.Neutral(),
+    )
+    assert calls == [8, 6]
+
+
 @pytest.mark.parametrize("backend", [drifft.FFT, drifft.NUFFT])
 @pytest.mark.parametrize(
     "sizes,durations", [([8, 5, 11], [3, 2]), ([8, 5], [1]), ([8, 8], [4]), ([8], [])]
@@ -22,7 +40,7 @@ def test_demographic_evaluation_matches_dense_boundary_history(
     """Hold the source size and change only on the final interval generation."""
     history = drifft.Demography(ne=sizes, generations=durations)
     model = drifft.DemographicTransition(
-        history, backend=backend, frequency_map=drifft.Underdominance(0.07)
+        history, backend_factory=backend, frequency_map=drifft.Underdominance(0.07)
     )
     matrix = jnp.eye(2 * sizes[0] + 1)
     for source, destination, duration in zip(
@@ -48,7 +66,7 @@ def test_demographic_selection_gradient_and_batching(backend):
     """Differentiate dynamic selection through size changes and fixed-length loops."""
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5, 11], [3, 2]),
-        backend=backend,
+        backend_factory=backend,
         frequency_map=drifft.Underdominance(0.07),
     )
     initial = jnp.eye(17)[3]
@@ -132,7 +150,7 @@ def test_demographic_methods_reject_wrong_shape(method, size):
     """Validate source and destination vector lengths at the public boundary."""
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5], [2]),
-        backend=drifft.FFT,
+        backend_factory=drifft.FFT,
         frequency_map=drifft.Underdominance(0.07),
     )
     with pytest.raises(ValueError):
@@ -143,8 +161,8 @@ def test_expect_transposes_custom_sequential_hold_backend():
     """Transpose the configured hold operator even when boundary geometry differs."""
     model = drifft.DemographicTransition(
         drifft.Demography([200, 200], [5]),
-        boundary_backend=drifft.FFT,
-        backend=lambda n: drifft.FFT(
+        boundary_backend_factory=drifft.FFT,
+        backend_factory=lambda n: drifft.FFT(
             n, interp_order=2, min_mode_count=8, block_spacing=4
         ),
         frequency_map=drifft.Underdominance(0.03),

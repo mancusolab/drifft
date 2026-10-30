@@ -53,9 +53,7 @@ def diagnostics(backend, strength):
 
     @jax.jit
     def row(q):
-        return drifft.Transition.from_probabilities(backend, q[None]).advance(
-            jnp.ones(1)
-        )
+        return drifft.Transition(backend, probabilities=q[None]).advance(jnp.ones(1))
 
     derivative = jax.jit(lambda q: jax.jvp(row, (q,), (jnp.ones_like(q),))[1])
     counts = np.arange(size + 1)

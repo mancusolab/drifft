@@ -110,7 +110,11 @@ def run_drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
             drifft_solve = None
             if gene_copies <= args.solve_max_m:
                 result, timing = measure_call(
-                    partial(transition.expected_visits, max_steps=args.max_steps),
+                    partial(
+                        transition.expected_visits,
+                        max_steps=args.max_steps,
+                        throw=False,
+                    ),
                     args.repeats,
                     synchronize=True,
                 )
@@ -120,6 +124,7 @@ def run_drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
                     | {
                         "converged": bool(result.converged),
                         "status": str(result.status),
+                        "solver_status": str(result.solver_status),
                         "operator_residual_inf": float(result.residual_norm),
                     },
                 )

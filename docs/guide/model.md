@@ -50,11 +50,10 @@ $s_{\mathrm{het}}\le1$ and $s_{\mathrm{hom}}<1$, with finite coefficients;
 the strict homozygote bound keeps mean fitness positive at fixation.
 
 `DominanceSelection(s, h)` sets $s_{\mathrm{het}}=hs$ and
-$s_{\mathrm{hom}}=s$. `AdditiveSelection(s_het)` sets
-$s_{\mathrm{hom}}=2s_{\mathrm{het}}$, so it requires
-$s_{\mathrm{het}}<1/2$. This is the uncapped additive model, not fastDTWF's
-capped default. The derived coefficients $hs$ and $2s_{\mathrm{het}}$ must
-also be finite. `MultiplicativeSelection(r)` instead uses fitnesses
+$s_{\mathrm{hom}}=s$. `AdditiveSelection(s)` fixes $h=1/2$, giving
+$s_{\mathrm{het}}=s/2$ and requiring $s<1$. This is the uncapped additive
+model, rather than fastDTWF's capped default. The derived coefficient $hs$
+must also be finite. `MultiplicativeSelection(r)` instead uses fitnesses
 $(1,\rho,\rho^2)$ and gives $q(x)=\rho x/(1-x+\rho x)$ for $\rho>0$
 (the API names this ratio `r`). Additive and
 multiplicative fitness produce different exact discrete-time updates.

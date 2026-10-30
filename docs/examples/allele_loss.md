@@ -26,9 +26,9 @@ backend = drifft.FFT(M)
 initial = jnp.zeros(M + 1).at[1].set(1.0)
 fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
 
-for s_het in [0.0, 0.01, 0.05]:
+for s in [0.0, 0.02, 0.1]:
     transition = drifft.Transition(
-        backend, drifft.AdditiveSelection(s_het=s_het)
+        backend, drifft.AdditiveSelection(s=s)
     )
     distribution = initial
     loss = [float(distribution[0])]
@@ -38,7 +38,7 @@ for s_het in [0.0, 0.01, 0.05]:
         loss.append(float(distribution[0]))
         fixation.append(float(distribution[-1]))
     assert jnp.isclose(distribution.sum(), 1.0, atol=1e-10)
-    label = f"s_het = {s_het:g}"
+    label = f"s = {s:g}"
     axes[0].plot(range(generations + 1), loss, label=label)
     axes[1].plot(range(generations + 1), fixation, label=label)
     print(f"{label}: loss={loss[-1]:.4f}, fixation={fixation[-1]:.4f}")
@@ -63,7 +63,7 @@ grows. The neutral allele can also be lost: disappearance from a single initial
 copy does not require selection. The two panels use different vertical scales
 so the much smaller fixation probabilities remain visible.
 
-`AdditiveSelection(s_het)` gives fitnesses $(1,1-s_{\mathrm{het}},1-2s_{\mathrm{het}})$.
+`AdditiveSelection(s)` gives fitnesses $(1,1-s/2,1-s)$.
 These are finite-time probabilities, not estimates of eventual fixation.
 The code propagates the full distribution; it does not simulate individual
 trajectories or discard endpoint mass.

@@ -81,8 +81,8 @@ def test_demographic_breakdown_sensitivities(method_type):
     """Sensitivities survive hold and rectangular boundary composition."""
     model = drifft.DemographicTransition(
         drifft.Demography([6, 4, 5], [7, 3]),
-        backend=drifft.Jacobi,
-        boundary_backend=drifft.FFT,
+        backend_factory=drifft.Jacobi,
+        boundary_backend_factory=drifft.FFT,
         method=method_type(dimension=20),
         frequency_map=drifft.Mutation(0.0, 0.0),
     )
@@ -96,7 +96,7 @@ def test_demographic_breakdown_sensitivities(method_type):
 
     reference = drifft.DemographicTransition(
         model.demography,
-        backend=drifft.FFT,
+        backend_factory=drifft.FFT,
         method=drifft.Sequential(),
         frequency_map=drifft.Mutation(0.0, 0.0),
     )

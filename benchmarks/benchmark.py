@@ -12,6 +12,7 @@ import resource
 import sys
 import time
 from collections.abc import Callable, Sequence
+from functools import partial
 from pathlib import Path
 
 import equinox as eqx
@@ -152,7 +153,9 @@ def run(args: argparse.Namespace) -> None:
             }
             if size == source and size <= args.solve_max_m:
                 result, times = measure_kernel(
-                    drifft.Transition.expected_visits, (transition,), args.repeats
+                    partial(drifft.Transition.expected_visits, throw=False),
+                    (transition,),
+                    args.repeats,
                 )
                 measurement["solve"] = times | {
                     "converged": bool(result.converged),

@@ -29,7 +29,7 @@ def test_jacobi_expect_and_rectangular_transpose_match_binomial():
     matrix = jnp.asarray(
         binom.pmf(np.arange(copies + 1)[None, :], copies, np.asarray(q)[:, None])
     )
-    transition = drifft.Transition.from_probabilities(backend, q)
+    transition = drifft.Transition(backend, probabilities=q)
     assert jnp.allclose(transition.expect(values), matrix @ values, atol=2e-12)
     assert jnp.allclose(transition.advance(mass), matrix.T @ mass, atol=2e-12)
     assert jnp.allclose(
@@ -83,7 +83,9 @@ def test_jacobi_sequential_history_matches_its_actual_transition_transpose():
 
     rule = drifft.FrequencyMap(lambda x: x * x)
     model = drifft.DemographicTransition(
-        drifft.Demography([6, 4, 7], [4, 3]), backend=backend, frequency_map=rule
+        drifft.Demography([6, 4, 7], [4, 3]),
+        backend_factory=backend,
+        frequency_map=rule,
     )
     initial = jnp.sin(jnp.arange(13) * 0.3)
     values = jnp.cos(jnp.arange(15) * 0.4)
@@ -145,10 +147,10 @@ def test_jacobi_segregating_rectangular_operations():
     values = jnp.sin(jnp.arange(destination - 1) * 0.4)
     mass = jnp.cos(jnp.arange(source - 1) * 0.2)
     assert jnp.allclose(
-        transition.expect_segregating(values), matrix @ values, atol=2e-12
+        transition.expect(values, segregating=True), matrix @ values, atol=2e-12
     )
     assert jnp.allclose(
-        transition.advance_segregating(mass), matrix.T @ mass, atol=2e-12
+        transition.advance(mass, segregating=True), matrix.T @ mass, atol=2e-12
     )
 
 
@@ -210,7 +212,9 @@ def test_sequential_jacobi_history_higher_derivatives_match_dense():
 
     history = drifft.Demography([6, 4, 7], [4, 3])
     model = drifft.DemographicTransition(
-        history, backend=drifft.Jacobi, frequency_map=drifft.Mutation(0.002, 0.008)
+        history,
+        backend_factory=drifft.Jacobi,
+        frequency_map=drifft.Mutation(0.002, 0.008),
     )
     initial = jnp.eye(13)[2]
     values = jnp.cos(jnp.arange(15) * 0.3)

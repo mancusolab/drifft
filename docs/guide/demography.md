@@ -20,7 +20,7 @@ history = drifft.Demography(
 )
 model = drifft.DemographicTransition(
     history,
-    backend=drifft.FFT,
+    backend_factory=drifft.FFT,
     frequency_map=drifft.Underdominance(0.01),
 )
 initial = jnp.zeros(2 * history.initial_ne + 1).at[1].set(1.0)
@@ -96,14 +96,15 @@ from functools import partial
 
 spectral_model = drifft.DemographicTransition(
     history,
-    backend=partial(drifft.NUFFT, accuracy=1e-11, derivative_accuracy=True),
+    backend_factory=partial(drifft.NUFFT, accuracy=1e-11, derivative_accuracy=True),
     frequency_map=drifft.Underdominance(0.01),
 )
 ```
 
-`backend` prepares constant-size geometry; `boundary_backend` prepares the
-one-generation size-changing transitions. The boundary factory defaults to
-`backend` for every backend.
+`backend_factory` prepares constant-size geometry;
+`boundary_backend_factory` prepares the one-generation size-changing
+transitions. The boundary factory defaults to
+`backend_factory` for every backend.
 The method defaults to `Sequential()`. Factories receive **gene-copy counts**,
 even though the history uses diploid Ne.
 
@@ -119,7 +120,7 @@ Singleton input represents new mutations entering the segregating population
 each generation. It is a source of new mass, distinct from recurrent mutation
 of alleles already represented in the distribution.
 
-`model.advance_segregating(initial, mutation_rate=1e-8)` adds singleton mass
+`model.advance(initial, segregating=True, singleton_mutation_rate=1e-8)` adds singleton mass
 equal to the destination gene-copy count times the mutation rate after each
 generation. Input and output contain interior counts only (`2 * ne - 1`
 entries), with [endpoint mass discarded](transitions.md#restricting-to-segregating-counts).

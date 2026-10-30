@@ -4,6 +4,7 @@
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 import drifft
@@ -48,7 +49,7 @@ def test_demographic_mutation_gradients(backend):
     """Keep both mutation rates dynamic through constant-size and changing-size steps."""
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5], [3]),
-        backend=backend,
+        backend_factory=backend,
         frequency_map=drifft.Composition(drifft.Neutral(), drifft.Mutation(0.1, 0.2)),
     )
     initial = jnp.eye(17)[4]
@@ -96,7 +97,7 @@ def test_frequency_map_configuration_validation():
     with pytest.raises(TypeError):
         drifft.DemographicTransition(
             drifft.Demography([8, 8], [1]),
-            backend=drifft.FFT,
+            backend_factory=drifft.FFT,
             frequency_map=lambda x: x,  # ty: ignore[invalid-argument-type] -- unwrapped function
         )
 
@@ -122,7 +123,7 @@ def test_diploid_selection_matches_genotype_survival(s_het, s_hom):
 
 
 SELECTION_CASES = [
-    ("AdditiveSelection", {"s_het": 0.15}, (0.15, 0.3)),
+    ("AdditiveSelection", {"s": 0.3}, (0.15, 0.3)),
     ("DominanceSelection", {"s": 0.4, "h": 0.3}, (0.12, 0.4)),
     ("RecessiveSelection", {"s": 0.3}, (0.0, 0.3)),
     ("DominantSelection", {"s": 0.3}, (0.3, 0.3)),
@@ -131,6 +132,39 @@ SELECTION_CASES = [
     ("MultiplicativeSelection", {"r": 1.2}, (-0.2, -0.44)),
     ("Neutral", {}, (0.0, 0.0)),
 ]
+
+
+@pytest.mark.parametrize("coefficient", [-0.4, 0.0, 0.3])
+def test_additive_coefficient_matches_fitnesses_and_half_dominance(coefficient):
+    """Use the same homozygote penalty for additive and dominance parameters."""
+    frequencies = jnp.array([0.0, 0.2, 0.7, 1.0])
+    genotypes = jnp.stack(
+        ((1 - frequencies) ** 2, 2 * frequencies * (1 - frequencies), frequencies**2),
+        axis=-1,
+    )
+
+    def reference(s):
+        """Weight genotype counts by their independent viability fitnesses."""
+        survivors = genotypes * jnp.array([1.0, 1 - s / 2, 1 - s])
+        return survivors @ jnp.array([0.0, 0.5, 1.0]) / survivors.sum(axis=-1)
+
+    def additive(s):
+        """Evaluate the parameterization being checked."""
+        return drifft.AdditiveSelection(s)(frequencies)
+
+    np.testing.assert_allclose(
+        additive(coefficient), reference(coefficient), atol=1e-15
+    )
+    np.testing.assert_allclose(
+        additive(coefficient),
+        drifft.DominanceSelection(coefficient, 0.5)(frequencies),
+        atol=1e-15,
+    )
+    np.testing.assert_allclose(
+        jax.jit(jax.jacfwd(additive))(coefficient),
+        jax.jacfwd(reference)(coefficient),
+        atol=2e-15,
+    )
 
 
 @pytest.mark.parametrize("name,parameters,coefficients", SELECTION_CASES)

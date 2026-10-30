@@ -99,8 +99,8 @@ def test_demography_uses_jacobi_method_with_singleton_input():
     """Respect source holds and destination-sized immigration on boundary steps."""
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5, 9], [7, 3]),
-        backend=drifft.Jacobi,
-        boundary_backend=drifft.FFT,
+        backend_factory=drifft.Jacobi,
+        boundary_backend_factory=drifft.FFT,
         method=drifft.RationalKrylov(),
         frequency_map=drifft.Neutral(),
     )
@@ -112,7 +112,9 @@ def test_demography_uses_jacobi_method_with_singleton_input():
             expected = expected.at[0].add(2 * source * 1e-5)
         expected = expected @ dense_transition(source, destination, 0)[1:-1, 1:-1]
         expected = expected.at[0].add(2 * destination * 1e-5)
-    actual = model.advance_segregating(initial, mutation_rate=1e-5).distribution
+    actual = model.advance(
+        initial, segregating=True, singleton_mutation_rate=1e-5
+    ).distribution
     assert jnp.allclose(actual, expected, atol=2e-10, rtol=0)
 
 
@@ -292,8 +294,8 @@ def test_demographic_full_state_krylov_and_expect_contract():
     """Forward adaptive histories agree with dense products and reject adjoints."""
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5], [20]),
-        backend=drifft.Jacobi,
-        boundary_backend=drifft.FFT,
+        backend_factory=drifft.Jacobi,
+        boundary_backend_factory=drifft.FFT,
         method=drifft.RationalKrylov(),
         frequency_map=drifft.Underdominance(0.03),
     )

@@ -44,6 +44,7 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
                 rtol=settings["equilibrium_rtol"],
                 atol=settings["equilibrium_atol"],
                 max_steps=settings["equilibrium_max_steps"],
+                throw=False,
             )
             jax.block_until_ready(solution)
             if not bool(solution.converged):
@@ -110,7 +111,7 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
             transition = drifft.Transition(
                 fft[destination], frequency_map, source_gene_copies=2 * source
             )
-            distribution = transition.advance_segregating(result.distribution)
+            distribution = transition.advance(result.distribution, segregating=True)
             distribution = distribution.at[0].add(2 * destination * mutation_rate)
             distribution.block_until_ready()
             boundary_seconds = time.perf_counter() - tick

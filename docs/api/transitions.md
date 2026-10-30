@@ -6,10 +6,16 @@ operations and expected-visit solves.
 
 ::: drifft.Transition
     options:
-        members: [__init__, from_probabilities, probabilities, expect, advance, expect_segregating, advance_segregating, as_lineax, expected_visits]
+        members: [__init__, probabilities, expect, advance, as_lineax, expected_visits]
 
 ---
 
 ::: drifft.ExpectedVisitsResult
     options:
         members: [__new__]
+
+---
+
+::: drifft.ExpectedVisitsStatus
+    options:
+        members: []

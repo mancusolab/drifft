@@ -10,6 +10,12 @@ power.
         options:
             members: [validate, solve, advance]
 
+::: drifft.prepare_epoch
+
+::: drifft.EpochProblem
+    options:
+        members: [operator, initial, steps, reconstruct, error_norm, result]
+
 ::: drifft.EpochResult
     options:
         members: []

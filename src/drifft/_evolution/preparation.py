@@ -1,6 +1,6 @@
 """Adapt transition representations to linear power problems."""
 
-from functools import singledispatch
+from functools import partial, singledispatch
 
 import equinox as eqx
 import jax
@@ -50,7 +50,7 @@ def _prepare_transition(
         distribution, immigration, backend.gene_copies, generations, segregating
     )
     transition = Transition(backend, frequency_map)
-    operation = transition.advance_segregating if segregating else transition.advance
+    operation = partial(transition.advance, segregating=segregating)
     augmented = immigration is not None and generations > 0
     initial = (
         jnp.concatenate((distribution, jnp.ones(1))) if augmented else distribution

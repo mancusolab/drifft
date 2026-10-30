@@ -25,17 +25,17 @@ fine = drifft.NUFFT(M, accuracy=1e-10, derivative_accuracy=True)
 loss_indicator = jnp.zeros(M + 1).at[0].set(1.0)
 
 # The allele starts with four copies.
-def loss_probability(backend, s_het):
+def loss_probability(backend, s):
     transition = drifft.Transition(
-        backend, drifft.AdditiveSelection(s_het=s_het)
+        backend, drifft.AdditiveSelection(s=s)
     )
     return transition.expect(loss_indicator)[4]
 
-def exact_loss(s_het):
-    q = drifft.AdditiveSelection(s_het=s_het)(jnp.asarray(4 / M))
+def exact_loss(s):
+    q = drifft.AdditiveSelection(s=s)(jnp.asarray(4 / M))
     return (1 - q) ** M
 
-strength = jnp.asarray(0.01)
+strength = jnp.asarray(0.02)
 exact_value = exact_loss(strength)
 exact_gradient = jax.grad(exact_loss)(strength)
 for label, backend in [("coarse", coarse), ("fine", fine)]:

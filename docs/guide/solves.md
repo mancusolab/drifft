@@ -11,23 +11,33 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 transition = drifft.Transition(drifft.FFT(64), drifft.Underdominance(0.01))
 result = transition.expected_visits()
-if not bool(result.converged):
-    raise RuntimeError(f"{result.status}: residual={result.residual_norm}")
 visits = result.visits
 ```
 
 ## Solver settings and limitations
 
-Choose solver tolerances for the residual you need, then check `converged`
-before interpreting the visit vector. Long absorption times can amplify errors
+Numerical failure raises by default. Use `throw=False` to inspect a failed
+candidate and check `converged` before interpreting its visit vector:
+
+```python
+result = transition.expected_visits(throw=False)
+if not bool(result.converged):
+    print(result.status, result.solver_status, result.residual_norm)
+```
+
+Under `vmap`, inspect each result with `throw=False`; throwing may fail the
+whole batch. Long absorption times can amplify errors
 in the underlying transition even when the solve converges.
 
 Choose `solver="gmres"` (default) or `"bicgstab"`; adjust `rtol`, `atol`,
 and iteration limits as needed. The [transition API](../api/transitions.md)
 lists defaults and available settings.
 
-`result.converged` requires a successful Lineax status, finite output, and a
-fresh infinity-norm residual no larger than `atol+rtol`. Always check it.
+`result.status` is an `ExpectedVisitsStatus`: successful, linear-solve failure,
+nonfinite output, or an unacceptable residual. Success requires a successful
+Lineax solve, finite output and residual, and a fresh infinity-norm residual no
+larger than `atol+rtol`. `converged` is true exactly when this status is successful.
+`result.solver_status` preserves the underlying Lineax result code.
 `result.stats` preserves the installed Lineax solver's iteration counters; GMRES
 `num_steps` is not a count of individual matvecs. Failures retain the candidate
 iterate for diagnosis, but it must not be treated as a valid occupation vector.

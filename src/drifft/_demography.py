@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 
 from ._backend import AbstractTransitionBackend
-from ._evolution.methods import AbstractEpochMethod, Sequential, _prepare_evolution
+from ._evolution.methods import AbstractEpochMethod, Sequential, prepare_epoch
 from ._evolution.preparation import validate_domain
 from ._evolution.problem import EvolutionStatus, _epoch_result
 from ._frequency import AbstractFrequencyMap
@@ -198,9 +198,10 @@ class DemographicTransition(eqx.Module):
         self,
         demography: Demography,
         *,
-        backend: Callable[[int], AbstractTransitionBackend],
+        backend_factory: Callable[[int], AbstractTransitionBackend],
         frequency_map: AbstractFrequencyMap,
-        boundary_backend: Callable[[int], AbstractTransitionBackend] | None = None,
+        boundary_backend_factory: Callable[[int], AbstractTransitionBackend]
+        | None = None,
         method: AbstractEpochMethod | None = None,
     ) -> None:
         r"""Prepare reusable geometry outside JIT.
@@ -208,9 +209,9 @@ class DemographicTransition(eqx.Module):
         **Arguments:**
 
         - `demography`: Population history, oldest to newest.
-        - `backend`: Factory receiving a gene-copy count for constant-size geometry.
+        - `backend_factory`: Factory receiving a gene-copy count for constant-size geometry.
         - `frequency_map`: Process shared by every generation.
-        - `boundary_backend`: Factory for rectangular transitions; defaults to the
+        - `boundary_backend_factory`: Factory for rectangular transitions; defaults to the
           hold geometry for all backends.
         - `method`: Geometry-free epoch algorithm; defaults to `Sequential()`.
 
@@ -233,28 +234,37 @@ class DemographicTransition(eqx.Module):
             raise TypeError(
                 "frequency_map must be an AbstractFrequencyMap; wrap functions in FrequencyMap"
             )
-        if not callable(backend):
-            raise TypeError("backend must be callable")
-        if boundary_backend is not None and not callable(boundary_backend):
-            raise TypeError("boundary_backend must be callable")
+        if not callable(backend_factory):
+            raise TypeError("backend_factory must be callable")
+        if boundary_backend_factory is not None and not callable(
+            boundary_backend_factory
+        ):
+            raise TypeError("boundary_backend_factory must be callable")
         self.demography = demography
         self.frequency_map = frequency_map
         self.method = Sequential() if method is None else method
         if not isinstance(self.method, AbstractEpochMethod):
             raise TypeError("method must be an AbstractEpochMethod")
         self._sizes = tuple(dict.fromkeys(demography.ne))
-        self._backends = tuple(backend(2 * size) for size in self._sizes)
+        self._backends = tuple(backend_factory(2 * size) for size in self._sizes)
         for size, geometry in zip(self._sizes, self._backends, strict=True):
             if not isinstance(geometry, AbstractTransitionBackend):
-                raise TypeError("backend must return an AbstractTransitionBackend")
+                raise TypeError(
+                    "backend_factory must return an AbstractTransitionBackend"
+                )
             if geometry.gene_copies != 2 * size:
-                raise ValueError("backend must preserve the requested gene-copy count")
+                raise ValueError(
+                    "backend_factory must preserve the requested gene-copy count"
+                )
             self.method.validate(geometry, frequency_map)
-        if boundary_backend is None or boundary_backend is backend:
+        if (
+            boundary_backend_factory is None
+            or boundary_backend_factory is backend_factory
+        ):
             self._boundary_backends = self._backends
         else:
             self._boundary_backends = tuple(
-                boundary_backend(2 * size) for size in self._sizes
+                boundary_backend_factory(2 * size) for size in self._sizes
             )
 
     def __check_init__(self) -> None:
@@ -262,11 +272,11 @@ class DemographicTransition(eqx.Module):
         for size, backend in zip(self._sizes, self._boundary_backends, strict=True):
             if not isinstance(backend, AbstractTransitionBackend):
                 raise TypeError(
-                    "boundary_backend must return an AbstractTransitionBackend"
+                    "boundary_backend_factory must return an AbstractTransitionBackend"
                 )
             if backend.gene_copies != 2 * size:
                 raise ValueError(
-                    "boundary_backend must preserve the requested gene-copy count"
+                    "boundary_backend_factory must preserve the requested gene-copy count"
                 )
 
     def _transition(self, source_ne: int, destination_ne: int) -> Transition:
@@ -278,68 +288,60 @@ class DemographicTransition(eqx.Module):
 
     @eqx.filter_jit
     def advance(
-        self, distribution: jax.Array, *, throw: bool = True
-    ) -> DemographicResult:
-        r"""Propagate full population mass to the final generation boundary.
-
-        **Arguments:**
-
-        - `distribution`: Real vector of length `2 * initial_ne + 1`, converted to float64.
-        - `throw`: Raise on numerical failure; False returns status and diagnostics.
-          Under vmap a failure with True may fail the whole batch.
-
-        **Returns:**
-
-        `DemographicResult` containing final mass and each interval's outcome.
-
-        **Raises:**
-
-        `ValueError` for incompatible shapes; runtime errors for invalid process
-        domains or, with `throw=True`, numerical failure. No mass normalization occurs.
-        """
-        return self._advance(
-            distribution, segregating=False, mutation_rate=None, throw=throw
-        )
-
-    @eqx.filter_jit
-    def advance_segregating(
         self,
         distribution: jax.Array,
         *,
-        mutation_rate: float | jax.Array = 0.0,
+        segregating: bool = False,
+        singleton_mutation_rate: float | jax.Array | None = None,
         throw: bool = True,
     ) -> DemographicResult:
-        r"""Evolve interior mass with singleton immigration after every generation.
+        r"""Propagate mass through the history, optionally discarding endpoint hits.
 
         **Arguments:**
 
-        - `distribution`: Real interior mass of length `2 * initial_ne - 1`.
-        - `mutation_rate`: Finite nonnegative scalar per-copy rate. Each generation
-          adds `2 * destination_ne * mutation_rate` at count one.
+        - `distribution`: Real mass of length `2 * initial_ne + 1`, or
+          `2 * initial_ne - 1` when segregating. Converted to float64.
+        - `segregating`: Discard endpoint mass after each generation.
+        - `singleton_mutation_rate`: Finite nonnegative scalar per-copy rate,
+          allowed only when segregating; defaults to zero. Adds
+          `2 * destination_ne * singleton_mutation_rate` at count one after
+          every generation. Recurrent mutation belongs in the frequency map.
         - `throw`: Raise on numerical failure; under vmap may fail the whole batch.
 
         **Returns:**
 
-        `DemographicResult`; the distribution has length `2 * final_ne - 1`.
+        `DemographicResult` containing final mass and each interval's outcome.
+        Output length is `2 * final_ne + 1`, or `2 * final_ne - 1` when segregating.
+        No mass normalization occurs.
 
         **Raises:**
 
-        `ValueError` for invalid shapes. Invalid mutation rates and process domains
-        raise even with `throw=False`; numerical failures otherwise return status.
+        `ValueError` for invalid shapes, flags, or singleton input in full-state
+        mode. Invalid rates or process domains raise even with `throw=False`.
+        Other numerical failures raise with `throw=True` and return status with false.
         """
-        rate = jnp.asarray(mutation_rate, dtype=jnp.float64)
-        if rate.shape != ():
-            raise ValueError("mutation_rate must be scalar")
-        distribution = eqx.error_if(
-            jnp.asarray(distribution, dtype=jnp.float64),
-            ~jnp.isfinite(rate) | (rate < 0),
-            "mutation_rate must be finite and nonnegative",
-        )
+        if not isinstance(segregating, bool):
+            raise ValueError("segregating must be a Python bool")
+        if not segregating and singleton_mutation_rate is not None:
+            raise ValueError("singleton_mutation_rate requires segregating=True")
+        rate = None
+        if segregating:
+            rate = jnp.asarray(
+                0.0 if singleton_mutation_rate is None else singleton_mutation_rate,
+                dtype=jnp.float64,
+            )
+            if rate.shape != ():
+                raise ValueError("singleton_mutation_rate must be scalar")
+            distribution = eqx.error_if(
+                jnp.asarray(distribution, dtype=jnp.float64),
+                ~jnp.isfinite(rate) | (rate < 0),
+                "singleton_mutation_rate must be finite and nonnegative",
+            )
         return self._advance(
-            distribution, segregating=True, mutation_rate=rate, throw=throw
+            distribution, segregating=segregating, singleton_rate=rate, throw=throw
         )
 
-    def _advance(self, distribution, *, segregating, mutation_rate, throw):
+    def _advance(self, distribution, *, segregating, singleton_rate, throw):
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
         size = 2 * self.demography.initial_ne + (-1 if segregating else 1)
         if distribution.shape != (size,):
@@ -368,18 +370,18 @@ class DemographicTransition(eqx.Module):
             interval_status = EvolutionStatus.successful
             if duration > 1:
                 immigration = (
-                    (jnp.zeros_like(distribution).at[0].set(2 * source * mutation_rate))
+                    jnp.zeros_like(distribution).at[0].set(2 * source * singleton_rate)
                     if segregating
                     else None
                 )
-                problem = _prepare_evolution(
+                problem = prepare_epoch(
                     self.method,
                     self._backends[self._sizes.index(source)],
                     distribution,
-                    self.frequency_map,
-                    duration - 1,
-                    segregating,
-                    immigration,
+                    frequency_map=self.frequency_map,
+                    generations=duration - 1,
+                    segregating=segregating,
+                    immigration=immigration,
                 )
                 result = self.method.solve(problem, throw=False)
                 distribution, error, interval_status = (
@@ -388,11 +390,9 @@ class DemographicTransition(eqx.Module):
                     result.status,
                 )
             transition = self._transition(source, destination)
+            distribution = transition.advance(distribution, segregating=segregating)
             if segregating:
-                distribution = transition.advance_segregating(distribution)
-                distribution = distribution.at[0].add(2 * destination * mutation_rate)
-            else:
-                distribution = transition.advance(distribution)
+                distribution = distribution.at[0].add(2 * destination * singleton_rate)
             boundary = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
             interval_status = EvolutionStatus.where(
                 interval_status == EvolutionStatus.successful,

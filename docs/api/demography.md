@@ -12,7 +12,7 @@ evolution method to propagate distributions across the history.
 
 ::: drifft.DemographicTransition
     options:
-        members: [__init__, advance, advance_segregating, expect]
+        members: [__init__, advance, expect]
 
 ---
 

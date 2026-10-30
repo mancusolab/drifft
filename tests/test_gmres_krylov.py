@@ -65,7 +65,7 @@ def test_gmres_composed_demography_gradients(backend_type):
     """Check selection, mass and source derivatives through implicit GMRES solves."""
     model = drifft.DemographicTransition(
         drifft.Demography([4, 3, 5], [4, 3]),
-        backend=backend_type,
+        backend_factory=backend_type,
         method=drifft.RationalKrylov(dimension=16),
         frequency_map=drifft.Underdominance(0.03),
     )
@@ -74,7 +74,12 @@ def test_gmres_composed_demography_gradients(backend_type):
 
     def objective(s, p, rate):
         updated = eqx.tree_at(lambda m: m.frequency_map.strength, model, s)
-        return updated.advance_segregating(p, mutation_rate=rate).distribution @ weights
+        return (
+            updated.advance(
+                p, segregating=True, singleton_mutation_rate=rate
+            ).distribution
+            @ weights
+        )
 
     args = (jnp.asarray(0.03), mass, jnp.asarray(1e-5))
     actual = eqx.filter_jit(jax.grad(objective, argnums=(0, 1, 2)))(*args)
@@ -91,7 +96,7 @@ def test_gmres_composed_demography_gradients(backend_type):
         rtol=2e-7,
     )
     batched = eqx.filter_jit(
-        jax.vmap(lambda p: model.advance_segregating(p).distribution)
+        jax.vmap(lambda p: model.advance(p, segregating=True).distribution)
     )(jnp.stack((mass, 2 * mass)))
     assert jnp.allclose(batched[1], 2 * batched[0], atol=1e-10)
 

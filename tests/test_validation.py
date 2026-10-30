@@ -28,7 +28,6 @@ def test_subnormal_positive_tail_tolerance_has_finite_radius():
         {"gene_copies": 16, "accuracy": 0},
         {"gene_copies": 16, "batch_size": 0},
         {"gene_copies": 16, "nufft_tol": 0},
-        {"gene_copies": 16, "dtype": jnp.float32},
     ],
 )
 def test_invalid_backend(kwargs):
@@ -37,13 +36,23 @@ def test_invalid_backend(kwargs):
         wf.NUFFT(**kwargs)
 
 
+@pytest.mark.parametrize("backend", [wf.FFT, wf.NUFFT, wf.Jacobi, wf.Dense])
+def test_backends_require_float64_configuration(backend):
+    """Fail before geometry allocation when the required precision is disabled."""
+    with jax.enable_x64(False):
+        with pytest.raises(ValueError, match="jax_enable_x64"):
+            backend(8)
+
+
 def test_shapes_and_solver_options():
     """Reject malformed vectors and unsupported solver choices at the boundary."""
     backend = wf.NUFFT(16)
     with pytest.raises(ValueError):
         wf.Transition(backend, wf.Underdominance(0.0)).expect(jnp.ones(16))
     with pytest.raises(ValueError):
-        wf.Transition(backend, wf.Underdominance(0.0)).expect_segregating(jnp.ones(16))
+        wf.Transition(backend, wf.Underdominance(0.0)).expect(
+            jnp.ones(16), segregating=True
+        )
     with pytest.raises(ValueError):
         wf.Transition(backend, wf.Underdominance(0.0)).expected_visits(solver="cg")  # ty: ignore[invalid-argument-type] -- unsupported solver
     with pytest.raises(ValueError):

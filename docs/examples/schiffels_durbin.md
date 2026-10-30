@@ -72,12 +72,12 @@ print(f"History endpoint: {boundaries[-1]} generations ago")
 
 frequency_map = drifft.Composition(
     drifft.Mutation(forward_rate=1e-8, backward_rate=1e-8),
-    drifft.AdditiveSelection(s_het=1e-4),
+    drifft.AdditiveSelection(s=2e-4),
 )
 model = drifft.DemographicTransition(
     history,
-    backend=drifft.Jacobi,
-    boundary_backend=drifft.FFT,
+    backend_factory=drifft.Jacobi,
+    boundary_backend_factory=drifft.FFT,
     method=drifft.RationalKrylov(dimension=128, rtol=1e-10, atol=1e-13),
     frequency_map=frequency_map,
 )

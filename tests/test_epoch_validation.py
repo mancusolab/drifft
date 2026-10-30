@@ -43,11 +43,28 @@ def test_identity_demography_rejects_invalid_mutation_rate(rate):
     """An empty history retains the mutation-rate domain check under JIT."""
     model = drifft.DemographicTransition(
         drifft.Demography([8], []),
-        backend=drifft.FFT,
+        backend_factory=drifft.FFT,
         frequency_map=drifft.Neutral(),
     )
     initial = jnp.ones(15) / 15
     with pytest.raises(eqx.EquinoxRuntimeError, match="mutation_rate"):
-        model.advance_segregating(
-            initial, mutation_rate=rate
+        model.advance(
+            initial, segregating=True, singleton_mutation_rate=rate
         ).distribution.block_until_ready()
+
+
+def test_singleton_input_requires_segregating_states():
+    """Keep singleton-source input distinct from full-state recurrent mutation."""
+    model = drifft.DemographicTransition(
+        drifft.Demography([4], []),
+        backend_factory=drifft.Dense,
+        frequency_map=drifft.Neutral(),
+    )
+    with pytest.raises(ValueError, match="requires segregating=True"):
+        model.advance(jnp.ones(9), singleton_mutation_rate=0.0)
+    with pytest.raises(ValueError, match="must be scalar"):
+        model.advance(
+            jnp.ones(7), segregating=True, singleton_mutation_rate=jnp.ones(2)
+        )
+    with pytest.raises(ValueError, match="Python bool"):
+        model.advance(jnp.ones(9), segregating=1)  # ty: ignore[invalid-argument-type] -- unsupported flag

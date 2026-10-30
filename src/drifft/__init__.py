@@ -13,8 +13,9 @@ from ._evolution.methods import (
     PolynomialKrylov,
     RationalKrylov,
     Sequential,
+    prepare_epoch,
 )
-from ._evolution.problem import EpochResult, EvolutionStatus
+from ._evolution.problem import EpochProblem, EpochResult, EvolutionStatus
 from ._frequency import (
     AbstractFrequencyMap,
     AdditiveSelection,
@@ -31,7 +32,7 @@ from ._frequency import (
     Underdominance,
 )
 from ._operator import Transition
-from ._solve import ExpectedVisitsResult
+from ._solve import ExpectedVisitsResult, ExpectedVisitsStatus
 
 __all__ = [
     "AbstractEpochMethod",
@@ -46,9 +47,11 @@ __all__ = [
     "DiploidSelection",
     "DominanceSelection",
     "DominantSelection",
+    "EpochProblem",
     "EpochResult",
     "EvolutionStatus",
     "ExpectedVisitsResult",
+    "ExpectedVisitsStatus",
     "FFT",
     "FrequencyMap",
     "IntervalDiagnostics",
@@ -64,4 +67,5 @@ __all__ = [
     "Sequential",
     "Transition",
     "Underdominance",
+    "prepare_epoch",
 ]
