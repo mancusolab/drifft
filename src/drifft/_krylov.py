@@ -160,7 +160,7 @@ def _gmres_power_action(
     restart: int = 50,
     return_basis=False,
 ):
-    """Build a resolvent basis with checked, unpreconditioned matrix-free GMRES.
+    """Build a resolvent basis with checked, unpreconditioned operator-based GMRES.
 
     Private settings permit numerical experiments without exposing solver choice
     on the public method. Statistics count GMRES restart cycles, not matvecs.
@@ -301,7 +301,7 @@ class RationalKrylov(AbstractEpochMethod):
 
     Each basis vector solves $[I+\tau(I-A)]z=v$, with $\tau=g/8$ for
     working exponent $g$. Jacobi uses a reusable dense LU factorization;
-    FFT/NUFFT use unpreconditioned matrix-free Lineax GMRES. Solver choice is
+    other transition backends use unpreconditioned Lineax GMRES. Solver choice is
     internal. Inner failures are reported as `linear_solve_failed`.
 
     GMRES uses rtol=1e-11, atol=1e-13, restart=50 (capped by state size), and
@@ -343,7 +343,7 @@ class RationalKrylov(AbstractEpochMethod):
         if isinstance(backend, Jacobi):
             backend.validate(frequency_map)
         elif not isinstance(backend, AbstractTransitionBackend):
-            raise TypeError("RationalKrylov requires FFT, NUFFT or Jacobi geometry")
+            raise TypeError("RationalKrylov requires an AbstractTransitionBackend")
 
     def solve(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
         """Power in working coordinates and estimate error after reconstruction."""
@@ -453,8 +453,8 @@ RationalKrylov.__init__.__doc__ = r"""Configure the power algorithm without prep
 
 **Returns:**
 
-`None`. Shifted solves use dense LU for Jacobi and matrix-free GMRES for
-FFT/NUFFT. Solver selection is internal.
+`None`. Shifted solves use dense LU for Jacobi and operator-based GMRES for
+other transition backends. Solver selection is internal.
 
 **Raises:**
 
@@ -521,8 +521,8 @@ class PolynomialKrylov(AbstractEpochMethod):
     For a prepared operator $A$, seed $b$, and $g$ steps, build an orthonormal
     basis $V$ for $\mathcal K_m(A,b)=\mathrm{span}(b,Ab,\ldots,A^{m-1}b)$.
     With $H=V^TAV$, approximate $A^g b\approx VH^gV^Tb$. Only operator
-    applications are needed; there are no shifted solves or dense population
-    matrices. FFT, NUFFT, and Jacobi are supported.
+    applications are needed; there are no shifted solves. All transition backends
+    are supported, including Dense for small reference calculations.
 
     The basis uses O(n m) storage for working-state size n and dimension m.
     Larger dimensions can be necessary for long intervals; no restart or
@@ -562,7 +562,7 @@ class PolynomialKrylov(AbstractEpochMethod):
         if isinstance(backend, Jacobi):
             backend.validate(frequency_map)
         elif not isinstance(backend, AbstractTransitionBackend):
-            raise TypeError("PolynomialKrylov requires FFT, NUFFT or Jacobi geometry")
+            raise TypeError("PolynomialKrylov requires an AbstractTransitionBackend")
 
     def solve(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
         """Power an implicit operator and report reconstructed error diagnostics."""
@@ -664,7 +664,7 @@ PolynomialKrylov.__init__.__doc__ = r"""Configure polynomial powering independen
 
 **Returns:**
 
-`None`. Supply FFT, NUFFT or Jacobi geometry separately.
+`None`. Supply transition geometry separately.
 
 **Raises:**
 

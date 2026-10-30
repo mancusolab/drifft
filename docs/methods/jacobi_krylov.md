@@ -8,7 +8,7 @@ acting on the supplied state, using a smaller projected problem.
 
 Let $A$ be the prepared forward operator, $p$ its working-state vector, and
 $g$ the required exponent. The task is to approximate $A^g p$. The working-state
-dimension $d$ is population-sized for FFT/NUFFT and reduced for Jacobi.
+dimension $d$ is population-sized for FFT, NUFFT, and Dense, and reduced for Jacobi.
 A basis with at most $k$ columns defines a projected matrix $B=V^TAV$ and
 an approximation $VB^gV^Tp$. `dimension` sets the maximum basis size.
 
@@ -36,9 +36,10 @@ where $g$ is the prepared power exponent. The implementation reorthogonalizes
 twice, projects the original operator $A$, and evaluates the projected power
 by binary powering. It does not power the shifted inverse as the output model.
 
-Jacobi uses a reusable dense LU factorization for these solves. FFT and NUFFT
-use matrix-free, unpreconditioned GMRES. Both paths approximate the same kind
-of power action, but their setup and inner-iteration costs differ.
+Jacobi uses a reusable dense LU factorization for these solves. Other transition
+backends use unpreconditioned GMRES through their operator interface. Both paths
+approximate the same kind of power action, but their setup and inner-iteration
+costs differ.
 
 For constant immigration $b$ with Jacobi, initialize $y_0=D^Tp_0$ and use
 
@@ -119,7 +120,7 @@ map; use Sequential for `model.expect()`.
 
 Select `PolynomialKrylov` or `RationalKrylov` as the method of a
 `DemographicTransition`, or apply it directly to a prepared backend. Both
-support FFT, NUFFT, and Jacobi; frequency-map support follows the backend.
+support FFT, NUFFT, Jacobi, and Dense; frequency-map support follows the backend.
 Population-size boundary steps use the configured transition backend, which
 defaults to the hold backend.
 

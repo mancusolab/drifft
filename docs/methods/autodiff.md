@@ -96,31 +96,44 @@ operator PyTree without forming a population-sized matrix.
 `DemographicTransition` composes these operations through ordinary AD. Jacobi's
 parameter-dependent encoding and reduced operator, immigration, and population-size
 boundaries remain in the differentiated calculation. The same method rules
-apply to FFT, NUFFT, and Jacobi representations.
+apply to FFT, NUFFT, Jacobi, and Dense representations.
 
 At finite basis dimension, these derivatives need not equal the derivative of
 the executed primal Krylov approximation. They approximate the underlying
 power's sensitivity. Forward and reverse approximations must be checked for
 accuracy and adjoint consistency as the basis dimension increases.
 
-Three functions have explicit custom JVP rules:
+Selection maps have explicit custom JVP rules:
 
 | Function | Purpose |
 | --- | --- |
 | Diploid selection | Analytic frequency and coefficient derivatives, factored to reduce overflow and cancellation; shared by the constrained diploid models |
 | Multiplicative selection | Analytic frequency and fitness-ratio derivatives without squaring the mean fitness |
-| FFT binomial weights | Polynomial derivatives with finite, correct values at offspring probabilities zero and one |
 
 JAX uses these JVP rules for forward mode and constructs reverse-mode rules
-from them. The binomial rule uses
+from them.
+
+Custom differentiation kernels in the three optimized backends use
+[`jax.experimental.hijax.HiPrim`](https://docs.jax.dev/en/latest/301/custom-derivatives.html).
+Each supplies its primal operation, JVP, and batching rule. Linearization and
+reverse mode are derived from the JVP; kernels linear in values or mass also
+provide matched transpose rules. Other backend operations use ordinary JAX
+differentiation, while evolution methods retain their operator-level rules.
+Dense uses ordinary JAX differentiation throughout its binomial recurrence,
+providing an independent small-population reference for these custom kernels.
+
+| Backend | Custom kernels |
+| --- | --- |
+| FFT | Binomial weights with finite polynomial derivatives at probabilities zero and one |
+| NUFFT | Fixed-node binomial sampling, endpoint-safe polynomial evaluation, and its transpose |
+| Jacobi | Streaming polynomial moments and their evaluation transpose |
+
+The FFT binomial rule uses
 $\partial B_{n,j}(q)/\partial q=n[B_{n-1,j-1}(q)-B_{n-1,j}(q)]$,
 with out-of-range binomial indices interpreted as zero.
 
-NUFFT also has explicit primitives for endpoint-safe polynomial evaluation
-and its transpose, and for streaming binomial sampling. Jacobi encoding uses
-a polynomial-moment primitive with a streaming evaluation transpose. Its JVP
-differentiates both the evaluation points and input mass using polynomial
-derivative recurrences. These rules support higher derivatives and avoid
+Jacobi's JVP differentiates both the evaluation points and input mass using
+polynomial derivative recurrences. These rules support higher derivatives and avoid
 retaining a population-sized vector for every polynomial degree in reverse
 mode. For fixed derivative order, encoder working storage is $O(M+r)$ for
 $M$ gene copies and rank $r$; arithmetic remains $O(Mr)$. Separate recurrence

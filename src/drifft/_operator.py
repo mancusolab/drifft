@@ -1,4 +1,4 @@
-"""Matrix-free transition operations driven by frequency maps."""
+"""Transition operations driven by frequency maps."""
 
 # pattern: Functional Core; pure operations over a prepared transition backend.
 from typing import Literal, final
@@ -22,7 +22,7 @@ class Transition(eqx.Module):
     $$P_{ij} = \binom{M}{j} q_i^j (1-q_i)^{M-j}.$$
 
     `expect` applies $P$ to destination values; `advance` applies $P^T$ to
-    source mass. The backend evaluates these operations without storing $P$.
+    source mass. The backend controls how $P$ is represented and evaluated.
     For a frequency map, $q_i=q(i/M_s)$ where $M_s$ is `source_gene_copies`.
 
     Segregating operations restrict the kernel to interior allele counts and

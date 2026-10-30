@@ -48,7 +48,8 @@ for label, backend in [("coarse", coarse), ("fine", fine)]:
 Inspect both errors against the precision required by your application.
 This reference uses exact binomial reproduction and the same selection map;
 it checks the transition approximation, not the selection formula itself.
-For general quantities, use a dense binomial reference on a small population.
+For general quantities, use [`Dense`](../api/backends.md#drifft.Dense) on a small
+population as an independent binomial reference.
 For a history or an expected-visits solve, also compare the final statistic
 under tighter settings: one-step agreement is not sufficient.
 

@@ -17,7 +17,7 @@ Keep names aligned with the direction of the transition:
 
 | Name | Meaning |
 | --- | --- |
-| `backend` | Prepared transition geometry (`FFT`, `NUFFT`, or `Jacobi`); Jacobi also supplies reduced Krylov geometry |
+| `backend` | Transition representation (`FFT`, `NUFFT`, `Jacobi`, or reference `Dense`); Jacobi also supplies reduced Krylov geometry |
 | `method` | Geometry-free epoch algorithm (`Sequential`, `PolynomialKrylov`, or `RationalKrylov`) |
 | `boundary_backend` | Transition backend factory for demographic size changes |
 | `frequency_map` | Selection, mutation, or a composition of both |
@@ -81,6 +81,14 @@ scan/map callbacks define traced loop bodies. Those are useful boundaries even
 when they have one caller. Avoid pass-through wrappers and unused alternate
 implementations. Keep helpers beside their callers rather than adding utility
 modules for individual functions.
+
+Use `jax.experimental.hijax.HiPrim` for backend kernels that need custom
+differentiation. Declare array shapes and static parameters explicitly, provide
+the primal operation, JVP, and batching rule, and derive linearization and reverse
+mode with `linearize_from_jvp` and `vjp_from_jvp`. Provide a matched transpose when
+the kernel is linear in an input. Keep ordinary JAX operations outside these
+boundaries; evolution-level rules for Equinox modules remain separate. HiJAX is
+experimental, so verify these transformations against the supported JAX version.
 
 ## Documentation
 

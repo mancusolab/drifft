@@ -12,6 +12,7 @@ cost becomes a limitation.
 | Less retained transition geometry | NUFFT, which trades storage for computation |
 | Faster propagation across long constant-size intervals | Jacobi with RationalKrylov, which works in a reduced state |
 | Krylov propagation with a custom frequency map | PolynomialKrylov with FFT or NUFFT |
+| Independent checks on small populations | Dense, which explicitly forms binomial rows and uses ordinary JAX differentiation |
 
 Jacobi's reduced Krylov assembly supports a bounded family of diploid selection
 and mutation maps; check [compatibility and parameter bounds](../api/backends.md#drifft.Jacobi)

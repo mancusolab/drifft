@@ -1,6 +1,7 @@
 """Independent binomial checks of FFT probability and transpose derivatives."""
 
-# Functional Core: numerical derivative contracts.
+# pattern: Functional Core
+# Numerical derivative contracts.
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -11,6 +12,31 @@ from drifft import Transition, Underdominance
 from drifft.backends.fft import FFT
 
 jax.config.update("jax_enable_x64", True)
+
+
+def test_fft_probability_derivatives_above_binomial_degree_vanish():
+    """Reach the constant-degree recurrence at endpoints and in the interior."""
+    backend = FFT(2)
+    probabilities = jnp.array([0.0, 0.13, 0.5, 0.89, 1.0])
+    values = jnp.array([-0.7, 0.4, 1.9])
+
+    def first(q):
+        """Differentiate the quadratic binomial expectation once."""
+        return jax.jvp(lambda p: backend.expect(p, values), (q,), (jnp.ones_like(q),))[
+            1
+        ]
+
+    def second(q):
+        """Differentiate the first-order polynomial once more."""
+        return jax.jvp(first, (q,), (jnp.ones_like(q),))[1]
+
+    actual = jax.jit(second)(probabilities)
+    expected = jnp.full_like(probabilities, 2 * (values[2] - 2 * values[1] + values[0]))
+    np.testing.assert_allclose(actual, expected, atol=2e-14, rtol=0)
+    third = jax.jit(lambda q: jax.jvp(second, (q,), (jnp.ones_like(q),))[1])(
+        probabilities
+    )
+    np.testing.assert_allclose(third, 0, atol=2e-14, rtol=0)
 
 
 @pytest.mark.parametrize("size", [16, 1024])
