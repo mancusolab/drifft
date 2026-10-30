@@ -116,12 +116,12 @@ NUFFT differentiates its polynomial in the offspring probability rather than
 through the singular angle coordinate at endpoints. These are derivatives of
 the approximation. Derivatives of its sampling nodes are unsupported.
 
-Krylov derivatives also depend on the basis construction. At zero working-state
-seeds or detected Arnoldi breakdown, JVPs and reverse-mode gradients raise,
-even with `throw=False`. Forward evaluation remains available. Use Sequential
-with FFT or NUFFT for derivatives in this regime. See
-[epoch differentiation](../methods/epochs.md#differentiation-and-demographic-integration)
-for shifted-solve failure behavior and details.
+Krylov derivatives use separate approximations to the mathematical power
+sensitivity and its operator pullback. They do not differentiate Arnoldi bases.
+Zero and invariant seeds are supported, but a failed sensitivity or pullback
+raises even with `throw=False`. Higher-order operator sensitivities currently
+raise; use Sequential with FFT or NUFFT for those calculations. See the
+[autodiff chapter](../methods/autodiff.md#accuracy-and-limitations) for details.
 
 !!! tip "Validate derivatives on a small reference problem"
 

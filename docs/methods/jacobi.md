@@ -108,8 +108,8 @@ The encoder has explicit JVP and transpose rules. Polynomial moments and
 their derivatives use streaming recurrences, keeping reverse-mode working
 storage proportional to population size plus rank at fixed derivative order.
 The rules differentiate the same polynomial approximation, including its
-endpoint terms. They do not change Krylov differentiation or its breakdown
-limitations; see [automatic differentiation](autodiff.md).
+endpoint terms. Evolution methods supply separate power-sensitivity rules;
+see [automatic differentiation](autodiff.md).
 
 The external maps have defined transposes, and the full-state construction
 preserves mass. Endpoint rows are absorbing when the frequency map fixes zero

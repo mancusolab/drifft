@@ -84,19 +84,24 @@ action, so dense and callable representations follow the same rule. Ordinary
 AD still differentiates preparation and reconstruction, including immigration.
 This boundary is internal; existing JAX and Equinox transformations use it
 without an additional user option.
-With either Krylov method, it differentiates the numerical approximation,
-including basis construction, projection, the reduced matrix power, and
-reconstruction. The basis depends on both the transition parameters and the
-incoming state. That state can carry parameter dependence from earlier
-demographic intervals. Jacobi's parameter-dependent encoding and reduced
-operator are also part of the differentiated calculation.
+With either Krylov method, custom first-order rules approximate the sensitivity
+of the prepared power action. They do not differentiate Arnoldi basis construction.
+A coupled block action computes the JVP, using up to twice `dimension` basis
+vectors for the doubled working state. The operator pullback uses two Krylov
+spaces, each with up to `dimension` vectors, seeded by the initial state and
+output cotangent. Their small projected matrices determine low-rank adjoint
+factors; contractions with operator VJPs return cotangents in the original
+operator PyTree without forming a population-sized matrix.
 
-`DemographicTransition` composes these operations through ordinary AD. The
-Krylov methods do not currently construct the block operator above and apply
-Krylov to its power. Such an algorithm would
-approximate the underlying model's sensitivity directly; at finite basis
-dimension, that sensitivity need not equal the derivative of the current
-Krylov approximation.
+`DemographicTransition` composes these operations through ordinary AD. Jacobi's
+parameter-dependent encoding and reduced operator, immigration, and population-size
+boundaries remain in the differentiated calculation. The same method rules
+apply to FFT, NUFFT, and Jacobi representations.
+
+At finite basis dimension, these derivatives need not equal the derivative of
+the executed primal Krylov approximation. They approximate the underlying
+power's sensitivity. Forward and reverse approximations must be checked for
+accuracy and adjoint consistency as the basis dimension increases.
 
 Three functions have explicit custom JVP rules:
 
@@ -139,8 +144,10 @@ $$
 
 The derivative requires another solve, rather than differentiation through
 the factorization or GMRES iterations. Reverse mode uses a transposed system.
-This is implicit differentiation of an inner linear solve, while the
-surrounding Krylov basis construction remains differentiated explicitly.
+Expected-visits derivatives use this implicit solve rule. Krylov power
+derivatives instead apply their own mathematical sensitivity rule; they do not
+differentiate basis construction. Dense rational block sensitivities reuse one
+factorization of the original shifted operator for both diagonal blocks.
 
 Invertibility of $B$ is the relevant condition. Absorption does not itself
 cause singularity: an eigenvalue $1$ of $A$ becomes eigenvalue $1$ of $B$.
@@ -155,29 +162,32 @@ distributions supported on its absorbing boundaries.
 
 ## Accuracy and limitations
 
-Automatic differentiation follows the implemented numerical calculation.
-Agreement with its finite differences does not establish accuracy for the
-exact Wright–Fisher model. Increase backend accuracy and Krylov dimension
-separately, and compare gradients with a dense reference where feasible.
-Forward convergence diagnostics do not certify gradient accuracy.
+Sequential differentiates its repeated numerical transition. Krylov methods
+approximate the sensitivity of the prepared power, so finite differences of an
+underresolved primal approximation are not sufficient validation. Increase
+backend accuracy and Krylov dimension separately; use dense references and
+JVP/VJP adjoint-pairing checks where feasible.
 
-Krylov JVPs and reverse-mode gradients raise at a zero working-state seed or
-when the Arnoldi recurrence detects breakdown. Forward propagation still
-returns its usual distribution and convergence diagnostics. This derivative
-policy is independent of `throw`: `throw=False` does not suppress the error.
-The check is conservative and can reject directions whose derivatives happen
-to remain in the represented space. It also applies to breakdown inside a
-`DemographicTransition`; a failing member under `vmap` can fail the batch.
-Use Sequential with FFT or NUFFT for derivatives in these cases. No automatic
-fallback is performed. Identity actions and Jacobi's single-generation action
-bypass basis construction and remain differentiable at zero mass.
+Zero seeds and exact invariant-subspace breakdown are supported by the new
+first-order Krylov rules. The sensitivity and operator pullback have separate
+convergence estimates. The coupled action checks a combined error estimate
+against both the state and sensitivity tolerances. The operator pullback combines a nested-space Frobenius difference with
+recurrence-defect estimates along both intermediate trajectories. This avoids
+accepting two vanishing projected pullbacks when propagation is unresolved.
+The defect estimate uses unit amplification and is heuristic for general
+nonnormal operators. These diagnostics are not certificates.
+A failed sensitivity or pullback raises even with `throw=False`; there is no
+automatic fallback. A failing member under `vmap` can fail the batch.
 
-A nonzero seed and no detected breakdown do not certify gradient accuracy.
-Validate derivatives against a reference and tighter settings. The accumulated recurrence-defect diagnostic is excluded from
-differentiation; the propagated distribution remains differentiable. A failed
-tangent or transpose solve can raise even when the primal call uses
-`throw=False`. Measure derivative runtime and memory separately from forward
-evaluation.
+Higher-order differentiation through the Krylov Fréchet rule is not currently
+implemented and raises explicitly. Use Sequential with FFT or NUFFT for such
+calculations. Sequential and the backend-level polynomial derivative rules
+retain their higher-order support.
+
+Error estimates and status fields are numerical diagnostics rather than
+differentiation targets. Measure derivative runtime and memory separately from
+forward evaluation. Neither primal nor derivative convergence establishes total
+accuracy for the exact Wright–Fisher model.
 
 See [accuracy and differentiation](../guide/numerics.md) for validation
 controls and [Krylov power methods](jacobi_krylov.md) for the forward algorithm.
@@ -187,3 +197,4 @@ controls and [Krylov power methods](jacobi_krylov.md) for the forward algorithm.
 - [JAX automatic differentiation](https://docs.jax.dev/en/latest/automatic-differentiation.html).
 - [JAX custom derivative rules](https://docs.jax.dev/en/latest/notebooks/Custom_derivative_rules_for_Python_code.html).
 - [Lineax linear solves](https://docs.kidger.site/lineax/api/linear_solve/).
+- [Kandolf et al., low-rank Fréchet derivative approximations](https://arxiv.org/abs/2008.12926).

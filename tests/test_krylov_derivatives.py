@@ -1,4 +1,4 @@
-"""Derivative failure policy at zero seeds and Arnoldi invariant subspaces."""
+"""Krylov sensitivities at zero seeds and Arnoldi invariant subspaces."""
 
 # pattern: Functional Core
 import equinox as eqx
@@ -22,10 +22,10 @@ jax.config.update("jax_enable_x64", True)
 @pytest.mark.parametrize("throw", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("zero_seed", [False, True])
-def test_breakdown_derivatives_raise_but_forward_remains_valid(
+def test_breakdown_derivatives_match_sequential(
     backend_type, method_type, throw, reverse, zero_seed
 ):
-    """Reject missing mass or mutation sensitivities even with a converged primal."""
+    """Represent mass and mutation sensitivities outside the primal Krylov space."""
     backend = backend_type(12)
     method = method_type(dimension=20)
     absent = jnp.eye(13)[0]
@@ -54,18 +54,30 @@ def test_breakdown_derivatives_raise_but_forward_remains_valid(
             absent.at[0].set(0.0).at[3].set(1.0) if zero_seed else jnp.asarray(1.0)
         )
         differentiated = eqx.filter_jit(lambda x: jax.jvp(fn, (x,), (direction,))[1])
-    with pytest.raises(
-        Exception,
-        match="Krylov derivatives require a nonzero seed and no Arnoldi breakdown",
-    ):
-        jax.block_until_ready(differentiated(parameter))
+    reference_backend = drifft.FFT(12)
+
+    def reference(parameter):
+        mass = parameter if zero_seed else absent
+        rule = drifft.Neutral() if zero_seed else drifft.Mutation(parameter, 0.0)
+        return (
+            drifft.Sequential()
+            .advance(reference_backend, mass, frequency_map=rule, generations=7)
+            .distribution
+        )
+
+    actual = differentiated(parameter)
+    if reverse:
+        expected = jax.grad(lambda x: reference(x).sum())(parameter)
+    else:
+        expected = jax.jvp(reference, (parameter,), (direction,))[1]
+    assert jnp.allclose(actual, expected, atol=2e-9, rtol=2e-8)
 
 
 @pytest.mark.parametrize(
     "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
 )
-def test_demographic_breakdown_derivative_policy(method_type):
-    """The same failure applies through hold and rectangular boundary composition."""
+def test_demographic_breakdown_sensitivities(method_type):
+    """Sensitivities survive hold and rectangular boundary composition."""
     model = drifft.DemographicTransition(
         drifft.Demography([6, 4, 5], [7, 3]),
         backend=drifft.Jacobi,
@@ -80,11 +92,19 @@ def test_demographic_breakdown_derivative_policy(method_type):
         updated = eqx.tree_at(lambda m: m.frequency_map.forward_rate, model, u)
         return updated.advance(mass, throw=False).distribution.sum()
 
-    with pytest.raises(
-        Exception,
-        match="Krylov derivatives require a nonzero seed and no Arnoldi breakdown",
-    ):
-        jax.block_until_ready(eqx.filter_jit(jax.grad(objective))(jnp.asarray(0.0)))
+    reference = drifft.DemographicTransition(
+        model.demography,
+        backend=drifft.FFT,
+        method=drifft.Sequential(),
+        frequency_map=drifft.Mutation(0.0, 0.0),
+    )
+
+    def expected(u):
+        updated = eqx.tree_at(lambda m: m.frequency_map.forward_rate, reference, u)
+        return updated.advance(mass).distribution.sum()
+
+    actual = eqx.filter_jit(jax.grad(objective))(jnp.asarray(0.0))
+    assert jnp.allclose(actual, jax.grad(expected)(jnp.asarray(0.0)), atol=2e-9)
 
 
 @pytest.mark.parametrize(
@@ -112,8 +132,8 @@ def test_no_power_still_differentiates_zero_mass(
     assert jnp.allclose(tangent, action(direction), atol=1e-12)
 
 
-def test_batched_derivatives_reject_any_breakdown_member():
-    """A failed derivative member fails the batch without rejecting primal values."""
+def test_batched_derivatives_include_breakdown_members():
+    """Zero and nonzero mutation rates share the same derivative contract."""
     backend = drifft.FFT(12)
     method = drifft.PolynomialKrylov(dimension=20)
     mass = jnp.eye(13)[0]
@@ -129,11 +149,8 @@ def test_batched_derivatives_reject_any_breakdown_member():
 
     rates = jnp.array([0.001, 0.0])
     assert jnp.allclose(eqx.filter_jit(jax.vmap(objective))(rates), 1.0, atol=1e-12)
-    with pytest.raises(
-        Exception,
-        match="Krylov derivatives require a nonzero seed and no Arnoldi breakdown",
-    ):
-        jax.block_until_ready(eqx.filter_jit(jax.vmap(jax.grad(objective)))(rates))
+    actual = eqx.filter_jit(jax.vmap(jax.grad(objective)))(rates)
+    assert jnp.allclose(actual, 0.0, atol=2e-9)
 
 
 def test_sequential_mutation_boundary_sensitivity_matches_dense_reference():
@@ -186,9 +203,7 @@ def test_sequential_mutation_boundary_sensitivity_matches_dense_reference():
         (drifft.Jacobi, drifft.RationalKrylov),
     ],
 )
-def test_zero_immigration_derivative_rejects_augmented_breakdown(
-    backend_type, method_type
-):
+def test_zero_immigration_sensitivity(backend_type, method_type):
     """The affine auxiliary coordinate must not hide a zero physical seed."""
     backend = backend_type(12)
     method = method_type(dimension=20)
@@ -207,8 +222,23 @@ def test_zero_immigration_derivative_rejects_augmented_breakdown(
         ).distribution.sum()
 
     assert objective(jnp.asarray(0.0)) == 0
-    with pytest.raises(
-        Exception,
-        match="Krylov derivatives require a nonzero seed and no Arnoldi breakdown",
-    ):
-        jax.block_until_ready(eqx.filter_jit(jax.grad(objective))(jnp.asarray(0.0)))
+    actual = eqx.filter_jit(jax.grad(objective))(jnp.asarray(0.0))
+    reference_backend = drifft.FFT(12)
+
+    def reference(rate):
+        return (
+            drifft.Sequential()
+            .advance(
+                reference_backend,
+                mass,
+                frequency_map=drifft.Neutral(),
+                generations=7,
+                segregating=True,
+                immigration=mass.at[0].set(rate),
+            )
+            .distribution.sum()
+        )
+
+    assert jnp.allclose(
+        actual, jax.grad(reference)(jnp.asarray(0.0)), atol=2e-9, rtol=2e-8
+    )

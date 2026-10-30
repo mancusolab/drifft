@@ -85,17 +85,15 @@ estimate does not cover.
 
 ## Differentiation and demographic integration
 
-JAX differentiates the operator applications and the input-dependent Krylov basis.
 Selection, mutation rates, initial mass, and immigration are dynamic arrays;
-dimensions and generation counts are static. Krylov JVPs and reverse-mode
-gradients raise at zero working-state seeds or detected Arnoldi breakdown,
-even with `throw=False`; forward values remain available. See the
-[breakdown derivative policy](autodiff.md#accuracy-and-limitations). Differentiation can require substantially more
-memory than forward evaluation.
-The accumulated recurrence-defect diagnostic is excluded from differentiation.
-With FFT or NUFFT, RationalKrylov differentiates GMRES solves implicitly through
-Lineax. A failed tangent or transpose solve raises even when the primal call
-uses `throw=False`. Jacobi uses dense LU shifted solves.
+dimensions and generation counts are static. Krylov methods use custom
+first-order power-sensitivity rules, including a low-rank operator pullback.
+They support zero and invariant seeds when derivative convergence checks pass.
+Sensitivity or pullback failures raise even with `throw=False`. Higher-order
+operator sensitivities are not yet implemented. See the
+[autodiff chapter](autodiff.md#accuracy-and-limitations) for the accuracy contract.
+Preparation, reconstruction, and demographic boundaries remain differentiated
+through JAX. Numerical error estimates are excluded from differentiation.
 
 Because their bases depend on the input, neither Krylov method provides a
 matched expectation transpose. Use Sequential when you need `model.expect()`.

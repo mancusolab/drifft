@@ -172,3 +172,37 @@ def test_prepared_epoch_derivatives_include_encoding_and_source(
     expected = jax.grad(lambda *args: weights @ ref(*args), argnums=(0, 1, 2))(*args)
     for a, b in zip(actual, expected, strict=True):
         assert jnp.allclose(a, b, atol=1e-10, rtol=2e-10)
+
+
+@pytest.mark.parametrize(
+    "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
+)
+@pytest.mark.parametrize("implicit", [False, True])
+def test_krylov_linearized_state_transpose_skips_known_operator_tangent(
+    method_type, implicit
+):
+    """A known zero operator direction requires only the initial-state pullback."""
+    from drifft._krylov import _working_problem
+
+    steps = 5
+    matrix = jnp.array([[0.9, 0.12, 0.01], [0.0, 0.8, 0.08], [0.0, 0.0, 0.7]])
+    perturbation = jnp.array(
+        [[0.01, -0.02, 0.03], [0.02, 0.01, 0.0], [0.0, -0.03, 0.01]]
+    )
+    initial, cotangent = jnp.array([0.2, -0.1, 0.5]), jnp.array([0.3, -0.4, 0.8])
+    method = method_type(dimension=8, rtol=1e-10, atol=1e-12)
+    spec = jax.ShapeDtypeStruct(initial.shape, initial.dtype)
+
+    def action(scale, state):
+        a = matrix + scale * perturbation
+        operator = (
+            lx.FunctionLinearOperator(lambda v: a @ v, spec)
+            if implicit
+            else lx.MatrixLinearOperator(a)
+        )
+        return method.solve(_working_problem(operator, state, steps)).distribution
+
+    _, linearized = jax.linearize(action, jnp.asarray(0.0), initial)
+    transpose = jax.linear_transpose(lambda h: linearized(jnp.asarray(0.0), h), initial)
+    actual = eqx.filter_jit(transpose)(cotangent)[0]
+    assert jnp.allclose(actual, reference(matrix.T, cotangent, steps), atol=1e-12)

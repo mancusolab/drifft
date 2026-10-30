@@ -18,6 +18,8 @@ from ._epochs import (
 )
 from ._frequency import AbstractFrequencyMap
 from ._jacobi import Jacobi
+from ._power import _cached_power_action, _frechet_action
+from ._power import _power_action as _operator_power_action
 from .backends import AbstractTransitionBackend
 
 
@@ -43,7 +45,10 @@ def _matrix_power_matvec(matrix: jax.Array, vector: jax.Array, steps: int):
 
 @jax.custom_jvp
 def _require_krylov_derivative(value, supported):
-    """Preserve primal results while rejecting derivatives at basis breakdown."""
+    """Guard direct AD through raw Arnoldi helpers used in research diagnostics.
+
+    Public Krylov methods use the separate mathematical Frechet rule instead.
+    """
     return value
 
 
@@ -71,16 +76,23 @@ def _guard_krylov_derivative(value, basis, norm_squared):
 
 
 def _power_action_with_status(
-    matrix: jax.Array, seed: jax.Array, steps: int, dimension: int
+    matrix: jax.Array,
+    seed: jax.Array,
+    steps: int,
+    dimension: int,
+    *,
+    return_basis=False,
+    shifted_solve=None,
 ):
     """Project the original matrix onto a twice-reorthogonalized resolvent basis."""
     size = seed.size
     dimension = min(size, dimension)
     shift = steps / 8
-    identity = jnp.eye(size)
-    operator = lx.MatrixLinearOperator(identity + shift * (identity - matrix))
-    solver = lx.LU()
-    factor = solver.init(operator, {})
+    if shifted_solve is None:
+        identity = jnp.eye(size)
+        operator = lx.MatrixLinearOperator(identity + shift * (identity - matrix))
+        solver = lx.LU()
+        factor = solver.init(operator, {})
     # Keep primal zero seeds finite; the derivative guard rejects these branches.
     norm_squared = seed @ seed
     norm = jnp.sqrt(jnp.where(norm_squared > 0, norm_squared, 1.0))
@@ -89,15 +101,15 @@ def _power_action_with_status(
     def step(index, carry):
         """Add a resolvent Arnoldi vector, leaving unused columns zero at breakdown."""
         basis, success = carry
-        solution = lx.linear_solve(
-            operator, basis[:, index], solver, state=factor, throw=False
-        )
-        candidate = solution.value
-        success = (
-            success
-            & (solution.result == lx.RESULTS.successful)
-            & jnp.all(jnp.isfinite(candidate))
-        )
+        if shifted_solve is None:
+            solution = lx.linear_solve(
+                operator, basis[:, index], solver, state=factor, throw=False
+            )
+            candidate = solution.value
+            solved = solution.result == lx.RESULTS.successful
+        else:
+            candidate, solved = shifted_solve(basis[:, index])
+        success = success & solved & jnp.all(jnp.isfinite(candidate))
         original_squared = candidate @ candidate
         for _ in range(2):
             candidate = candidate - basis @ (basis.T @ candidate)
@@ -122,14 +134,16 @@ def _power_action_with_status(
     if dimension == size:
         # A complete basis (or invariant-subspace breakdown) needs no truncation
         # estimate. Finiteness is still checked by the public result contract.
-        return result, result, defect, projected, coordinates, success
+        action = (result, result, defect, projected, coordinates, success)
+        return (*action, basis) if return_basis else action
     coarse_dimension = max(1, dimension // 2)
     coarse = basis[:, :coarse_dimension] @ _matrix_power_matvec(
         projected[:coarse_dimension, :coarse_dimension],
         coordinates[:coarse_dimension],
         steps,
     )
-    return result, coarse, defect, projected, coordinates, success
+    action = (result, coarse, defect, projected, coordinates, success)
+    return (*action, basis) if return_basis else action
 
 
 def _power_action(matrix: jax.Array, seed: jax.Array, steps: int, dimension: int):
@@ -145,6 +159,7 @@ def _gmres_power_action(
     atol: float = 1e-13,
     max_steps: int = 100,
     restart: int = 50,
+    return_basis=False,
 ):
     """Build a resolvent basis with checked, unpreconditioned matrix-free GMRES.
 
@@ -235,7 +250,10 @@ def _gmres_power_action(
         coarse = basis[:, :half] @ _matrix_power_matvec(
             projected[:half, :half], coordinates[:half], problem.steps
         )
-    return (fine, coarse, defect, projected, coordinates, success), {
+    action = (fine, coarse, defect, projected, coordinates, success)
+    if return_basis:
+        action = (*action, basis)
+    return action, {
         "num_steps": num_steps,
         "max_residual_norm": max_residual,
     }
@@ -271,7 +289,9 @@ def _projected_result(
     defect_estimate *= problem.defect_scale
     result = problem.reconstruct(fine)
     difference = problem.decode(fine - coarse)
-    error = jnp.maximum(jnp.sum(jnp.abs(difference)), defect_estimate)
+    error = jax.lax.stop_gradient(
+        jnp.maximum(jnp.sum(jnp.abs(difference)), defect_estimate)
+    )
     tolerance = atol + rtol * jnp.sum(jnp.abs(result))
     return _epoch_result(result, error, tolerance, throw, success)
 
@@ -290,10 +310,11 @@ class RationalKrylov(AbstractEpochMethod):
     These inner tolerances are independent of the outer power tolerances.
     FFT/NUFFT speedups depend on how many operator applications GMRES needs.
 
-    Derivatives follow the input-dependent basis and projected power. Derivatives
-    at zero seeds or detected Arnoldi breakdown raise, even with `throw=False`. This is not
-    a fixed linear operator and does not provide a matched transpose.
-    Lineax raises on failed tangent or transpose solves even with `throw=False`.
+    First-order derivatives approximate the mathematical power sensitivity with
+    a coupled Krylov action and a two-sided operator pullback. Arnoldi bases are
+    not differentiated. Sensitivity or pullback nonconvergence raises even with
+    `throw=False`. Higher-order operator sensitivities are not implemented.
+    The input-dependent primal approximation has no matched expectation transpose.
     """
 
     dimension: int = 64
@@ -331,13 +352,21 @@ class RationalKrylov(AbstractEpochMethod):
             return _epoch_result(
                 problem.reconstruct(problem.initial), jnp.asarray(0.0), self.atol, throw
             )
-        if isinstance(problem.operator, lx.MatrixLinearOperator):
+        arrays, static = eqx.partition(problem, eqx.is_array)
+        raw_problem = eqx.combine(jax.tree.map(jax.lax.stop_gradient, arrays), static)
+        if isinstance(raw_problem.operator, lx.MatrixLinearOperator):
             action = _power_action_with_status(
-                problem.operator.matrix, problem.initial, problem.steps, self.dimension
+                raw_problem.operator.matrix,
+                raw_problem.initial,
+                raw_problem.steps,
+                self.dimension,
             )
         else:
-            action, _ = _gmres_power_action(problem, self.dimension)
+            action, _ = _gmres_power_action(raw_problem, self.dimension)
         fine, coarse, defect, projected, coordinates, success = action
+        fine = _cached_power_action(
+            self, problem.operator, problem.initial, problem.steps, fine
+        )
         return _projected_result(
             problem,
             fine,
@@ -349,6 +378,38 @@ class RationalKrylov(AbstractEpochMethod):
             self.atol,
             throw,
             success,
+        )
+
+    def _power_action(self, operator, initial, steps):
+        """Evaluate an unencoded power and require its numerical checks to pass."""
+        return self.solve(_working_problem(operator, initial, steps)).distribution
+
+    def _power_jvp(self, operator, tangent_operator, initial, tangent_initial, steps):
+        """Approximate the mathematical power sensitivity without basis AD."""
+        value = _operator_power_action(self, operator, initial, steps)
+        if tangent_operator is None:
+            tangent = _operator_power_action(self, operator, tangent_initial, steps)
+        else:
+            tangent = _frechet_action(
+                self,
+                operator,
+                initial,
+                tangent_operator.tangent,
+                tangent_initial,
+                steps,
+            )
+        return value, tangent
+
+    def _frechet_action(self, operator, perturbation, initial, tangent_initial, steps):
+        """Compute the coupled power sensitivity using this method's space."""
+        return _frechet_power(
+            self, operator, perturbation, initial, tangent_initial, steps
+        )
+
+    def _frechet_transpose(self, operator, template, initial, cotangent, steps):
+        """Compute the operator pullback in its filtered PyTree representation."""
+        return _frechet_operator_pullback(
+            self, operator, template, initial, cotangent, steps
         )
 
     @eqx.filter_jit
@@ -396,7 +457,9 @@ FFT/NUFFT. Solver selection is internal.
 """
 
 
-def _polynomial_power_action(problem: _PowerProblem, dimension: int):
+def _polynomial_power_action(
+    problem: _PowerProblem, dimension: int, *, return_basis=False
+):
     """Build a reorthogonalized Arnoldi basis using only operator applications."""
     seed = problem.initial
     # Powers through k live in K_{k+1}; do not build unused basis vectors.
@@ -442,7 +505,8 @@ def _polynomial_power_action(problem: _PowerProblem, dimension: int):
         coarse = basis[:, :half] @ _matrix_power_matvec(
             projected[:half, :half], coordinates[:half], problem.steps
         )
-    return fine, coarse, defect, projected, coordinates
+    action = (fine, coarse, defect, projected, coordinates)
+    return (*action, basis) if return_basis else action
 
 
 @final
@@ -458,9 +522,11 @@ class PolynomialKrylov(AbstractEpochMethod):
     The basis uses O(n m) storage for working-state size n and dimension m.
     Larger dimensions can be necessary for long intervals; no restart or
     automatic Sequential fallback is performed. Convergence checks exclude
-    backend approximation error. Derivatives follow the input-dependent basis,
-    with derivatives at zero seeds or detected Arnoldi breakdown raising even
-    with `throw=False`. This method does not provide a matched expectation transpose.
+    backend approximation error. First-order derivatives use a coupled Krylov
+    sensitivity action and a two-sided operator pullback, without basis AD.
+    Sensitivity or pullback nonconvergence raises even with `throw=False`.
+    Higher-order operator sensitivities are not implemented. This method does
+    not provide a matched expectation transpose of its primal approximation.
     """
 
     dimension: int = 64
@@ -499,8 +565,13 @@ class PolynomialKrylov(AbstractEpochMethod):
             return _epoch_result(
                 problem.reconstruct(problem.initial), jnp.asarray(0.0), self.atol, throw
             )
+        arrays, static = eqx.partition(problem, eqx.is_array)
+        raw_problem = eqx.combine(jax.tree.map(jax.lax.stop_gradient, arrays), static)
         fine, coarse, defect, projected, coordinates = _polynomial_power_action(
-            problem, self.dimension
+            raw_problem, self.dimension
+        )
+        fine = _cached_power_action(
+            self, problem.operator, problem.initial, problem.steps, fine
         )
         return _projected_result(
             problem,
@@ -512,6 +583,38 @@ class PolynomialKrylov(AbstractEpochMethod):
             self.rtol,
             self.atol,
             throw,
+        )
+
+    def _power_action(self, operator, initial, steps):
+        """Evaluate an unencoded power and require its numerical checks to pass."""
+        return self.solve(_working_problem(operator, initial, steps)).distribution
+
+    def _power_jvp(self, operator, tangent_operator, initial, tangent_initial, steps):
+        """Approximate the mathematical power sensitivity without basis AD."""
+        value = _operator_power_action(self, operator, initial, steps)
+        if tangent_operator is None:
+            tangent = _operator_power_action(self, operator, tangent_initial, steps)
+        else:
+            tangent = _frechet_action(
+                self,
+                operator,
+                initial,
+                tangent_operator.tangent,
+                tangent_initial,
+                steps,
+            )
+        return value, tangent
+
+    def _frechet_action(self, operator, perturbation, initial, tangent_initial, steps):
+        """Compute the coupled power sensitivity using this method's space."""
+        return _frechet_power(
+            self, operator, perturbation, initial, tangent_initial, steps
+        )
+
+    def _frechet_transpose(self, operator, template, initial, cotangent, steps):
+        """Compute the operator pullback in its filtered PyTree representation."""
+        return _frechet_operator_pullback(
+            self, operator, template, initial, cotangent, steps
         )
 
     @eqx.filter_jit
@@ -556,3 +659,259 @@ PolynomialKrylov.__init__.__doc__ = r"""Configure polynomial powering independen
 
 `ValueError` for invalid dimension or tolerances.
 """
+
+
+def _working_problem(operator, initial, steps):
+    """Represent an unencoded power action for sensitivity calculations."""
+    return _PowerProblem(
+        operator,
+        initial,
+        steps,
+        lambda x: x,
+        jnp.zeros_like(initial),
+        False,
+        jnp.asarray(1.0),
+    )
+
+
+def _sensitivity_projection(
+    method, operator, initial, steps, *, dimension=None, shifted_solve=None
+):
+    """Reuse the method's Arnoldi space, retaining its basis for adjoint factors."""
+    problem = _working_problem(operator, initial, steps)
+    dimension = method.dimension if dimension is None else dimension
+    if isinstance(method, PolynomialKrylov):
+        fine, coarse, defect, projected, coordinates, basis = _polynomial_power_action(
+            problem, dimension, return_basis=True
+        )
+        success = jnp.asarray(True)
+    elif isinstance(operator, lx.MatrixLinearOperator):
+        fine, coarse, defect, projected, coordinates, success, basis = (
+            _power_action_with_status(
+                operator.matrix,
+                initial,
+                steps,
+                dimension,
+                return_basis=True,
+                shifted_solve=shifted_solve,
+            )
+        )
+    else:
+        action, _ = _gmres_power_action(problem, dimension, return_basis=True)
+        fine, coarse, defect, projected, coordinates, success, basis = action
+    return fine, coarse, defect, projected, coordinates, success, basis
+
+
+def _frechet_power(method, operator, perturbation, initial, tangent_initial, steps):
+    """Approximate the power sensitivity by a coupled block operator action.
+
+    This numerical kernel is not a custom JVP: its adaptive space can depend on
+    the supplied direction. AD integration requires a dedicated tangent primitive.
+    """
+    if steps == 0:
+        return _epoch_result(tangent_initial, jnp.asarray(0.0), method.atol, False)
+    size = initial.size
+    shifted_solve = None
+    if isinstance(operator, lx.MatrixLinearOperator):
+        a, e = operator.matrix, perturbation.as_matrix()
+        block = lx.MatrixLinearOperator(jnp.block([[a, e], [jnp.zeros_like(a), a]]))
+        if isinstance(method, RationalKrylov):
+            shift = steps / 8
+            shifted = lx.MatrixLinearOperator(
+                jnp.eye(size) + shift * (jnp.eye(size) - a)
+            )
+            solver = lx.LU()
+            factor = solver.init(shifted, {})
+
+            def shifted_solve(rhs):
+                lower = lx.linear_solve(
+                    shifted, rhs[size:], solver, state=factor, throw=False
+                )
+                upper = lx.linear_solve(
+                    shifted,
+                    rhs[:size] + shift * perturbation.mv(lower.value),
+                    solver,
+                    state=factor,
+                    throw=False,
+                )
+                success = (lower.result == lx.RESULTS.successful) & (
+                    upper.result == lx.RESULTS.successful
+                )
+                return jnp.concatenate((upper.value, lower.value)), success
+    else:
+
+        def action(state):
+            tangent, primal = state[:size], state[size:]
+            return jnp.concatenate(
+                (operator.mv(tangent) + perturbation.mv(primal), operator.mv(primal))
+            )
+
+        block = lx.FunctionLinearOperator(
+            action, jax.ShapeDtypeStruct((2 * size,), initial.dtype)
+        )
+    seed = jnp.concatenate((tangent_initial, initial))
+    fine, coarse, defect, projected, coordinates, success, _ = _sensitivity_projection(
+        method,
+        block,
+        seed,
+        steps,
+        dimension=2 * method.dimension,
+        shifted_solve=shifted_solve,
+    )
+    # Require the combined error to satisfy each output block's tolerance. A large
+    # primal must not mask an inaccurate, small sensitivity. This remains an estimate.
+    tolerance = jnp.minimum(
+        method.atol + method.rtol * jnp.sum(jnp.abs(fine[:size])),
+        method.atol + method.rtol * jnp.sum(jnp.abs(fine[size:])),
+    )
+    result = _projected_result(
+        _working_problem(block, seed, steps),
+        fine,
+        coarse,
+        defect,
+        projected,
+        coordinates,
+        0.0,
+        tolerance,
+        False,
+        success,
+    )
+    return EpochResult(
+        result.distribution[:size],
+        result.error_estimate,
+        result.converged,
+        result.status,
+    )
+
+
+def _frechet_core(left_matrix, right_matrix, left_seed, right_seed, steps):
+    """Compute the small projected Frechet adjoint, with the right block transposed."""
+    n, m = left_seed.size, right_seed.size
+    block = jnp.block(
+        [
+            [left_matrix, jnp.outer(left_seed, right_seed)],
+            [jnp.zeros((m, n)), right_matrix.T],
+        ]
+    )
+    seed = jnp.concatenate((jnp.zeros((n, m)), jnp.eye(m)), axis=0)
+    return _matrix_power_matvec(block, seed, steps)[:n]
+
+
+def _frechet_adjoint_factors(method, operator, initial, cotangent, steps):
+    """Approximate the operator pullback as left @ right.T without forming it.
+
+    The two spaces use A.T and A, seeded by the output cotangent and input state.
+    Nested-space differences and intermediate recurrence defects estimate
+    Frobenius error; they are not certificates.
+    """
+    if steps == 0:
+        empty = jnp.zeros((initial.size, 0), dtype=initial.dtype)
+        return empty, empty, jnp.asarray(0.0), jnp.asarray(True)
+    _, _, left_defect, h, c, left_ok, u = _sensitivity_projection(
+        method, operator.T, cotangent, steps
+    )
+    _, _, right_defect, j, x, right_ok, v = _sensitivity_projection(
+        method, operator, initial, steps
+    )
+    core = _frechet_core(h, j, c, x, steps)
+    full = u.shape[1] == initial.size and v.shape[1] == initial.size
+    exact_polynomial = (
+        isinstance(method, PolynomialKrylov) and min(u.shape[1], v.shape[1]) >= steps
+    )
+    if full or exact_polynomial:
+        error = jnp.asarray(0.0)
+    else:
+        left_half, right_half = max(1, u.shape[1] // 2), max(1, v.shape[1] // 2)
+        coarse = _frechet_core(
+            h[:left_half, :left_half],
+            j[:right_half, :right_half],
+            c[:left_half],
+            x[:right_half],
+            steps,
+        )
+        difference = core.at[:left_half, :right_half].add(-coarse)
+        error = jnp.linalg.norm(difference)
+    # A nested difference can vanish before either projected orbit reaches the
+    # part of the spectrum contributing to the pullback. Track intermediate
+    # recurrence defects as well. Unit amplification mirrors the primal defect
+    # diagnostic; for general nonnormal operators this remains a heuristic,
+    # rather than a certified error bound.
+    left_weights = jnp.linalg.norm(left_defect, axis=0)
+    right_weights = jnp.linalg.norm(right_defect, axis=0)
+
+    def orbit_step(carry, _):
+        left_state, right_state, left_error, right_error = carry
+        diagnostics = (
+            jnp.linalg.norm(left_state),
+            jnp.linalg.norm(right_state),
+            left_error,
+            right_error,
+        )
+        following = (
+            h @ left_state,
+            j @ right_state,
+            left_error + left_weights @ jnp.abs(left_state),
+            right_error + right_weights @ jnp.abs(right_state),
+        )
+        return following, diagnostics
+
+    seed_errors = (
+        jnp.linalg.norm(cotangent - u @ c),
+        jnp.linalg.norm(initial - v @ x),
+    )
+    _, (left_norms, right_norms, left_errors, right_errors) = jax.lax.scan(
+        orbit_step, (c, x, *seed_errors), None, length=steps
+    )
+    recurrence_error = jnp.sum(
+        left_errors * (right_norms[::-1] + right_errors[::-1])
+        + left_norms * right_errors[::-1]
+    )
+    error = jnp.maximum(error, recurrence_error)
+    left = u @ core
+    # Zero columns at invariant-subspace breakdown need no completion: the seed's
+    # orbit is represented by the remaining basis columns on each side.
+    finite = (
+        jnp.all(jnp.isfinite(left)) & jnp.all(jnp.isfinite(v)) & jnp.isfinite(error)
+    )
+    converged = (
+        left_ok
+        & right_ok
+        & finite
+        & (error <= method.atol + method.rtol * jnp.linalg.norm(core))
+    )
+    return left, v, error, converged
+
+
+def _frechet_operator_pullback(
+    method, operator, tangent_template, initial, cotangent, steps
+):
+    """Contract low-rank adjoint factors into the active operator PyTree leaves.
+
+    The tangent template selects perturbed leaves, not biological parameter names.
+    The numerical factors are residuals of the inner operator VJP; differentiating
+    their construction there would introduce unwanted basis-derivative terms.
+    """
+
+    def is_none(x):
+        return x is None
+
+    if not any(
+        x is not None for x in jax.tree.leaves(tangent_template, is_leaf=is_none)
+    ):
+        return (
+            jax.tree.map(lambda _: None, operator),
+            jnp.asarray(0.0),
+            jnp.asarray(True),
+        )
+    selected = jax.tree.map(lambda x: x is not None, tangent_template, is_leaf=is_none)
+    active, fixed = eqx.partition(operator, selected, is_leaf=is_none)
+    left, right, error, converged = _frechet_adjoint_factors(
+        method, operator, initial, cotangent, steps
+    )
+
+    def action(active):
+        op = eqx.combine(active, fixed)
+        return jax.lax.map(op.mv, right.T)
+
+    _, pullback = eqx.filter_vjp(action, active)
+    return pullback(left.T)[0], error, converged

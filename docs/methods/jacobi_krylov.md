@@ -98,21 +98,22 @@ describes validation of the final quantity.
 The [autodiff chapter](autodiff.md) explains finite-time sensitivities and the
 derivative rules used in these calculations.
 
-JAX differentiates operator actions, frequency-map parameters, and the
-input-dependent basis. FFT/NUFFT shifted solves use implicit differentiation
-through Lineax; a failed tangent or transpose solve raises even when the primal call used
-`throw=False`. The accumulated recurrence-defect diagnostic is excluded from
-differentiation.
+First-order rules approximate the mathematical power sensitivity using a coupled
+block action and a two-sided low-rank operator pullback. They do not differentiate
+the input-dependent Arnoldi basis. The coupled action can use twice `dimension`
+basis vectors; each adjoint space uses at most `dimension`. Dense rational
+block solves reuse the original shifted factorization.
 
-JVPs and reverse-mode gradients raise for zero working-state seeds or detected
-Arnoldi breakdown, even with `throw=False`. Forward values retain their usual
-convergence contract. This conservative check can reject otherwise safe
-parameter directions; use Sequential with FFT or NUFFT for derivatives in
-these cases. There is no automatic fallback. See the
-[breakdown derivative policy](autodiff.md#accuracy-and-limitations).
-Differentiation can retain substantially more memory than a forward action.
-Because the basis depends on the input, the methods do not expose a matched
-expectation transpose. Use Sequential for `model.expect()`.
+Zero and invariant seeds are supported when the sensitivity checks converge.
+A failed sensitivity or pullback raises even with `throw=False`, and no
+automatic fallback is performed. Higher-order operator sensitivities currently
+raise; use Sequential with FFT or NUFFT for these. See the
+[autodiff chapter](autodiff.md#accuracy-and-limitations) for the derivative
+accuracy contract and validation requirements.
+
+The primal approximation remains input dependent. Its derivative's approximate
+mathematical adjoint is not a matched expectation transpose of that numerical
+map; use Sequential for `model.expect()`.
 
 ## Use in drifft
 
