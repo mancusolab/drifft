@@ -17,10 +17,12 @@ from jax.experimental import hijax
 
 
 def _is_ad_leaf(value):
+    """Keep symbolic zeros and cotangent accumulators opaque during tree walks."""
     return isinstance(value, (hijax.Zero, hijax.GradAccum))
 
 
 def _has_accum(tree):
+    """Identify arguments whose cotangents are requested by transposition."""
     return any(
         isinstance(x, hijax.GradAccum)
         for x in jax.tree.leaves(tree, is_leaf=_is_ad_leaf)
@@ -28,14 +30,17 @@ def _has_accum(tree):
 
 
 def _tangent_or_none(tangent):
+    """Translate a symbolic zero into Equinox's inactive-leaf convention."""
     return None if isinstance(tangent, hijax.Zero) else tangent
 
 
 def _operator_tangent(tangent):
+    """Preserve operator structure while marking unperturbed leaves as inactive."""
     return jax.tree.map(_tangent_or_none, tangent, is_leaf=_is_ad_leaf)
 
 
 def _has_tangent(tree):
+    """Check for active directions without materializing symbolic zero arrays."""
     return any(
         not isinstance(x, hijax.Zero)
         for x in jax.tree.leaves(tree, is_leaf=_is_ad_leaf)
@@ -43,7 +48,10 @@ def _has_tangent(tree):
 
 
 def _accumulate(accums, values):
+    """Add cotangents only to leaves participating in the current transpose."""
+
     def add(accum, value):
+        """Leave known arguments untouched while accumulating active leaves."""
         if isinstance(accum, hijax.GradAccum):
             accum.accum(value)
 
@@ -92,6 +100,9 @@ class _PowerAction(hijax.HiPrim):
             return method._power_jvp(
                 operator, tangent_operator, initial, tangent_initial, steps
             )
+        # A cached value is only a primal shortcut: its tangent is deliberately
+        # ignored. Differentiate A**g x through the operator and state, otherwise
+        # AD would follow the adaptive projection that produced the cached value.
         if tangent_operator is None:
             tangent = _power_action(method, operator, tangent_initial, steps)
         else:
@@ -123,6 +134,7 @@ class _PowerAction(hijax.HiPrim):
 
 
 def _bind_power(operator, initial, steps, method, *value):
+    """Bind array leaves dynamically while preserving static operator structure."""
     dynamic, static = eqx.partition(
         (operator, initial, steps, method, *value), eqx.is_array
     )
@@ -190,6 +202,9 @@ class _FrechetAction(hijax.HiPrim):
             msg="Higher-order Krylov sensitivities are not implemented; use Sequential",
         )
         if _has_accum(t_operator):
+            # The template records which operator leaves need a pullback. Known
+            # leaves stay None so fixed geometry does not acquire cotangents or
+            # trigger an unnecessary operator-sensitivity solve.
             template = jax.tree.map(
                 lambda t: (
                     jnp.zeros(t.aval.shape, t.aval.dtype)

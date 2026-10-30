@@ -110,6 +110,9 @@ class _GegenbauerMoments(hijax.HiPrim):
         primal = self(points, values)
         tangent = self(points, dvalues)
         config = self.params | {"order": cast(int, self.params["order"]) + 1}
+        # Evaluation differentiates pointwise; moments first weight each input
+        # mass by its point tangent. Both paths reuse the next derivative-order
+        # recurrence, so nested AD never stores a point-by-degree basis matrix.
         if self.params["transposed"]:
             tangent = tangent + dpoints * gegenbauer_moments(points, values, **config)
         else:
@@ -153,6 +156,9 @@ def gegenbauer_moments(points, values, *, rank, order=0, transposed=False):
 def compute_cosine_coefficients(samples: jax.Array) -> jax.Array:
     """DCT-I through an even real-FFT extension, with both endpoint modes halved."""
     degree = samples.size - 1
+    # Reflect only interior Lobatto samples to make an even periodic sequence.
+    # Dividing its FFT by degree gives the interior coefficients directly;
+    # modes zero and degree are twice their cosine-series coefficients.
     extended = jnp.concatenate((samples, samples[-2:0:-1]))
     coefficients = jnp.fft.rfft(extended).real / degree
     return coefficients.at[0].multiply(0.5).at[-1].multiply(0.5)

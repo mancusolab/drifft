@@ -59,6 +59,9 @@ def _prepare_transition(
 
     def action(state):
         if augmented:
+            # Homogeneous coordinates turn x_next = A x + source into one
+            # linear power: [x; 1] -> [A x + source; 1]. The auxiliary coordinate
+            # must be propagated too, including in Krylov residual checks.
             return jnp.concatenate(
                 (operation(state[:-1]) + source * state[-1], state[-1:])
             )
@@ -101,6 +104,9 @@ def _prepare_jacobi(
             jnp.asarray(1.0),
         )
     seed = backend._geometry.encode(distribution, frequency_map, segregating)
+    # Encoding already applies D.T, the selected one-step evaluation transpose.
+    # Thus g generations need (H.T)**(g-1), followed by E.T decoding. In
+    # particular, one generation requires no reduced matrix or power at all.
     decode = eqx.Partial(backend._geometry.decode, segregating=segregating)
     if generations == 1:
         operator = lx.IdentityLinearOperator(
@@ -124,12 +130,18 @@ def _prepare_jacobi(
             backend._diploid_padded_rank,
         )
         if segregating:
+            # Recurrent mutation can produce nonzero endpoint coefficients.
+            # Fold their interior contribution into E_int D_int before discarding
+            # endpoints; simply slicing the full operator would lose that term.
             matrix = (
                 matrix[2:, 2:] + backend._geometry.endpoint_correction @ matrix[:2, 2:]
             )
     matrix = matrix.T
     augmented = immigration is not None
     if augmented:
+        # Earlier source events must pass through the next encoding step. The
+        # final event has no subsequent transition and is added in physical
+        # coordinates by output_offset, outside the reduced power.
         encoded_source = backend._geometry.encode(source, frequency_map, segregating)
         extended = jnp.zeros((seed.size + 1, seed.size + 1))
         extended = extended.at[:-1, :-1].set(matrix)

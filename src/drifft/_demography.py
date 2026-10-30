@@ -107,6 +107,14 @@ class IntervalDiagnostics(NamedTuple):
     includes both the hold and final boundary generation. `error_estimate`
     covers only the hold power approximation, while `converged` and `status`
     also account for nonfinite boundary output.
+
+    **Fields:**
+
+    - `source_ne`, `destination_ne`: Python integers giving diploid sizes.
+    - `generations`: Interval duration, including its final boundary generation.
+    - `error_estimate`: Scalar absolute L1 hold-power estimate, zero without a hold.
+    - `converged`: Scalar boolean for the complete interval.
+    - `status`: First hold or boundary failure, or successful `EvolutionStatus`.
     """
 
     source_ne: int
@@ -117,17 +125,56 @@ class IntervalDiagnostics(NamedTuple):
     status: EvolutionStatus
 
 
+# Document the generated constructor without replacing its implementation.
+IntervalDiagnostics.__new__.__module__ = __name__
+IntervalDiagnostics.__new__.__doc__ = r"""Construct an immutable result without validation.
+
+**Arguments:**
+
+The fields documented on `IntervalDiagnostics`, supplied by position or keyword.
+
+**Returns:**
+
+An `IntervalDiagnostics` holding the supplied values. Normal evolution calls construct this
+result automatically; constructing it directly performs no numerical checks.
+"""
+
+
 class DemographicResult(NamedTuple):
     r"""Final mass and per-interval numerical outcomes, without a total error certificate.
 
     `status` retains the first numerical failure. Identity histories have empty
     `diagnostics` and still check mass finiteness. No factorization or basis is retained.
+
+    **Fields:**
+
+    - `distribution`: Float64 mass of length `2 * final_ne + 1`, or
+      `2 * final_ne - 1` for segregating evolution; not normalized.
+    - `converged`: Scalar boolean, true when the entire history succeeded.
+    - `status`: First numerical failure in chronological order, or success.
+    - `diagnostics`: Tuple of `IntervalDiagnostics`, one per interval in order.
+      Local error estimates are not a bound on the total propagated error.
     """
 
     distribution: jax.Array
     converged: jax.Array
     status: EvolutionStatus
     diagnostics: tuple[IntervalDiagnostics, ...]
+
+
+# Document the generated constructor without replacing its implementation.
+DemographicResult.__new__.__module__ = __name__
+DemographicResult.__new__.__doc__ = r"""Construct an immutable result without validation.
+
+**Arguments:**
+
+The fields documented on `DemographicResult`, supplied by position or keyword.
+
+**Returns:**
+
+A `DemographicResult` holding the supplied values. Normal evolution calls construct this
+result automatically; constructing it directly performs no numerical checks.
+"""
 
 
 @final
@@ -314,6 +361,9 @@ class DemographicTransition(eqx.Module):
             self.demography.generations,
             strict=True,
         ):
+            # The final generation belongs to the rectangular boundary action.
+            # Holding for duration instead would add an extra generation and,
+            # in segregating mode, an extra immigration event at the source size.
             error = jnp.asarray(0.0)
             interval_status = EvolutionStatus.successful
             if duration > 1:
@@ -396,6 +446,8 @@ class DemographicTransition(eqx.Module):
         values = jnp.asarray(values, dtype=jnp.float64)
         if values.shape != (2 * self.demography.final_ne + 1,):
             raise ValueError("values must have 2 * final_ne + 1 entries")
+        # Transposition reverses composition: apply the last boundary's
+        # expectation first, then its source-size hold, moving backward in time.
         for source, destination, duration in reversed(
             tuple(
                 zip(

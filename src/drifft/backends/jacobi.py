@@ -74,6 +74,9 @@ def _map_parameters(frequency_map):
 def _rational_coefficients(frequency_map):
     """Return ascending quadratic coefficients for g(z) = 2 q((z+1)/2)-1."""
     het, hom, mutation, mutation_first = _map_parameters(frequency_map)
+    # Substitute x=(z+1)/2 into the diploid rule and collect powers of z.
+    # Keeping numerator/denominator coefficients lets assembly evaluate g(Z)
+    # through banded matrix actions instead of sampling every population state.
     numerator = jnp.array([-hom / 4, 1 - hom / 2, -hom / 4])
     denominator = jnp.array([1 - het / 2 - hom / 4, -hom / 2, het / 2 - hom / 4])
     if mutation is not None:
@@ -153,6 +156,9 @@ def _pentadiagonal_solver(diagonal, adjacent, second):
     O(rR) assembly. Generic epoch shifted solves still use Lineax.
     """
     size = diagonal.size
+    # For L with two lower bands, each Cholesky row depends on only the previous
+    # two pivots and previous first-band entry. Leading zero bands make the
+    # initial dummy pivots harmless, keeping one uniform scan for all rows.
     adjacent = jnp.pad(adjacent, (1, 0))
     second = jnp.pad(second, (2, 0))[:size]
 
@@ -183,6 +189,8 @@ def _pentadiagonal_solver(diagonal, adjacent, second):
 
     def solve(rhs):
         forward = triangular(rhs, roots, lower1, lower2)
+        # Reverse the coordinates to reuse the forward substitution for L.T;
+        # shift the lower bands first so each entry aligns with its upper row.
         upper1 = jnp.concatenate((lower1[1:], jnp.zeros(1)))
         upper2 = jnp.concatenate((lower2[2:], jnp.zeros(min(2, size))))
         return triangular(forward[::-1], roots[::-1], upper1[::-1], upper2[::-1])[::-1]
@@ -198,9 +206,12 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     off = beta * jnp.sqrt(1 - ((degree + 2) / copies) ** 2)
 
     def coordinate(vector):
+        """Multiply by the finite-population tridiagonal coordinate matrix Z."""
         return jnp.pad(off * vector[:-1], (1, 0)) + jnp.pad(off * vector[1:], (0, 1))
 
     d0, d1, d2 = denominator
+    # Z is tridiagonal, so d0*I + d1*Z + d2*Z² has only five bands.
+    # Factor the denominator once and reuse it for every polynomial column.
     solve = _pentadiagonal_solver(
         d0 + d2 * (jnp.pad(off**2, (1, 0)) + jnp.pad(off**2, (0, 1))),
         d1 * off,
@@ -208,6 +219,7 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     )
 
     def mapped(vector):
+        """Apply the rational map g(Z) via one numerator action and banded solve."""
         return solve(
             numerator[0] * vector
             + numerator[1] * coordinate(vector)
@@ -225,6 +237,7 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     )
 
     def multiply(state):
+        """Multiply endpoint/interior coordinates by g without endpoint division."""
         endpoints, interior = state
         a, b = jnp.mean(endpoints), (endpoints[1] - endpoints[0]) / 2
         product = (
@@ -247,6 +260,7 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     )[:rank]
 
     def coefficients(state):
+        """Convert endpoint values to intercept/slope and rescale interior modes."""
         endpoints, interior = state
         return jnp.concatenate(
             (
@@ -341,6 +355,8 @@ def _assemble(strength: jax.Array, copies: int, rank: int, padded_rank: int):
         return jnp.pad(off * vector[:-1], (1, 0)) + jnp.pad(off * vector[1:], (0, 1))
 
     constant, quadratic = 1 - strength / 2, strength / 2
+    # Symmetric selection gives g(z)=z/(a+b*z²). Z² connects only degrees
+    # of the same parity, splitting the denominator into two tridiagonals.
     diagonal = constant + quadratic * (
         jnp.pad(off**2, (1, 0)) + jnp.pad(off**2, (0, 1))
     )
@@ -382,6 +398,9 @@ def _assemble(strength: jax.Array, copies: int, rank: int, padded_rank: int):
 
     seed = jnp.zeros(padded_rank).at[0].set(1)
     indices = jnp.arange(2, padded_rank + 1, dtype=jnp.float64)
+    # Squared discrete/continuous normalization factors have ratios (M-k)/(M+k).
+    # Accumulate their logarithms before taking the square root to avoid
+    # underflow in a long product at large rank.
     scales = jnp.concatenate(
         (
             jnp.ones(1),
@@ -392,10 +411,14 @@ def _assemble(strength: jax.Array, copies: int, rank: int, padded_rank: int):
         )
     )
     solved = solve(solve(seed))
+    # h(g(z))/h(z) = (a²-b²*z²)/(a+b*z²)² for h(z)=1-z² and a+b=1.
+    # This supplies the first envelope-weighted column with no endpoint poles.
     first = constant**2 * solved - quadratic**2 * multiply_coordinate(
         multiply_coordinate(solved)
     )
     forcing = scales[:rank] * (quadratic * mapped_coordinate(seed))[:rank]
+    # The forcing represents g(z)-z = b*z*h(z)/(a+b*z²), needed when the
+    # endpoint interpolant has nonzero slope in full-state evolution.
     if rank == 1:
         return ((1 - 1 / copies) * scales[:rank] * first[:rank])[:, None], forcing
     second = mapped_coordinate(first) / beta[0]
@@ -534,6 +557,9 @@ class _JacobiGeometry(eqx.Module):
         )
         if segregating:
             return interior
+        # Full coordinates retain total mass and its first z moment. Recover
+        # the two endpoint masses from those constraints after decoding the
+        # interior; this also works for signed inputs without normalization.
         left = (
             coefficients[0] - coefficients[1] - (1 - self.coordinates) @ interior
         ) / 2
@@ -711,7 +737,23 @@ class Jacobi(AbstractTransitionBackend):
         )
 
     def validate(self, frequency_map: AbstractFrequencyMap) -> None:
-        """Reject frequency maps unsupported by reduced assembly."""
+        r"""Check whether a frequency map supports reduced Krylov assembly.
+
+        **Arguments:**
+
+        - `frequency_map`: Neutral, supported diploid selection, mutation, or
+          one mutation composed with one supported selection rule in either order.
+
+        **Returns:**
+
+        `None`. Checks the map structure only. Reduced evolution checks dynamic
+        parameter domains separately, even for zero generations. One-generation
+        `expect` and Sequential do not impose these assembly restrictions.
+
+        **Raises:**
+
+        `TypeError` for unsupported maps or compositions.
+        """
         _map_parameters(frequency_map)
 
     def _validate_mass(

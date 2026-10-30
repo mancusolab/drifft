@@ -36,6 +36,9 @@ def _frechet_power(method, operator, perturbation, initial, tangent_initial, ste
     shifted_solve = None
     if isinstance(operator, lx.MatrixLinearOperator):
         a, e = operator.matrix, perturbation.as_matrix()
+        # [[A, E], [0, A]]**g @ [dx; x] has derivative d(A**g x) in its
+        # upper block. This computes the mathematical directional derivative
+        # without differentiating how Arnoldi chose its basis.
         block = lx.MatrixLinearOperator(jnp.block([[a, e], [jnp.zeros_like(a), a]]))
         if not method._polynomial:
             shift = steps / 8
@@ -46,6 +49,8 @@ def _frechet_power(method, operator, perturbation, initial, tangent_initial, ste
             factor = solver.init(shifted, {})
 
             def shifted_solve(rhs):
+                # Both diagonal blocks share the same shifted A. Reuse one LU,
+                # solve the lower block first, then feed its coupling upward.
                 lower = lx.linear_solve(
                     shifted, rhs[size:], solver, state=factor, throw=False
                 )
@@ -105,6 +110,9 @@ def _frechet_power(method, operator, perturbation, initial, tangent_initial, ste
 def _frechet_core(left_matrix, right_matrix, left_seed, right_seed, steps):
     """Compute the small projected Frechet adjoint, with the right block transposed."""
     n, m = left_seed.size, right_seed.size
+    # The upper-right block of this power sums H**k c x.T (J.T)**(g-1-k).
+    # Lifting it with the left/right bases yields the matrix-gradient factors;
+    # omitting J.T would reverse the orientation of the right orbit.
     block = jnp.block(
         [
             [left_matrix, jnp.outer(left_seed, right_seed)],

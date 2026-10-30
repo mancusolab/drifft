@@ -84,12 +84,15 @@ def _build_block(
         - _stirling_correction(j0)
         - _stirling_correction(M - j0)
     )
-    # A constant balancing shift preserves the exact product.
+    # Opposite shifts in log(a) and log(b) preserve the exact product while
+    # centering log(b)'s range, limiting large intermediate diagonal factors.
     shift = (np.max(logb) + np.min(logb)) / 2 if balance else 0.0
     a = np.exp(logB + loga + shift).astype(np.float64)
     b = np.exp(logb - shift).astype(np.float64)
     L, R = hi - lo + 1, rhi - rlo + 1
     nfft = 1 << (R + 2 * L - 3).bit_length()
+    # The kernel has R+L-1 entries; convolution with L inputs needs R+2L-2
+    # slots. Padding to at least that length prevents circular wraparound.
     d = np.arange(rlo - (hi - j0), rhi - (lo - j0) + 1, dtype=np.float64)
     kernel = np.exp(-float(h) * d * d / 2)
     if not (np.all(np.isfinite(a)) and np.all(np.isfinite(b))):
@@ -372,6 +375,9 @@ class FFT(AbstractTransitionBackend):
         **Raises:**
 
         `ValueError` for incompatible vector shapes, including during JIT tracing.
+
+        Finiteness and probability ranges follow the unchecked preconditions of
+        `AbstractTransitionBackend.expect`; signed values are supported.
         """
         values = jnp.asarray(values, dtype=jnp.float64)
         if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:

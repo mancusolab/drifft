@@ -10,7 +10,16 @@ import lineax as lx
 
 
 class EvolutionStatus(eqx.Enumeration):
-    r"""Numerical outcomes; successful power checks do not certify backend accuracy."""
+    r"""Numerical outcomes; successful power checks do not certify backend accuracy.
+
+    - `successful`: Finite output with accepted power-error and inner-solve checks.
+    - `nonfinite`: Nonfinite output or error estimate.
+    - `unconverged`: Power-error estimate exceeds the configured tolerance.
+    - `linear_solve_failed`: A shifted solve failed its status or residual checks.
+
+    Compare a result's `status` with these members. A failed shifted solve takes
+    precedence over nonfiniteness, which takes precedence over power nonconvergence.
+    """
 
     successful = ""
     nonfinite = "Nonfinite evolution output; check input mass and numerical settings."
@@ -23,12 +32,36 @@ class EpochResult(NamedTuple):
 
     The estimate excludes one-generation approximation and representation error.
     With `throw=False`, use the distribution only after inspecting convergence.
+
+    **Fields:**
+
+    - `distribution`: Float64 full or interior mass, with the input population
+      shape. Signed inputs are not normalized.
+    - `error_estimate`: Scalar absolute L1 power-error estimate in population
+      coordinates; zero for Sequential and identity actions.
+    - `converged`: Scalar boolean, true exactly when `status` is successful.
+    - `status`: `EvolutionStatus` describing the numerical outcome.
     """
 
     distribution: jax.Array
     error_estimate: jax.Array
     converged: jax.Array
     status: EvolutionStatus
+
+
+# Document the generated constructor without replacing its implementation.
+EpochResult.__new__.__module__ = __name__
+EpochResult.__new__.__doc__ = r"""Construct an immutable result without validation.
+
+**Arguments:**
+
+The fields documented on `EpochResult`, supplied by position or keyword.
+
+**Returns:**
+
+An `EpochResult` holding the supplied values. Normal evolution calls construct this
+result automatically; constructing it directly performs no numerical checks.
+"""
 
 
 @final
@@ -84,6 +117,8 @@ def _epoch_inputs(distribution, immigration, gene_copies, generations, segregati
 def _epoch_result(distribution, error, tolerance, throw, solve_success=True):
     """Apply the finite-output, inner-solve and power-approximation failure policy."""
     finite = jnp.all(jnp.isfinite(distribution)) & jnp.isfinite(error)
+    # Apply failure precedence from least to most fundamental: a failed inner
+    # solve invalidates the projected action even if its error estimate is small.
     status = EvolutionStatus.where(
         error <= tolerance, EvolutionStatus.successful, EvolutionStatus.unconverged
     )

@@ -160,6 +160,9 @@ def _evaluate_nufft(coefficients, probabilities, tolerance, endpoints):
     if coefficients.size == 1:
         result = jnp.broadcast_to(coefficients[0], probabilities.shape)
     else:
+        # cos(theta)=1-2q, so T_k(1-2q)=cos(k*theta). Split each nonzero
+        # cosine coefficient equally between positive and negative Fourier modes.
+        # The JVP differentiates coefficients instead of this singular angle.
         theta = 2 * jnp.arcsin(jnp.sqrt(probabilities))
         modes = jnp.concatenate(
             (coefficients[:0:-1] / 2, coefficients[:1], coefficients[1:] / 2)
@@ -209,6 +212,9 @@ class _CosineTranspose(hijax.HiPrim):
         primal = self(probabilities, mass)
         dcoefficients, dendpoints = self(probabilities, dmass)
         if count > 1:
+            # For evaluation C(q) and coefficient derivative D, the probability
+            # tangent of C(q).T mass is D.T C_derivative(q).T (mass*dq).
+            # Using the polynomial transpose preserves finite endpoint slopes.
             derivative_mass = _transpose_cosine(
                 probabilities, mass * dprobabilities, count - 1, tolerance
             )
@@ -256,6 +262,8 @@ def _transpose_evaluate(probabilities, mass, count, tolerance):
 def _transpose_cosine(probabilities, mass, count, tolerance):
     """Include the polynomial's endpoint sums in its coefficient transpose."""
     coefficients, endpoints = _transpose_evaluate(probabilities, mass, count, tolerance)
+    # T_k(1)=1 and T_k(-1)=(-1)^k: endpoint cotangents contribute to every
+    # coefficient when endpoints are the polynomial sums rather than free inputs.
     return coefficients + endpoints[0] + endpoints[1] * (-1.0) ** jnp.arange(count)
 
 

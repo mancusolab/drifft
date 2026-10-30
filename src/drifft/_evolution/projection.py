@@ -12,7 +12,14 @@ from .problem import _epoch_result, _PowerProblem
 
 
 class ProjectionResult(NamedTuple):
-    """Projected action and diagnostics; basis is retained only when requested."""
+    """Projected power and diagnostics in working coordinates.
+
+    For basis V and operator images AV, `projected` is V.T @ AV,
+    `coordinates` is V.T @ seed, and `defect` is AV - V @ projected.
+    `fine` and `coarse` are lifted powers in full and nested spaces; `success`
+    records inner-solve validity, not outer power convergence. `basis` is None
+    unless explicitly requested for sensitivities, avoiding unnecessary retention.
+    """
 
     fine: jax.Array
     coarse: jax.Array
@@ -26,6 +33,9 @@ class ProjectionResult(NamedTuple):
 def _orthogonalize(basis, candidate):
     """Reorthogonalize twice and return zero at invariant-subspace breakdown."""
     original_squared = candidate @ candidate
+    # Two passes recover orthogonality when the first subtraction loses relative
+    # accuracy. Keep zero columns at breakdown instead of dividing roundoff by
+    # a tiny norm; invariant subspaces need no arbitrary orthogonal completion.
     for _ in range(2):
         candidate = candidate - basis @ (basis.T @ candidate)
     squared = candidate @ candidate
@@ -242,6 +252,9 @@ def _gmres_power_action(
         """Solve a shifted system and retain its status before orthogonalization."""
         basis, success, num_steps, max_residual = carry
         vector = basis[:, index]
+        # The augmented resolvent is block triangular with lower-right entry 1.
+        # Eliminate that coordinate analytically: solve only the population
+        # block with rhs_pop + shift*source*rhs_aux, then restore rhs_aux.
         rhs = vector[:-1] + shift * source * vector[-1] if problem.augmented else vector
         solution = lx.linear_solve(shifted, rhs, solver, state=state, throw=False)
         residual = jnp.max(jnp.abs(shifted.mv(solution.value) - rhs))
@@ -300,6 +313,10 @@ def _projected_result(problem, projection, rtol, atol, throw):
     weights = jax.lax.map(problem.error_norm, defect.T, batch_size=8)
 
     def accumulate(_, carry):
+        # Weight each column defect by its current reduced-orbit coefficient.
+        # This detects leakage missed by a small nested-space difference. Unit
+        # propagation does not bound amplification by a general nonnormal A,
+        # so the accumulated quantity remains an estimate, not a certificate.
         state, total = carry
         return projected @ state, total + weights @ jnp.abs(state)
 

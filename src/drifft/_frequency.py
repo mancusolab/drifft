@@ -476,7 +476,7 @@ class AdditiveSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -531,7 +531,7 @@ class DominanceSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -584,7 +584,7 @@ class RecessiveSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -636,7 +636,7 @@ class DominantSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -690,7 +690,7 @@ class Overdominance(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -793,7 +793,7 @@ class MultiplicativeSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 

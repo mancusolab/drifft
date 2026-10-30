@@ -24,12 +24,46 @@ class AbstractEpochMethod(eqx.Module):
     def validate(
         self, backend: eqx.Module, frequency_map: AbstractFrequencyMap
     ) -> None:
-        """Reject unsupported representation and process combinations before execution."""
+        r"""Reject unsupported representation and process combinations.
+
+        **Arguments:**
+
+        - `backend`: Prepared transition geometry.
+        - `frequency_map`: Process applied in each generation.
+
+        **Returns:**
+
+        `None`. Checks types and supported combinations, without evaluating
+        dynamic parameter values. Runtime domain checks occur during preparation.
+
+        **Raises:**
+
+        `TypeError` for unsupported backend or map types. Sequential accepts
+        all transition backends; reduced Jacobi powers restrict map compositions.
+        """
         ...
 
     @abstractmethod
     def solve(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
-        """Evaluate a prepared problem; preparation is internal to drifft."""
+        r"""Evaluate a power problem prepared internally by drifft.
+
+        **Arguments:**
+
+        - `problem`: Internal operator, initial state, static exponent and
+          reconstruction map. Use `advance` to supply population-space inputs.
+        - `throw`: Raise on numerical failure when true; otherwise return status.
+
+        **Returns:**
+
+        An `EpochResult` in population coordinates. Its error estimate covers
+        the power approximation, excluding backend and representation errors.
+
+        **Raises:**
+
+        Runtime errors for numerical failure with `throw=True`. A failed batch
+        member may fail the entire call. Krylov sensitivity failures raise even
+        with `throw=False`; higher-order operator sensitivities are unsupported.
+        """
         ...
 
     @abstractmethod
@@ -49,11 +83,15 @@ class AbstractEpochMethod(eqx.Module):
         **Arguments:**
 
         - `backend`: Prepared geometry compatible with this method.
-        - `distribution`: Real mass, converted to float64; full or interior counts.
+        - `distribution`: Real mass, converted to float64. Length is
+          `backend.gene_copies + 1`, or `backend.gene_copies - 1` if segregating.
+          Signed entries are supported; no normalization is applied.
         - `frequency_map`: Process shared by every generation.
         - `generations`: Nonnegative Python integer, static under JIT.
         - `segregating`: Discard endpoint mass at each generation.
-        - `immigration`: Mass added after every generation, matching the input shape.
+        - `immigration`: Mass added after every generation, matching the input
+          shape; `None` means no source. In segregating mode it is added after
+          endpoint mass is discarded.
         - `throw`: Raise on numerical failure; under vmap this may fail the whole batch.
 
         **Returns:**
@@ -92,13 +130,37 @@ class Sequential(AbstractEpochMethod):
     def validate(
         self, backend: eqx.Module, frequency_map: AbstractFrequencyMap
     ) -> None:
-        """Require a one-generation transition backend and frequency map."""
+        r"""Check the types required by `AbstractEpochMethod.validate`.
+
+        **Arguments:**
+
+        - `backend`, `frequency_map`: Prepared transition geometry and process.
+
+        **Returns:**
+
+        `None`. No reduced-assembly map restrictions apply to Sequential.
+
+        **Raises:**
+
+        `TypeError` for objects outside the backend and frequency-map interfaces.
+        """
         validate_representation(
             backend, frequency_map, reduced=False, method_name="Sequential"
         )
 
     def solve(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
-        """Iterate in the prepared problem's working coordinates."""
+        r"""Iterate in working coordinates and reconstruct population mass.
+
+        **Arguments:**
+
+        - `problem`: Internal prepared problem; see `AbstractEpochMethod.solve`.
+        - `throw`: Raise on nonfinite output when true.
+
+        **Returns:**
+
+        An `EpochResult` with zero power-approximation error. This does not
+        measure accumulated backend error or floating-point roundoff.
+        """
         state = _power_action(self, problem.operator, problem.initial, problem.steps)
         return _epoch_result(problem.reconstruct(state), jnp.asarray(0.0), 0.0, throw)
 
@@ -115,6 +177,8 @@ class Sequential(AbstractEpochMethod):
             )
 
         def step(_, carry):
+            # Differentiate x_next = A x directly: dx_next = A dx + dA x.
+            # Carrying the pair avoids differentiating a saved state trajectory.
             state, tangent = carry
             following = operator.mv(state)
             tangent = jax.tree.map(
@@ -136,7 +200,19 @@ class Sequential(AbstractEpochMethod):
         immigration: jax.Array | None = None,
         throw: bool = True,
     ) -> EpochResult:
-        r"""Evolve with the contracts of `AbstractEpochMethod.advance`."""
+        r"""Repeat the one-generation transition in population coordinates.
+
+        **Arguments:**
+
+        - `backend`, `distribution`, `frequency_map`, `generations`, `segregating`,
+          `immigration`, `throw`: See `AbstractEpochMethod.advance` for shapes,
+          source timing and failure behavior.
+
+        **Returns:**
+
+        An `EpochResult` with zero power-approximation error. Backend errors and
+        roundoff remain; Sequential supports higher-order differentiation.
+        """
         self.validate(backend, frequency_map)
         problem = _prepare_evolution(
             self,
@@ -178,7 +254,22 @@ def _check_krylov_configuration(self) -> None:
 def _validate_krylov(
     self, backend: eqx.Module, frequency_map: AbstractFrequencyMap
 ) -> None:
-    """Accept transition geometry or Jacobi with its process restrictions."""
+    r"""Check backend and map compatibility for reduced power evolution.
+
+    **Arguments:**
+
+    - `backend`, `frequency_map`: Geometry and process as in
+      `AbstractEpochMethod.validate`.
+
+    **Returns:**
+
+    `None`. Jacobi additionally checks that the map supports reduced assembly.
+
+    **Raises:**
+
+    `TypeError` for unsupported types or Jacobi map compositions. Parameter
+    value checks are deferred to preparation, including for zero generations.
+    """
     validate_representation(
         backend, frequency_map, reduced=True, method_name=type(self).__name__
     )
@@ -253,12 +344,33 @@ def _advance(
 
 
 def _solve_krylov(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
-    """Attach mathematical sensitivities to a checked projected primal action."""
+    r"""Approximate a prepared power and attach its mathematical sensitivities.
+
+    **Arguments:**
+
+    - `problem`: Internal prepared problem; see `AbstractEpochMethod.solve`.
+    - `throw`: Raise on a failed primal action when true.
+
+    **Returns:**
+
+    An `EpochResult` with reconstructed mass and a power-error estimate from
+    nested spaces and recurrence defects. This estimate is not a certificate
+    and excludes backend approximation. With `throw=False`, inspect `converged`.
+
+    **Raises:**
+
+    Runtime errors for failed primal checks with `throw=True`, or failed
+    sensitivities regardless of `throw`. Higher-order operator sensitivities
+    raise explicitly; use Sequential when they are needed.
+    """
     if problem.steps == 0:
         return _epoch_result(
             problem.reconstruct(problem.initial), jnp.asarray(0.0), self.atol, throw
         )
     arrays, static = eqx.partition(problem, eqx.is_array)
+    # Basis construction is an adaptive approximation, not the derivative of
+    # A**g x. Stop its AD path and attach that mathematical rule to the cached
+    # value below, retaining the primal diagnostics without a second projection.
     raw_problem = eqx.combine(jax.tree.map(jax.lax.stop_gradient, arrays), static)
     projection = project(raw_problem, self.dimension, polynomial=self._polynomial)
     fine = _cached_power_action(
@@ -322,11 +434,25 @@ class RationalKrylov(AbstractEpochMethod):
         immigration: jax.Array | None = None,
         throw: bool = True,
     ) -> EpochResult:
-        r"""Evolve with the contracts of `AbstractEpochMethod.advance`.
+        r"""Evolve mass using a checked Krylov power approximation.
 
-        Jacobi process-domain checks apply even when `throw=False`. Power
-        estimates exclude representation, quadrature and assembly error. Increase
-        rank and dimension independently when validating a new numerical regime.
+        **Arguments:**
+
+        - `backend`, `distribution`, `frequency_map`, `generations`, `segregating`,
+          `immigration`, `throw`: See `AbstractEpochMethod.advance` for shapes
+          and source timing.
+
+        **Returns:**
+
+        An `EpochResult` whose power-error estimate excludes representation,
+        quadrature and assembly error. Check `converged` with `throw=False`;
+        increase rank and dimension independently to assess both approximations.
+
+        **Raises:**
+
+        Static input errors follow `AbstractEpochMethod.advance`. Runtime Jacobi
+        domain checks and sensitivity convergence checks raise even with
+        `throw=False`. Higher-order operator sensitivities are unsupported.
         """
         return _advance(
             self,
@@ -412,11 +538,25 @@ class PolynomialKrylov(AbstractEpochMethod):
         immigration: jax.Array | None = None,
         throw: bool = True,
     ) -> EpochResult:
-        r"""Evolve with the contracts of `AbstractEpochMethod.advance`.
+        r"""Evolve mass using a checked Krylov power approximation.
 
-        Jacobi process-domain checks apply even when `throw=False`. Power
-        estimates exclude representation, quadrature and assembly error. Increase
-        rank and dimension independently when validating a new numerical regime.
+        **Arguments:**
+
+        - `backend`, `distribution`, `frequency_map`, `generations`, `segregating`,
+          `immigration`, `throw`: See `AbstractEpochMethod.advance` for shapes
+          and source timing.
+
+        **Returns:**
+
+        An `EpochResult` whose power-error estimate excludes representation,
+        quadrature and assembly error. Check `converged` with `throw=False`;
+        increase rank and dimension independently to assess both approximations.
+
+        **Raises:**
+
+        Static input errors follow `AbstractEpochMethod.advance`. Runtime Jacobi
+        domain checks and sensitivity convergence checks raise even with
+        `throw=False`. Higher-order operator sensitivities are unsupported.
         """
         return _advance(
             self,
