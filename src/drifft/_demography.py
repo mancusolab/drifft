@@ -9,16 +9,12 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from ._epochs import (
-    AbstractEpochMethod,
-    EvolutionStatus,
-    Sequential,
-    _epoch_result,
-    _prepare_evolution,
-)
+from ._evolution.methods import AbstractEpochMethod, Sequential, _prepare_evolution
+from ._evolution.preparation import validate_domain
+from ._evolution.problem import EvolutionStatus, _epoch_result
 from ._frequency import AbstractFrequencyMap
 from ._operator import Transition
-from .backends import AbstractTransitionBackend, Jacobi
+from .backends import AbstractTransitionBackend
 
 
 def _integer_schedule(values: Iterable[int] | jax.Array) -> tuple[int, ...]:
@@ -301,12 +297,14 @@ class DemographicTransition(eqx.Module):
         size = 2 * self.demography.initial_ne + (-1 if segregating else 1)
         if distribution.shape != (size,):
             raise ValueError(f"distribution must have {size} entries")
-        # Validate every prepared Jacobi domain even for identity/boundary-only histories.
+        # Validate every prepared domain even for identity/boundary-only histories.
         for backend in self._backends:
-            if isinstance(backend, Jacobi) and not isinstance(self.method, Sequential):
-                distribution, _ = backend._validate_mass(
-                    distribution, self.frequency_map
-                )
+            distribution = validate_domain(
+                backend,
+                distribution,
+                self.frequency_map,
+                reduced=not isinstance(self.method, Sequential),
+            )
         initial_result = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
         status = initial_result.status
         diagnostics = []

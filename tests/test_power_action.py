@@ -8,7 +8,7 @@ import lineax as lx
 import pytest
 
 import drifft
-from drifft._power import _cached_power_action, _power_action
+from drifft._evolution.autodiff import _cached_power_action, _power_action
 
 jax.config.update("jax_enable_x64", True)
 
@@ -121,7 +121,7 @@ def test_prepared_epoch_derivatives_include_encoding_and_source(
     """Preparation and reconstruction remain differentiated around the power boundary."""
     from scipy.special import comb
 
-    from drifft._epochs import _prepare_epoch
+    from drifft._evolution.preparation import _prepare_epoch
 
     copies, steps = 12, 5
     backend = backend_type(copies)
@@ -179,7 +179,7 @@ def test_krylov_linearized_state_transpose_skips_known_operator_tangent(
     method_type, implicit
 ):
     """A known zero operator direction requires only the initial-state pullback."""
-    from drifft._krylov import _working_problem
+    from drifft._evolution.problem import _working_problem
 
     steps = 5
     matrix = jnp.array([[0.9, 0.12, 0.01], [0.0, 0.8, 0.08], [0.0, 0.0, 0.7]])

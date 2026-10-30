@@ -9,7 +9,8 @@ from jax.scipy.special import gammaln, xlog1py, xlogy
 from scipy.special import roots_jacobi
 
 import drifft
-from drifft.backends.jacobi import _JacobiGeometry, _polynomials
+from drifft._polynomial import gegenbauer_values
+from drifft.backends.jacobi import _JacobiGeometry
 
 jax.config.update("jax_enable_x64", True)
 
@@ -29,7 +30,7 @@ def full_quadrature_decoder(copies, rank, segregating):
         + xlog1py(trials - count, -probability)
     )
     coordinates = 2 * jnp.arange(1, copies) / copies - 1
-    interior = (binomial.T @ (weights[:, None] * _polynomials(nodes, rank))) / (
+    interior = (binomial.T @ (weights[:, None] * gegenbauer_values(nodes, rank))) / (
         (1 - coordinates) * (1 + coordinates)
     )[:, None]
     if segregating:
@@ -136,7 +137,9 @@ def test_encoder_joint_derivatives_and_transposes(rank, segregating):
 
     def reference(q, mass):
         z = 2 * q - 1
-        moments = _polynomials(z, rank).T @ ((1 - 1 / copies) * 4 * q * (1 - q) * mass)
+        moments = gegenbauer_values(z, rank).T @ (
+            (1 - 1 / copies) * 4 * q * (1 - q) * mass
+        )
         return (
             moments
             if segregating

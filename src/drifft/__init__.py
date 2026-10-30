@@ -7,7 +7,13 @@ from ._demography import (
     Demography,
     IntervalDiagnostics,
 )
-from ._epochs import AbstractEpochMethod, EpochResult, EvolutionStatus, Sequential
+from ._evolution.methods import (
+    AbstractEpochMethod,
+    PolynomialKrylov,
+    RationalKrylov,
+    Sequential,
+)
+from ._evolution.problem import EpochResult, EvolutionStatus
 from ._frequency import (
     AbstractFrequencyMap,
     AdditiveSelection,
@@ -23,7 +29,6 @@ from ._frequency import (
     RecessiveSelection,
     Underdominance,
 )
-from ._krylov import PolynomialKrylov, RationalKrylov
 from ._operator import Transition
 from ._solve import ExpectedVisitsResult
 from .backends import FFT, NUFFT, AbstractTransitionBackend, Dense, Jacobi

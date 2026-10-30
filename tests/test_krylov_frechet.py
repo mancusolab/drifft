@@ -24,7 +24,7 @@ def dense_action(a, x, steps):
 @pytest.mark.parametrize("implicit", [False, True])
 def test_frechet_power_matches_joint_dense_jvp(method_type, steps, implicit):
     """Recover state and operator perturbations for a signed nonnormal matrix."""
-    from drifft._krylov import _frechet_power
+    from drifft._evolution.sensitivity import _frechet_power
 
     a = jnp.array([[0.9, 0.14, -0.03], [0.0, 0.8, 0.09], [0.0, 0.0, 0.7]])
     e = jnp.array([[0.01, -0.02, 0.03], [0.03, 0.02, 0.01], [0.01, -0.03, 0.02]])
@@ -53,7 +53,7 @@ def test_frechet_power_matches_joint_dense_jvp(method_type, steps, implicit):
 @pytest.mark.parametrize("steps", [0, 1, 9])
 def test_low_rank_frechet_adjoint_matches_dense_pullback(method_type, steps):
     """Check the projected right block transpose and Frobenius adjoint identity."""
-    from drifft._krylov import _frechet_adjoint_factors
+    from drifft._evolution.sensitivity import _frechet_adjoint_factors
 
     a = jnp.array([[0.9, 0.14, -0.03], [0.0, 0.8, 0.09], [0.0, 0.0, 0.7]])
     x, c = jnp.array([0.3, -0.2, 0.4]), jnp.array([-0.1, 0.3, 0.2])
@@ -73,7 +73,7 @@ def test_low_rank_frechet_adjoint_matches_dense_pullback(method_type, steps):
 @pytest.mark.parametrize("zero_state", [False, True])
 def test_frechet_actions_cover_zero_and_invariant_seeds(method_type, zero_state):
     """Breakdown in a primal invariant space must not erase derivative directions."""
-    from drifft._krylov import _frechet_adjoint_factors, _frechet_power
+    from drifft._evolution.sensitivity import _frechet_adjoint_factors, _frechet_power
 
     a = jnp.array([[1.0, 0.2, 0.0], [0.0, 0.8, 0.1], [0.0, 0.0, 0.9]])
     e = jnp.array([[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
@@ -99,7 +99,7 @@ def test_frechet_actions_cover_zero_and_invariant_seeds(method_type, zero_state)
 )
 def test_operator_pullback_preserves_filtered_parameter_tree(method_type):
     """Return callable-operator cotangents without differentiating fixed geometry."""
-    from drifft._krylov import _frechet_operator_pullback
+    from drifft._evolution.sensitivity import _frechet_operator_pullback
 
     n, steps = 6, 7
     geometry = jnp.linspace(0.7, 0.9, n)
@@ -152,11 +152,8 @@ def test_truncated_frechet_actions_and_adjoint_pairing(
     method_type, dimension, accepted
 ):
     """Validate genuine truncation for a long, slowly decaying nonnormal power."""
-    from drifft._krylov import (
-        _frechet_adjoint_factors,
-        _frechet_power,
-        _working_problem,
-    )
+    from drifft._evolution.problem import _working_problem
+    from drifft._evolution.sensitivity import _frechet_adjoint_factors, _frechet_power
 
     size, steps = 48, 400
     a = jnp.diag(jnp.linspace(0.99, 0.9995, size)) + jnp.diag(
@@ -196,7 +193,7 @@ def test_truncated_frechet_actions_and_adjoint_pairing(
 )
 def test_public_operator_rules_validate_truncated_jvp_and_vjp(method_type):
     """The same operator-level AD contract covers matrix-free truncated powers."""
-    from drifft._krylov import _working_problem
+    from drifft._evolution.problem import _working_problem
 
     size, steps = 48, 400
     a = jnp.diag(jnp.linspace(0.99, 0.9995, size)) + jnp.diag(
@@ -238,7 +235,7 @@ def test_public_operator_rules_validate_truncated_jvp_and_vjp(method_type):
 @pytest.mark.parametrize("reverse", [False, True])
 def test_derivative_nonconvergence_raises_even_with_throw_false(method_type, reverse):
     """Primal status cannot suppress an unsuccessful sensitivity or pullback."""
-    from drifft._krylov import _working_problem
+    from drifft._evolution.problem import _working_problem
 
     size, steps = 48, 400
     diagonal = jnp.linspace(0.99, 0.9995, size)
@@ -273,7 +270,7 @@ def test_derivative_nonconvergence_raises_even_with_throw_false(method_type, rev
 )
 def test_higher_operator_derivatives_fail_explicitly(method_type):
     """Unsupported higher derivatives must not fall through to basis differentiation."""
-    from drifft._krylov import _working_problem
+    from drifft._evolution.problem import _working_problem
 
     method = method_type(dimension=12)
     initial = jnp.array([0.3, 0.5, 0.2])
@@ -301,7 +298,8 @@ def test_higher_operator_derivatives_fail_explicitly(method_type):
 @pytest.mark.parametrize("dimension,accepted", [(2, False), (8, True)])
 def test_adjoint_estimate_detects_delayed_propagation(method_type, dimension, accepted):
     """Vanishing fine and coarse cores do not establish an accurate pullback."""
-    from drifft._krylov import _frechet_adjoint_factors, _working_problem
+    from drifft._evolution.problem import _working_problem
+    from drifft._evolution.sensitivity import _frechet_adjoint_factors
 
     size, steps = 8, 6
     matrix = jnp.diag(jnp.ones(size - 1), -1).at[1, 0].set(0.0)

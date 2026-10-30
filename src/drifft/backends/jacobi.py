@@ -2,13 +2,11 @@
 
 # pattern: Functional Core
 import math
-from typing import cast, final
+from typing import final
 
 import equinox as eqx
 import jax
-import jax.core
 import jax.numpy as jnp
-from jax.experimental import hijax
 from jax.scipy.special import gammaln, xlog1py, xlogy
 from scipy.special import roots_jacobi
 
@@ -26,6 +24,7 @@ from .._frequency import (
     RecessiveSelection,
     Underdominance,
 )
+from .._polynomial import gegenbauer_beta, gegenbauer_moments, gegenbauer_values
 from ._base import AbstractTransitionBackend
 
 
@@ -195,7 +194,7 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     """Assemble all r+2 coordinates, including nonabsorbing endpoint coupling."""
     numerator, denominator = _rational_coefficients(frequency_map)
     degree = jnp.arange(padded_rank - 1, dtype=jnp.float64)
-    beta = jnp.sqrt((degree + 1) * (degree + 3) / ((2 * degree + 3) * (2 * degree + 5)))
+    beta = gegenbauer_beta(degree)
     off = beta * jnp.sqrt(1 - ((degree + 2) / copies) ** 2)
 
     def coordinate(vector):
@@ -331,142 +330,10 @@ def _padded_rank(copies: int, rank: int, max_strength: float, tolerance: float) 
     return min(copies - 1, max(3, rank, math.ceil((required + rank) / 2)))
 
 
-def _polynomials(points: jax.Array, rank: int) -> jax.Array:
-    """Evaluate normalized Gegenbauer polynomials for weight 3(1-z²)/4."""
-    first = jnp.ones_like(points)
-    if rank == 1:
-        return first[..., None]
-    second = jnp.sqrt(5.0) * points
-
-    def step(carry, degree):
-        """Advance the orthonormal three-term recurrence."""
-        previous, current = carry
-        lower = jnp.sqrt(degree * (degree + 2) / ((2 * degree + 1) * (2 * degree + 3)))
-        upper = jnp.sqrt(
-            (degree + 1) * (degree + 3) / ((2 * degree + 3) * (2 * degree + 5))
-        )
-        following = (points * current - lower * previous) / upper
-        return (current, following), following
-
-    _, rest = jax.lax.scan(
-        step, (first, second), jnp.arange(1, rank - 1, dtype=points.dtype)
-    )
-    return jnp.moveaxis(jnp.concatenate((first[None], second[None], rest)), 0, -1)
-
-
-def _moment_recurrence(points, values, *, rank, order, transposed):
-    """Stream moments or evaluations at a fixed polynomial derivative order."""
-    # Row k carries the kth derivative; only adjacent degrees are retained.
-    first = jnp.zeros((order + 1, points.size), dtype=points.dtype).at[0].set(1)
-    second = jnp.zeros_like(first).at[0].set(jnp.sqrt(5.0) * points)
-    if order:
-        second = second.at[1].set(jnp.sqrt(5.0))
-    if transposed:
-        total = values[0] * first[order]
-        if rank > 1:
-            total = total + values[1] * second[order]
-    else:
-        total = jnp.zeros_like(points)
-    if rank == 1:
-        return total if transposed else jnp.array([values @ first[order]])
-
-    def step(carry, degree):
-        previous, current, total = carry
-        lower = jnp.sqrt(degree * (degree + 2) / ((2 * degree + 1) * (2 * degree + 3)))
-        upper = jnp.sqrt(
-            (degree + 1) * (degree + 3) / ((2 * degree + 3) * (2 * degree + 5))
-        )
-        product = points * current
-        if order:
-            # (z p)^(k) = z p^(k) + k p^(k-1).
-            product = product.at[1:].add(
-                jnp.arange(1, order + 1)[:, None] * current[:-1]
-            )
-        following = (product - lower * previous) / upper
-        if transposed:
-            total = total + values[degree + 1] * following[order]
-            moment = None
-        else:
-            moment = values @ following[order]
-        return (current, following, total), moment
-
-    (_, _, total), rest = jax.lax.scan(
-        step, (first, second, total), jnp.arange(1, rank - 1)
-    )
-    if transposed:
-        return total
-    return jnp.concatenate(
-        (jnp.array([values @ first[order], values @ second[order]]), rest)
-    )
-
-
-class _JacobiMoments(hijax.HiPrim):
-    """Streaming polynomial moments and their matched evaluation transpose."""
-
-    def __init__(self, points, values, *, rank, order, transposed):
-        """Declare array shapes and static recurrence configuration."""
-        self.in_avals = (points, values)
-        self.out_aval = jax.core.ShapedArray(
-            points.shape if transposed else (rank,), values.dtype
-        )
-        self.params = dict(rank=rank, order=order, transposed=transposed)
-        super().__init__()
-
-    def expand(self, *args):
-        """Evaluate moments or their transpose without storing a polynomial matrix."""
-        return _moment_recurrence(*args, **self.params)
-
-    def jvp(self, primals, tangents):
-        """Differentiate points and values using polynomial derivative recurrences."""
-        points, values = primals
-        dpoints, dvalues = map(hijax.instantiate_zeros, tangents)
-        primal = self(points, values)
-        tangent = self(points, dvalues)
-        config = self.params | {"order": cast(int, self.params["order"]) + 1}
-        if self.params["transposed"]:
-            tangent = tangent + dpoints * _jacobi_moments(points, values, **config)
-        else:
-            tangent = tangent + _jacobi_moments(points, values * dpoints, **config)
-        return primal, tangent
-
-    lin, linearized = hijax.linearize_from_jvp
-    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
-
-    def transpose(self, out_ct, *maybe_accums):
-        """Transpose only the linear values argument at fixed polynomial points."""
-        points, values = maybe_accums
-        if isinstance(points, hijax.GradAccum):
-            raise ValueError("Jacobi moments are linear only in values")
-        if isinstance(values, hijax.GradAccum):
-            values.accum(
-                _jacobi_moments(
-                    points,
-                    hijax.instantiate_zeros(out_ct),
-                    **(self.params | {"transposed": not self.params["transposed"]}),
-                )
-            )
-
-    def batch_dim_rule(self, axis_data, dims):
-        """Keep the mapped axis first in moments and evaluations."""
-        # An unmapped primal must stay unmapped when only its tangent is batched.
-        return 0 if any(dim is not None for dim in dims) else None
-
-
-def _jacobi_moments(points, values, *, rank, order=0, transposed=False):
-    """Bind the streaming recurrence with rules preserved under nested transforms."""
-    return _JacobiMoments(
-        jax.typeof(points),
-        jax.typeof(values),
-        rank=rank,
-        order=order,
-        transposed=transposed,
-    )(points, values)
-
-
 def _assemble(strength: jax.Array, copies: int, rank: int, padded_rank: int):
     """Assemble the reduced interior operator and endpoint-slope forcing in O(rR)."""
     degree = jnp.arange(padded_rank - 1, dtype=jnp.float64)
-    beta = jnp.sqrt((degree + 1) * (degree + 3) / ((2 * degree + 3) * (2 * degree + 5)))
+    beta = gegenbauer_beta(degree)
     off = beta * jnp.sqrt(1 - ((degree + 2) / copies) ** 2)
 
     def multiply_coordinate(vector):
@@ -575,7 +442,7 @@ class _JacobiGeometry(eqx.Module):
         # itself twice, so halve its weight; odd polynomials vanish there.
         if node_count % 2:
             self.weights = self.weights.at[-1].multiply(0.5)
-        self.polynomials = _polynomials(nodes, rank)
+        self.polynomials = gegenbauer_values(nodes, rank)
         probability = (nodes + 1) / 2
         trials = copies - 2
         # trials is a host count: math produces the fixed stencil width, while
@@ -632,7 +499,7 @@ class _JacobiGeometry(eqx.Module):
                 1 - frequency_map / 2 + frequency_map / 2 * coordinates**2
             )
             weighted = (1 - 1 / self.copies) * (1 - mapped) * (1 + mapped) * mass
-        coefficients = _jacobi_moments(mapped, weighted, rank=self.rank)
+        coefficients = gegenbauer_moments(mapped, weighted, rank=self.rank)
         return (
             coefficients
             if segregating
@@ -830,7 +697,7 @@ class Jacobi(AbstractTransitionBackend):
 
         spec = jax.ShapeDtypeStruct((self.rank,), jnp.float64)
         coefficients = jax.linear_transpose(interior_decode, spec)(values)[0]
-        polynomial = _jacobi_moments(
+        polynomial = gegenbauer_moments(
             2 * probabilities - 1, coefficients, rank=self.rank, transposed=True
         )
         return (

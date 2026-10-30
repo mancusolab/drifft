@@ -13,13 +13,9 @@ import jax
 import jax.numpy as jnp
 from jax.typing import DTypeLike
 
+from .._polynomial import compute_cosine_coefficients, filter_cosine_coefficients
 from ._base import AbstractTransitionBackend
-from ._spectral import (
-    _evaluate,
-    compute_cosine_coefficients,
-    filter_cosine_coefficients,
-    sample_bernstein,
-)
+from ._spectral import _evaluate, sample_bernstein
 
 
 @final

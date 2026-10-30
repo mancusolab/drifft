@@ -9,8 +9,8 @@ import pytest
 from _reference import dense_transition
 
 import drifft
-from drifft import _krylov
-from drifft._epochs import _PowerProblem
+from drifft._evolution.problem import _PowerProblem
+from drifft._evolution.projection import _matrix_power_matvec
 
 jax.config.update("jax_enable_x64", True)
 
@@ -24,7 +24,7 @@ def test_reduced_power_action_and_derivatives(steps):
     def reference(a, x):
         return jax.lax.fori_loop(0, steps, lambda _, v: a @ v, x)
 
-    action = jax.jit(lambda a, x: _krylov._matrix_power_matvec(a, x, steps))
+    action = jax.jit(lambda a, x: _matrix_power_matvec(a, x, steps))
     direction = (jnp.ones_like(matrix) * 0.001, -seed * 0.1)
     actual, tangent = jax.jvp(action, (matrix, seed), direction)
     expected, expected_tangent = jax.jvp(reference, (matrix, seed), direction)

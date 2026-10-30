@@ -110,7 +110,7 @@ def test_inner_shifted_solve_failure_is_reported():
     """A singular resolvent must not be mistaken for happy Arnoldi breakdown."""
     import lineax as lx
 
-    from drifft._epochs import _PowerProblem
+    from drifft._evolution.problem import _PowerProblem
 
     problem = _PowerProblem(
         lx.MatrixLinearOperator(jnp.diag(jnp.array([9.0, 1.0]))),

@@ -10,6 +10,8 @@ import jax.numpy as jnp
 from jax.experimental import hijax
 from jax_finufft import nufft2
 
+from .._polynomial import differentiate_cosine_coefficients
+
 if TYPE_CHECKING:
     from .nufft import NUFFT
 
@@ -153,51 +155,6 @@ def sample_bernstein(backend: "NUFFT", values: jax.Array) -> jax.Array:
     )
 
 
-def compute_cosine_coefficients(samples: jax.Array) -> jax.Array:
-    """DCT-I through an even real-FFT extension, with both endpoint modes halved."""
-    degree = samples.size - 1
-    extended = jnp.concatenate((samples, samples[-2:0:-1]))
-    coefficients = jnp.fft.rfft(extended).real / degree
-    return coefficients.at[0].multiply(0.5).at[-1].multiply(0.5)
-
-
-def filter_cosine_coefficients(
-    coefficients: jax.Array, width: int, endpoints: jax.Array
-) -> jax.Array:
-    """Taper DCT-I modes and restore endpoints by a global linear correction.
-
-    Drop the terminal (zero-weight) mode. For x=1-2q, endpoint residuals
-    e0,e1 add (e0+e1)/2 to c0 and (e0-e1)/2 to c1. Differentiation and
-    transposition therefore see the same corrected polynomial everywhere.
-    """
-    modes = coefficients.size - 1
-    taper = jnp.minimum(1.0, (modes - jnp.arange(modes)) / width)
-    filtered = coefficients[:-1] * taper
-    residual = endpoints - jnp.stack(
-        (filtered.sum(), filtered @ ((-1.0) ** jnp.arange(modes)))
-    )
-    return (
-        filtered.at[0]
-        .add((residual[0] + residual[1]) / 2)
-        .at[1]
-        .add((residual[0] - residual[1]) / 2)
-    )
-
-
-def _differentiate_coefficients(coefficients: jax.Array) -> jax.Array:
-    """Differentiate with respect to q, where the Chebyshev coordinate is 1-2q."""
-    degree = coefficients.size - 1
-    if degree == 0:
-        return jnp.zeros_like(coefficients)
-    weighted = 2 * jnp.arange(1, degree + 1) * coefficients[1:]
-    # The reverse recurrence separates into even and odd suffix sums. This
-    # avoids updating an L-length carry L times, including in its transpose.
-    derivative = jnp.zeros(degree, dtype=coefficients.dtype)
-    derivative = derivative.at[::2].set(jnp.cumsum(weighted[::2][::-1])[::-1])
-    derivative = derivative.at[1::2].set(jnp.cumsum(weighted[1::2][::-1])[::-1])
-    return -2 * derivative.at[0].multiply(0.5)
-
-
 def _evaluate_nufft(coefficients, probabilities, tolerance, endpoints):
     """NUFFT primal with exact endpoint values and a polynomial derivative rule."""
     if coefficients.size == 1:
@@ -258,7 +215,8 @@ class _CosineTranspose(hijax.HiPrim):
             dcoefficients = (
                 dcoefficients
                 + jax.linear_transpose(
-                    _differentiate_coefficients, jnp.zeros(count, dtype=mass.dtype)
+                    differentiate_cosine_coefficients,
+                    jnp.zeros(count, dtype=mass.dtype),
                 )(derivative_mass)[0]
             )
         return primal, (dcoefficients, dendpoints)
@@ -333,7 +291,7 @@ class _CosineEvaluation(hijax.HiPrim):
         )
         primal = self(coefficients, probabilities, endpoints)
         derivative = evaluate_cosine(
-            _differentiate_coefficients(coefficients),
+            differentiate_cosine_coefficients(coefficients),
             probabilities,
             cast(float, self.params["tolerance"]),
         )
