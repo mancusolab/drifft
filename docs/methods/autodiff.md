@@ -77,7 +77,13 @@ function and replace dynamic parameter leaves inside it.
 
 ## What drifft differentiates
 
-With `Sequential`, JAX differentiates the repeated backend applications.
+With `Sequential`, an operator-level primitive supplies a coupled state/tangent
+recurrence and an explicit initial-state transpose using the transposed
+operator. Operator tangents come from filtered JVPs of its matrix-vector
+action, so dense and callable representations follow the same rule. Ordinary
+AD still differentiates preparation and reconstruction, including immigration.
+This boundary is internal; existing JAX and Equinox transformations use it
+without an additional user option.
 With either Krylov method, it differentiates the numerical approximation,
 including basis construction, projection, the reduced matrix power, and
 reconstruction. The basis depends on both the transition parameters and the
@@ -85,9 +91,9 @@ incoming state. That state can carry parameter dependence from earlier
 demographic intervals. Jacobi's parameter-dependent encoding and reduced
 operator are also part of the differentiated calculation.
 
-drifft does not currently implement a custom JVP for an entire epoch or
-`DemographicTransition`. In particular, it does not construct the block
-operator above and apply Krylov to its power. Such an algorithm would
+`DemographicTransition` composes these operations through ordinary AD. The
+Krylov methods do not currently construct the block operator above and apply
+Krylov to its power. Such an algorithm would
 approximate the underlying model's sensitivity directly; at finite basis
 dimension, that sensitivity need not equal the derivative of the current
 Krylov approximation.

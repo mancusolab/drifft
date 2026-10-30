@@ -13,6 +13,7 @@ import lineax as lx
 
 from ._frequency import AbstractFrequencyMap
 from ._operator import Transition
+from ._power import _power_action
 from .backends import AbstractTransitionBackend
 
 
@@ -226,10 +227,30 @@ class Sequential(AbstractEpochMethod):
 
     def solve(self, problem: _PowerProblem, *, throw: bool = True) -> EpochResult:
         """Iterate in the prepared problem's working coordinates."""
-        state = jax.lax.fori_loop(
-            0, problem.steps, lambda _, mass: problem.operator.mv(mass), problem.initial
-        )
+        state = _power_action(self, problem.operator, problem.initial, problem.steps)
         return _epoch_result(problem.reconstruct(state), jnp.asarray(0.0), 0.0, throw)
+
+    def _power_action(self, operator, initial, steps):
+        """Apply repeated operator actions in working coordinates."""
+        return jax.lax.fori_loop(0, steps, lambda _, state: operator.mv(state), initial)
+
+    def _power_jvp(self, operator, tangent_operator, initial, tangent_initial, steps):
+        """Evolve the state and its sensitivity without differentiating the loop."""
+        if tangent_operator is None:
+            return (
+                _power_action(self, operator, initial, steps),
+                _power_action(self, operator, tangent_initial, steps),
+            )
+
+        def step(_, carry):
+            state, tangent = carry
+            following = operator.mv(state)
+            tangent = jax.tree.map(
+                jnp.add, operator.mv(tangent), tangent_operator.mv(state)
+            )
+            return following, tangent
+
+        return jax.lax.fori_loop(0, steps, step, (initial, tangent_initial))
 
     @eqx.filter_jit
     def advance(
