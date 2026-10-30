@@ -17,9 +17,9 @@ Keep names aligned with the direction of the transition:
 
 | Name | Meaning |
 | --- | --- |
-| `backend` | Prepared geometry (`FFT`, `NUFFT`, or reduced `Jacobi`) |
+| `backend` | Transition representation (`FFT`, `NUFFT`, `Jacobi`, or reference `Dense`); Jacobi also supplies reduced Krylov geometry |
 | `method` | Geometry-free epoch algorithm (`Sequential`, `PolynomialKrylov`, or `RationalKrylov`) |
-| `boundary_backend` | FFT/NUFFT factory for demographic size changes |
+| `boundary_backend` | Transition backend factory for demographic size changes |
 | `frequency_map` | Selection, mutation, or a composition of both |
 | `transition` | Backend bound to selection or explicit source probabilities |
 | `probabilities`, `stencil_width` | Computed quantities exposed as properties |
@@ -44,6 +44,29 @@ Keep population geometry on backends and algorithm controls on methods. Bind
 parameter-dependent operators and factors during evaluation so selection and
 mutation remain differentiable. Do not retain factors or Krylov bases in
 demographic results.
+
+The private implementation is organized by responsibility:
+
+| Module | Responsibility |
+| --- | --- |
+| `_polynomial.py` | Normalized Gegenbauer recurrences, streaming moments and their HiJAX rules; Chebyshev coefficient operations |
+| `backends/` | Population geometry, sampling, accelerated evaluation and representation-specific assembly |
+| `_evolution/preparation.py` | Adapt representations to power problems and route representation validation |
+| `_evolution/problem.py` | Working coordinates, reconstruction, error norms and evolution results |
+| `_evolution/projection.py` | Arnoldi bases, projected powers and convergence diagnostics |
+| `_evolution/sensitivity.py` | Mathematical power sensitivities and operator pullbacks |
+| `_evolution/autodiff.py` | HiJAX integration for operator powers |
+| `_evolution/methods.py` | Public method configuration and orchestration |
+| `_demography.py` | Population-history chronology and boundary transitions |
+
+Projection and sensitivity kernels do not import backends. Preparation owns
+the representation boundary; Sequential uses the one-generation transition,
+while Krylov methods may use a reduced representation. Keep Dense's reference
+calculation independent of the optimized polynomial kernels.
+
+Internal callers import from the owning modules. The former `_epochs`,
+`_krylov`, `_power` and `_jacobi` compatibility modules have been removed;
+public classes remain available directly from `drifft`.
 
 Every class, method, and function needs a docstring describing its contract or
 purpose. Ruff checks missing docstrings; comments explain numerical identities,
@@ -81,6 +104,14 @@ scan/map callbacks define traced loop bodies. Those are useful boundaries even
 when they have one caller. Avoid pass-through wrappers and unused alternate
 implementations. Keep helpers beside their callers rather than adding utility
 modules for individual functions.
+
+Use `jax.experimental.hijax.HiPrim` for backend kernels that need custom
+differentiation. Declare array shapes and static parameters explicitly, provide
+the primal operation, JVP, and batching rule, and derive linearization and reverse
+mode with `linearize_from_jvp` and `vjp_from_jvp`. Provide a matched transpose when
+the kernel is linear in an input. Keep ordinary JAX operations outside these
+boundaries; evolution-level rules for Equinox modules remain separate. HiJAX is
+experimental, so verify these transformations against the supported JAX version.
 
 ## Documentation
 

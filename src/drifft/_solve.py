@@ -15,6 +15,15 @@ class ExpectedVisitsResult(NamedTuple):
     The candidate occupation vector solves $(I-Q^T)g=e_1$, including generation
     zero. The convergence flag combines solver status, finiteness, and a residual
     check against the approximate operator.
+
+    **Fields:**
+
+    - `visits`: Float64 vector of expected interior visits, including generation
+      zero. Entry zero corresponds to one mutant copy.
+    - `status`, `stats`: Unmodified Lineax result code and iteration diagnostics.
+    - `residual_norm`: Scalar infinity norm of $(I-Q^T)g-e_1$.
+    - `converged`: Scalar boolean combining solver status, finite visits and
+      the explicit residual test. Check this rather than solver status alone.
     """
 
     visits: jax.Array
@@ -116,6 +125,8 @@ def _solve_expected_visits(
     else:
         raise ValueError("solver must be 'gmres' or 'bicgstab'")
     transpose = operator.T
+    # Summing visits gives g = e_1 + Q.T g. Q acts on observables, so its
+    # transpose is required here; using Q would solve a different occupation law.
     spec = jax.ShapeDtypeStruct((gene_copies - 1,), jnp.float64)
     system = lx.FunctionLinearOperator(lambda v: v - transpose.mv(v), spec)
     rhs = jnp.zeros(gene_copies - 1, dtype=jnp.float64).at[0].set(1.0)

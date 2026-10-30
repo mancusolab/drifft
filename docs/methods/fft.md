@@ -4,27 +4,43 @@
 It operates on population-sized vectors; it does not maintain a reduced state
 between generations.
 
+For configuration, see the [API reference](../api/backends.md#drifft.FFT); for a workflow, see
+[choosing algorithms](../guide/backends.md). Notation follows the
+[shared conventions](../guide/notation.md). The
+[computational overview](overview.md) places this method within the full calculation.
+
 ## Problem and representation
 
-Let $M$ be the destination gene-copy count and $N$ the number of source rows.
-The input has $M+1$ values and the expectation output has $N$ entries.
+A single transition requires a binomial expectation at each source frequency.
+FFT accelerates these expectations without storing the population transition matrix.
+
+Let $M$ be the destination gene-copy count and $n_{\mathrm{eval}}$ the number of source rows.
+The input has $M+1$ values and the expectation output has $n_{\mathrm{eval}}$ entries.
 The FFT backend computes binomial expectations through local log-odds grids.
-For destination values $v_j$, it approximates
+For destination values $f_j$, it approximates
 
 $$
-B_M[v](q)=\sum_{j=0}^M\binom Mj q^j(1-q)^{M-j}v_j.
+B_M[f](q)=\sum_{j=0}^M\binom Mj q^j(1-q)^{M-j}f_j.
 $$
 
 ## Computation
+
+Nearby offspring probabilities can share a convolution on a local log-odds grid.
+Interpolation then transfers those results to the probabilities requested by the model.
+
+!!! note "Advanced: convolution factorization"
+
+    The formula below expresses the binomial kernel as diagonal scalings around
+    a Toeplitz matrix, whose entries depend only on the index difference.
 
 Within a retained local grid, the binomial kernel has a diagonal–Toeplitz–diagonal
 factorization. The action takes the form
 
 $$
-y_r=a_r\sum_j e^{-h(r-(j-j_0))^2/2}\,b_jv_j.
+y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jf_j.
 $$
 
-Here $j_0$ is a reference count, $h$ is the log-odds spacing, and $a_r,b_j$
+Here $j_0$ is a reference count, $\Delta_{\mathrm{logit}}$ is the log-odds spacing, and $a_r,b_j$
 are scaling weights. The sum is a convolution: zero-padded FFTs evaluate it
 without constructing a dense block. Local polynomial interpolation evaluates
 the result at the required offspring probabilities. Near the endpoints,
@@ -32,9 +48,12 @@ direct binomial sums replace the log-odds interpolation.
 
 ## Cost and reuse
 
+Preparation is reusable when population sizes and numerical settings stay fixed.
+The cost of applying a transition includes both FFTs and interpolation.
+
 For local blocks with padded FFT lengths $n_b$, the convolution work scales
 with $\sum_b n_b\log n_b$. The complete operation also includes diagonal
-scaling, interpolation at $N$ probabilities, and direct endpoint-region sums.
+scaling, interpolation at $n_{\mathrm{eval}}$ probabilities, and direct endpoint-region sums.
 Their costs depend on the retained windows and interpolation stencil. There
 is no sublinear-in-output guarantee from the FFT length alone.
 
@@ -63,20 +82,17 @@ tighter settings and against dense binomial rows where feasible.
 
 ## Differentiation and adjoints
 
-The expectation operation is linear in the input values. `Transition.advance`
-uses its algebraic transpose, so propagation and expectations share the same
-approximation. JAX differentiates the local interpolation and scaling as the
-frequency map changes; the direct binomial path has polynomial endpoint
-derivative rules. Validate parameter gradients, including near changes of
-interpolation region. Geometry construction is outside the differentiated path.
+Forward propagation uses the transpose of the same expectation approximation,
+so the two operations remain paired. Parameter derivatives follow the changing
+interpolation and scaling, with geometry held fixed.
 
-## Use in drifft
+At the endpoints, direct binomial sums use the polynomial derivative identity
 
-Construct `FFT` outside JIT, then bind it to any supported frequency map with
-`Transition`. It supports rectangular population-size changes, expected visits,
-and demographic evolution with Sequential or either Krylov method. Each
-Sequential generation still applies the population-space transition.
+$$
+\frac{\mathrm d B_{M,j}(q)}{\mathrm dq}
+=M[B_{M-1,j-1}(q)-B_{M-1,j}(q)],
+$$
 
-See [choosing algorithms](../guide/backends.md) for practical recommendations,
-[accuracy](../guide/numerics.md) for validation, and the
-[FFT API](../api/backends.md#drifft.FFT) for constructor defaults.
+where out-of-range indices contribute zero. This avoids singular expressions
+at $q=0,1$. Validate gradients near interpolation-region changes; the
+[autodiff chapter](autodiff.md) describes differentiation through evolution.

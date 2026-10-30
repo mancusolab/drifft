@@ -5,7 +5,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
-from test_demography import dense_transition
+from _reference import dense_transition
 
 import drifft
 
@@ -14,7 +14,9 @@ jax.config.update("jax_enable_x64", True)
 
 @pytest.mark.parametrize("kind", ["sequential", "krylov"])
 @pytest.mark.parametrize("segregating", [False, True])
-@pytest.mark.parametrize("generations", [0, 1, 7, 100])
+# Identity, one-step and repeated affine actions; long/truncated powers have
+# dedicated convergence and accuracy tests below.
+@pytest.mark.parametrize("generations", [0, 1, 7])
 def test_epoch_matches_dense_with_immigration(kind, segregating, generations):
     """Include immigration after every generation, including the final one."""
     backend = drifft.FFT(16) if kind == "sequential" else drifft.Jacobi(16)

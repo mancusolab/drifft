@@ -10,13 +10,13 @@ extra_javascript = ["_static/mathjax.js", "https://cdn.jsdelivr.net/npm/mathjax@
 nav = [
     { "drifft" = [
         { "Quickstart" = "index.md" },
-        "guide/model.md",
         "guide/frequency_maps.md",
         "guide/transitions.md",
         "guide/demography.md",
         "guide/backends.md",
         "guide/numerics.md",
         "guide/solves.md",
+        "guide/epochs.md",
     ] },
     { "Examples" = [
         "examples/allele_loss.md",
@@ -32,11 +32,14 @@ nav = [
         "api/methods.md",
     ] },
     { "Numerical methods" = [
+        "guide/notation.md",
+        "guide/model.md",
+        "methods/overview.md",
         "methods/fft.md",
         "methods/nufft.md",
         "methods/jacobi.md",
         "methods/jacobi_krylov.md",
-        "methods/epochs.md",
+        "methods/autodiff.md",
     ] },
     { "Project" = ["benchmarks.md", "contributing.md"] },
 ]

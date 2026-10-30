@@ -7,7 +7,9 @@ from typing import final
 
 import equinox as eqx
 import jax
+import jax.core
 import jax.numpy as jnp
+from jax.experimental import hijax
 
 
 class AbstractFrequencyMap(eqx.Module):
@@ -103,8 +105,7 @@ follow `AbstractFrequencyMap`'s contract; transitions check output shape.
 """
 
 
-@jax.custom_jvp
-def _diploid_selection(
+def _diploid_selection_impl(
     s_het: jax.Array | float, s_hom: jax.Array | float, frequencies: jax.Array
 ) -> jax.Array:
     """Evaluate diploid survival without forming large squared fitnesses."""
@@ -115,11 +116,10 @@ def _diploid_selection(
     return derived / (ancestral + derived)
 
 
-@_diploid_selection.defjvp
 def _diploid_selection_jvp(primals, tangents):
     """Factor analytic partials to avoid overflow and quotient cancellation."""
     s_het, s_hom, x = primals
-    ds_het, ds_hom, dx = tangents
+    ds_het, ds_hom, dx = map(hijax.instantiate_zeros, tangents)
     u = 1 - x
     het, hom = 1 - s_het, 1 - s_hom
     ancestral = u * (u + het * x)
@@ -140,6 +140,38 @@ def _diploid_selection_jvp(primals, tangents):
     return _diploid_selection(*primals), (
         partial_het * ds_het + partial_hom * ds_hom + partial_x * dx
     )
+
+
+class _DiploidSelection(hijax.HiPrim):
+    """Selection with stable analytic derivatives in every AD mode."""
+
+    def __init__(self, *avals):
+        """Declare broadcast output shape and dtype from the primal formula."""
+        self.in_avals = avals
+        shape = jax.eval_shape(_diploid_selection_impl, *avals)
+        self.out_aval = jax.core.ShapedArray(shape.shape, shape.dtype)
+        self.params = {}
+        super().__init__()
+
+    def expand(self, *args):
+        """Evaluate the selection probabilities."""
+        return _diploid_selection_impl(*args)
+
+    def jvp(self, primals, tangents):
+        """Use factored analytic partials, including for higher derivatives."""
+        return _diploid_selection_jvp(primals, tangents)
+
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def batch_dim_rule(self, axis_data, dims):
+        """Map outputs only when a primal input is mapped."""
+        return 0 if any(dim is not None for dim in dims) else None
+
+
+def _diploid_selection(*args):
+    """Bind the selection rule through HiJAX."""
+    return _DiploidSelection(*(jax.typeof(arg) for arg in args))(*args)
 
 
 @final
@@ -202,9 +234,9 @@ fixation; a lethal derived homozygote is outside this map's domain.
 !!! warning "Parameter domain"
 
     Value constraints are caller preconditions, including under JIT and vmap.
-    Outputs and parameters are not clipped. FFT and NUFFT support this map.
-    Jacobi requires both coefficients to have absolute value at most its
-    configured `max_strength`, which is strictly below one.
+    Outputs and parameters are not clipped. All backends support this map.
+    Jacobi's reduced Krylov assembly requires both coefficients to have absolute
+    value at most its configured `max_strength`, which is strictly below one.
 """
 
 
@@ -444,7 +476,7 @@ class AdditiveSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -499,7 +531,7 @@ class DominanceSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -552,7 +584,7 @@ class RecessiveSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -604,7 +636,7 @@ class DominantSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -658,7 +690,7 @@ class Overdominance(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 
@@ -694,24 +726,54 @@ its configured `max_strength`.
 """
 
 
-@jax.custom_jvp
-def _multiplicative_selection(r: jax.Array, frequencies: jax.Array) -> jax.Array:
+def _multiplicative_selection_impl(r: jax.Array, frequencies: jax.Array) -> jax.Array:
     """Evaluate multiplicative selection without squaring the fitness ratio."""
     derived = r * frequencies
     return derived / ((1 - frequencies) + derived)
 
 
-@_multiplicative_selection.defjvp
 def _multiplicative_selection_jvp(primals, tangents):
     """Retain finite partials even when the mean fitness squared overflows."""
     r, x = primals
-    dr, dx = tangents
+    dr, dx = map(hijax.instantiate_zeros, tangents)
     mean_fitness = (1 - x) + r * x
     partial_r = (x / mean_fitness) * ((1 - x) / mean_fitness)
     # XLA otherwise combines the two divisions into r / mean_fitness**2.
     r_over_mean = jax.lax.optimization_barrier(r / mean_fitness)
     partial_x = r_over_mean / mean_fitness
     return _multiplicative_selection(*primals), partial_r * dr + partial_x * dx
+
+
+class _MultiplicativeSelection(hijax.HiPrim):
+    """Selection with stable analytic derivatives in every AD mode."""
+
+    def __init__(self, *avals):
+        """Declare broadcast output shape and dtype from the primal formula."""
+        self.in_avals = avals
+        shape = jax.eval_shape(_multiplicative_selection_impl, *avals)
+        self.out_aval = jax.core.ShapedArray(shape.shape, shape.dtype)
+        self.params = {}
+        super().__init__()
+
+    def expand(self, *args):
+        """Evaluate the selection probabilities."""
+        return _multiplicative_selection_impl(*args)
+
+    def jvp(self, primals, tangents):
+        """Use factored analytic partials, including for higher derivatives."""
+        return _multiplicative_selection_jvp(primals, tangents)
+
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def batch_dim_rule(self, axis_data, dims):
+        """Map outputs only when a primal input is mapped."""
+        return 0 if any(dim is not None for dim in dims) else None
+
+
+def _multiplicative_selection(*args):
+    """Bind the selection rule through HiJAX."""
+    return _MultiplicativeSelection(*(jax.typeof(arg) for arg in args))(*args)
 
 
 @final
@@ -731,7 +793,7 @@ class MultiplicativeSelection(AbstractFrequencyMap):
             raise ValueError("selection parameters must be scalar")
 
     def apply(self, frequencies: jax.Array) -> jax.Array:
-        """Apply the constrained diploid selection rule.
+        r"""Apply the constrained diploid selection rule.
 
         **Arguments:**
 

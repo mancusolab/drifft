@@ -11,8 +11,11 @@ from scipy.stats import binom
 jax.config.update("jax_enable_x64", True)
 
 
-@pytest.mark.parametrize("M", [16, 64, 256])
-@pytest.mark.parametrize("s", [0.0, 0.001, 0.5, 1.0])
+# Sweep selection on one small chain; larger chains check size-dependent solves.
+# test_large.py separately exercises the genuinely truncated spectral solve.
+@pytest.mark.parametrize(
+    "M,s", [(16, 0.0), (16, 0.001), (16, 0.5), (16, 1.0), (64, 0.001), (256, 0.5)]
+)
 @pytest.mark.parametrize("backend_name", ["FFT", "NUFFT"])
 def test_occupation(M, s, backend_name):
     """Validate visits, total absorption time, and residuals against a dense chain."""
@@ -27,6 +30,7 @@ def test_occupation(M, s, backend_name):
     result = wf.Transition(backend, wf.Underdominance(jnp.asarray(s))).expected_visits(
         rtol=1e-11, atol=1e-12, restart=50
     )
+    assert isinstance(result, wf.ExpectedVisitsResult)
     assert bool(result.converged)
     assert result.status == lx.RESULTS.successful
     assert float(result.residual_norm) < 2e-10

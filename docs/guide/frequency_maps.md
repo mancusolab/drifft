@@ -49,21 +49,27 @@ remain differentiable.
 
 !!! warning "Keep endpoint mass for recurrent mutation"
 
-    Full-state `advance()` lets mutation move mass away from loss or fixation.
-    Segregating methods discard trajectories at their first endpoint hit;
-    `expected_visits()` also stops counting there. Discarded trajectories cannot
-    re-enter through later mutation.
+    Use full-state `advance()` when mutation should allow re-entry from loss
+    or fixation. [Segregating operations](transitions.md#restricting-to-segregating-counts)
+    stop trajectories at their first endpoint hit.
 
 ## Custom frequency maps
 
-Wrap a pure JAX-compatible function that preserves shape and returns
-probabilities in `[0, 1]`:
+Use a custom map when the built-in selection and mutation models do not
+express your offspring sampling probability. Wrap a pure JAX-compatible
+function that preserves shape and returns probabilities in `[0, 1]`:
 
 ```python
 custom_map = drifft.FrequencyMap(lambda frequency: frequency**2)
 custom = drifft.Transition(drifft.FFT(64), frequency_map=custom_map)
 ```
 
-For trainable parameters, use an Equinox callable with array fields, or implement
-`AbstractFrequencyMap.apply`. The [frequency-map API](../api/frequency_maps.md)
-describes the interface and constructor contracts.
+!!! note "Advanced: differentiable custom maps"
+
+    For trainable parameters, use an Equinox callable with array fields, or
+    implement `AbstractFrequencyMap.apply`. The
+    [frequency-map API](../api/frequency_maps.md) describes the interface.
+
+Continue with [computing transitions](transitions.md) to apply the map to a
+distribution or observable. The [model chapter](model.md#selection-and-mutation)
+gives the biological formulas.

@@ -1,4 +1,4 @@
-"""Matrix-free Wright–Fisher transitions with reusable Equinox models."""
+"""Wright–Fisher transitions with reusable Equinox models."""
 
 # pattern: Functional Core
 from ._demography import (
@@ -7,7 +7,13 @@ from ._demography import (
     Demography,
     IntervalDiagnostics,
 )
-from ._epochs import AbstractEpochMethod, EpochResult, EvolutionStatus, Sequential
+from ._evolution.methods import (
+    AbstractEpochMethod,
+    PolynomialKrylov,
+    RationalKrylov,
+    Sequential,
+)
+from ._evolution.problem import EpochResult, EvolutionStatus
 from ._frequency import (
     AbstractFrequencyMap,
     AdditiveSelection,
@@ -23,11 +29,9 @@ from ._frequency import (
     RecessiveSelection,
     Underdominance,
 )
-from ._jacobi import Jacobi
-from ._krylov import PolynomialKrylov, RationalKrylov
 from ._operator import Transition
 from ._solve import ExpectedVisitsResult
-from .backends import FFT, NUFFT, AbstractTransitionBackend
+from .backends import FFT, NUFFT, AbstractTransitionBackend, Dense, Jacobi
 
 __all__ = [
     "AbstractEpochMethod",
@@ -38,6 +42,7 @@ __all__ = [
     "DemographicResult",
     "DemographicTransition",
     "Demography",
+    "Dense",
     "DiploidSelection",
     "DominanceSelection",
     "DominantSelection",

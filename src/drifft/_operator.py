@@ -1,4 +1,4 @@
-"""Matrix-free transition operations driven by frequency maps."""
+"""Transition operations driven by frequency maps."""
 
 # pattern: Functional Core; pure operations over a prepared transition backend.
 from typing import Literal, final
@@ -22,11 +22,13 @@ class Transition(eqx.Module):
     $$P_{ij} = \binom{M}{j} q_i^j (1-q_i)^{M-j}.$$
 
     `expect` applies $P$ to destination values; `advance` applies $P^T$ to
-    source mass. The backend evaluates these operations without storing $P$.
+    source mass. The backend controls how $P$ is represented and evaluated.
     For a frequency map, $q_i=q(i/M_s)$ where $M_s$ is `source_gene_copies`.
 
     Segregating operations restrict the kernel to interior allele counts and
-    discard endpoint mass. For a square interior kernel $Q$, `expected_visits`
+    discard endpoint mass. They require complete, ordered allele-count grids;
+    sampled probability rows are for full-state operations. For a square
+    interior kernel $Q$, `expected_visits`
     solves $(I-Q^T)g=e_1$, including the initial generation. Finite visits require
     eventual endpoint hitting; mutation does not restore discarded trajectories.
     """
@@ -62,8 +64,13 @@ class Transition(eqx.Module):
         **Raises:**
 
         `ValueError` for ambiguous configuration or invalid source dimensions or
-        probability shape; `TypeError` for an invalid frequency-map type.
+        probability shape; `TypeError` for an invalid backend or frequency-map type.
+
+        Finiteness and probability ranges are caller preconditions, not checked
+        here. Enable JAX x64 before preparing the backend.
         """
+        if not isinstance(backend, AbstractTransitionBackend):
+            raise TypeError("backend must be an AbstractTransitionBackend")
         self.backend = backend
         self.frequency_map = frequency_map
         self._probabilities = (
@@ -121,6 +128,7 @@ class Transition(eqx.Module):
         **Raises:**
 
         `ValueError` if the probability array is empty or not one-dimensional.
+        `TypeError` for an invalid backend. Probability values are not range-checked.
         """
         return cls(backend, probabilities=probabilities)
 
@@ -189,6 +197,8 @@ class Transition(eqx.Module):
         if distribution.shape != (self.source_gene_copies + 1,):
             raise ValueError("distribution must have source_gene_copies + 1 entries")
         spec = jax.ShapeDtypeStruct((self.backend.gene_copies + 1,), jnp.float64)
+        # Transpose the actual approximate expectation map, rather than a
+        # separately implemented forward kernel, to preserve adjoint pairing.
         return jax.linear_transpose(self.expect, spec)(distribution)[0]
 
     @eqx.filter_jit
@@ -301,7 +311,8 @@ class Transition(eqx.Module):
 
         !!! warning "Numerical limitations"
 
-            Numerical failure is returned with `throw=False`. Check `converged` before
+            The internal solve uses `throw=False`; numerical failure is returned.
+            Check `converged` before
             using visits; under vmap, check each result. Visits stop at the first endpoint
             hit, even with mutation. Global differentiability of solves is not certified.
         """

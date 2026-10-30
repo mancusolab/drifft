@@ -1,6 +1,7 @@
 """Backend interface, exact small chains, and selection derivative contracts."""
 
-# Functional Core: independent references and transformation checks.
+# pattern: Functional Core
+# Independent references and transformation checks.
 import abc
 
 import equinox as eqx
@@ -25,9 +26,9 @@ def test_abstract_backend_and_removed_api():
     assert not hasattr(drifft, "build_transition_plan")
 
 
-@pytest.mark.parametrize("name", ["FFT", "NUFFT"])
+@pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi", "Dense"])
 def test_backend_dense_adjoint_and_selection_derivatives(name):
-    """Check both backend contracts against dense transitions and finite differences."""
+    """Check all backend contracts against dense transitions and finite differences."""
     backend = getattr(drifft, name)(32)
     assert isinstance(backend, drifft.AbstractTransitionBackend)
     mass = jnp.arange(1.0, 26.0)
@@ -71,9 +72,9 @@ def test_backend_dense_adjoint_and_selection_derivatives(name):
     )
 
 
-@pytest.mark.parametrize("name", ["FFT", "NUFFT"])
+@pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi"])
 def test_large_backend_and_repeated_selection_gradient(name):
-    """Exercise interpolated FFT blocks and differentiation through a short epoch."""
+    """Exercise truncated geometry and differentiation through a short epoch."""
     backend = getattr(drifft, name)(1024)
     values = jnp.sin(jnp.arange(1025.0) / 17)
     rows = jnp.array([0.0, 0.001, 0.1, 0.499, 0.8, 0.999, 1.0])
@@ -105,4 +106,67 @@ def test_large_backend_and_repeated_selection_gradient(name):
     np.testing.assert_allclose(jax.jit(jax.grad(objective))(0.1), expected, atol=2e-8)
     np.testing.assert_allclose(
         jax.grad(jax.checkpoint(objective))(0.1), expected, atol=2e-8
+    )
+
+
+@pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi", "Dense"])
+def test_backend_linearization_batched_tangents_and_mixed_pullbacks(name):
+    """Share endpoint-safe linearization and mixed-adjoint contracts across backends."""
+    size = 16
+    backend = getattr(drifft, name)(size)
+    probabilities = jnp.array([0.0, 0.07, 0.5, 0.83, 1.0])
+    values = jnp.sin(jnp.arange(size + 1) * 0.7)
+    dvalues = jnp.cos(jnp.arange(size + 1) * 0.2)
+    dprobabilities = jnp.array([0.2, -0.1, 0.3, -0.4, 0.1])
+    mass = jnp.array([-0.3, 0.1, 0.2, -0.6, 0.9])
+    counts = np.arange(size + 1)[None, :]
+    q = np.asarray(probabilities)[:, None]
+    matrix = jnp.asarray(binom.pmf(counts, size, q))
+    derivative = jnp.asarray(
+        size * (binom.pmf(counts - 1, size - 1, q) - binom.pmf(counts, size - 1, q))
+    )
+    expected_tangent = matrix @ dvalues + dprobabilities * (derivative @ values)
+
+    @jax.jit
+    def linearization(q, v, dq, dv, cotangent):
+        """Reuse and transpose the joint linearization in probabilities and values."""
+        primal, linear = jax.linearize(backend.expect, q, v)
+        tangent = linear(dq, dv)
+        pullback = jax.linear_transpose(linear, q, v)(cotangent)
+        return primal, tangent, pullback
+
+    primal, tangent, (dq, dv) = linearization(
+        probabilities, values, dprobabilities, dvalues, mass
+    )
+    np.testing.assert_allclose(primal, matrix @ values, atol=3e-12, rtol=0)
+    np.testing.assert_allclose(tangent, expected_tangent, atol=3e-11, rtol=0)
+    np.testing.assert_allclose(dq, mass * (derivative @ values), atol=3e-11, rtol=0)
+    np.testing.assert_allclose(dv, matrix.T @ mass, atol=3e-12, rtol=0)
+
+    def tangent(dq, dv):
+        """Batch directions while the primal inputs remain unmapped."""
+        return jax.jvp(backend.expect, (probabilities, values), (dq, dv))
+
+    primals, tangents = jax.jit(jax.vmap(tangent))(
+        jnp.stack((dprobabilities, -2 * dprobabilities)),
+        jnp.stack((dvalues, 3 * dvalues)),
+    )
+    np.testing.assert_allclose(primals, jnp.stack((primal, primal)), atol=3e-12, rtol=0)
+    np.testing.assert_allclose(tangents[0], expected_tangent, atol=3e-11, rtol=0)
+    np.testing.assert_allclose(
+        tangents[1],
+        3 * matrix @ dvalues - 2 * dprobabilities * (derivative @ values),
+        atol=3e-11,
+        rtol=0,
+    )
+
+    def pullback_values(q):
+        """Differentiate the value pullback with respect to offspring probabilities."""
+        return jax.grad(lambda v: mass @ backend.expect(q, v))(values)
+
+    mixed = jax.jit(lambda q: jax.jvp(pullback_values, (q,), (dprobabilities,))[1])(
+        probabilities
+    )
+    np.testing.assert_allclose(
+        mixed, derivative.T @ (mass * dprobabilities), atol=3e-11, rtol=0
     )

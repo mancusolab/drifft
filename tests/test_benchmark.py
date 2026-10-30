@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.benchmark
+
 SCRIPT = Path(__file__).resolve().parents[1] / "benchmarks" / "benchmark.py"
 
 

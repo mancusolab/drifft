@@ -1,5 +1,19 @@
 # Wright–Fisher Jacobi reduction: row-error bounds and rational assembly
 
+## Notation crosswalk
+
+This derivation retains its local symbols. The [shared documentation notation](../docs/guide/notation.md)
+uses the following corresponding quantities.
+
+| This note | Shared docs convention |
+| --- | --- |
+| Centered offspring coordinate $y=2q-1$ | $\xi$ |
+| Centered source grid $z_j=2j/M-1$ | $2x_j-1$; not a working-state vector |
+| Centered frequency map $g$ | Centered form of $q_\theta$; not an interval duration |
+| Reduced expectation matrix $H$ | $H_{\mathrm J}$ |
+| Padding dimension $R$ | $r_{\mathrm{pad}}$ |
+| Endpoint envelope $h(z)=1-z^2$ | Local function, not dominance $h$ |
+
 ## Motivation and scope
 
 The [FFT/NUFFT note](wf_filtered_chebyshev_bounds.md) studies compression of a Wright–Fisher row by sampled, filtered Chebyshev polynomials. The Jacobi backend solves a related problem: represent a fixed-population transition in a small polynomial space, then apply many generations through a reduced matrix. A useful error analysis must connect the polynomial representation to errors in the original allele-count distribution.

@@ -7,12 +7,10 @@ from typing import final
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import lineax as lx
 from jax.scipy.special import gammaln, xlog1py, xlogy
 from scipy.special import roots_jacobi
 
-from ._epochs import _epoch_inputs, _identity, _PowerProblem, _prepare_epoch
-from ._frequency import (
+from .._frequency import (
     AbstractFrequencyMap,
     AdditiveSelection,
     Composition,
@@ -26,6 +24,8 @@ from ._frequency import (
     RecessiveSelection,
     Underdominance,
 )
+from .._polynomial import gegenbauer_beta, gegenbauer_moments, gegenbauer_values
+from ._base import AbstractTransitionBackend
 
 
 def _selection_parameters(frequency_map):
@@ -74,6 +74,9 @@ def _map_parameters(frequency_map):
 def _rational_coefficients(frequency_map):
     """Return ascending quadratic coefficients for g(z) = 2 q((z+1)/2)-1."""
     het, hom, mutation, mutation_first = _map_parameters(frequency_map)
+    # Substitute x=(z+1)/2 into the diploid rule and collect powers of z.
+    # Keeping numerator/denominator coefficients lets assembly evaluate g(Z)
+    # through banded matrix actions instead of sampling every population state.
     numerator = jnp.array([-hom / 4, 1 - hom / 2, -hom / 4])
     denominator = jnp.array([1 - het / 2 - hom / 4, -hom / 2, het / 2 - hom / 4])
     if mutation is not None:
@@ -153,6 +156,9 @@ def _pentadiagonal_solver(diagonal, adjacent, second):
     O(rR) assembly. Generic epoch shifted solves still use Lineax.
     """
     size = diagonal.size
+    # For L with two lower bands, each Cholesky row depends on only the previous
+    # two pivots and previous first-band entry. Leading zero bands make the
+    # initial dummy pivots harmless, keeping one uniform scan for all rows.
     adjacent = jnp.pad(adjacent, (1, 0))
     second = jnp.pad(second, (2, 0))[:size]
 
@@ -183,6 +189,8 @@ def _pentadiagonal_solver(diagonal, adjacent, second):
 
     def solve(rhs):
         forward = triangular(rhs, roots, lower1, lower2)
+        # Reverse the coordinates to reuse the forward substitution for L.T;
+        # shift the lower bands first so each entry aligns with its upper row.
         upper1 = jnp.concatenate((lower1[1:], jnp.zeros(1)))
         upper2 = jnp.concatenate((lower2[2:], jnp.zeros(min(2, size))))
         return triangular(forward[::-1], roots[::-1], upper1[::-1], upper2[::-1])[::-1]
@@ -194,13 +202,16 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     """Assemble all r+2 coordinates, including nonabsorbing endpoint coupling."""
     numerator, denominator = _rational_coefficients(frequency_map)
     degree = jnp.arange(padded_rank - 1, dtype=jnp.float64)
-    beta = jnp.sqrt((degree + 1) * (degree + 3) / ((2 * degree + 3) * (2 * degree + 5)))
+    beta = gegenbauer_beta(degree)
     off = beta * jnp.sqrt(1 - ((degree + 2) / copies) ** 2)
 
     def coordinate(vector):
+        """Multiply by the finite-population tridiagonal coordinate matrix Z."""
         return jnp.pad(off * vector[:-1], (1, 0)) + jnp.pad(off * vector[1:], (0, 1))
 
     d0, d1, d2 = denominator
+    # Z is tridiagonal, so d0*I + d1*Z + d2*Z² has only five bands.
+    # Factor the denominator once and reuse it for every polynomial column.
     solve = _pentadiagonal_solver(
         d0 + d2 * (jnp.pad(off**2, (1, 0)) + jnp.pad(off**2, (0, 1))),
         d1 * off,
@@ -208,6 +219,7 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     )
 
     def mapped(vector):
+        """Apply the rational map g(Z) via one numerator action and banded solve."""
         return solve(
             numerator[0] * vector
             + numerator[1] * coordinate(vector)
@@ -225,6 +237,7 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     )
 
     def multiply(state):
+        """Multiply endpoint/interior coordinates by g without endpoint division."""
         endpoints, interior = state
         a, b = jnp.mean(endpoints), (endpoints[1] - endpoints[0]) / 2
         product = (
@@ -247,6 +260,7 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     )[:rank]
 
     def coefficients(state):
+        """Convert endpoint values to intercept/slope and rescale interior modes."""
         endpoints, interior = state
         return jnp.concatenate(
             (
@@ -330,33 +344,10 @@ def _padded_rank(copies: int, rank: int, max_strength: float, tolerance: float) 
     return min(copies - 1, max(3, rank, math.ceil((required + rank) / 2)))
 
 
-def _polynomials(points: jax.Array, rank: int) -> jax.Array:
-    """Evaluate normalized Gegenbauer polynomials for weight 3(1-z²)/4."""
-    first = jnp.ones_like(points)
-    if rank == 1:
-        return first[..., None]
-    second = jnp.sqrt(5.0) * points
-
-    def step(carry, degree):
-        """Advance the orthonormal three-term recurrence."""
-        previous, current = carry
-        lower = jnp.sqrt(degree * (degree + 2) / ((2 * degree + 1) * (2 * degree + 3)))
-        upper = jnp.sqrt(
-            (degree + 1) * (degree + 3) / ((2 * degree + 3) * (2 * degree + 5))
-        )
-        following = (points * current - lower * previous) / upper
-        return (current, following), following
-
-    _, rest = jax.lax.scan(
-        step, (first, second), jnp.arange(1, rank - 1, dtype=points.dtype)
-    )
-    return jnp.moveaxis(jnp.concatenate((first[None], second[None], rest)), 0, -1)
-
-
 def _assemble(strength: jax.Array, copies: int, rank: int, padded_rank: int):
     """Assemble the reduced interior operator and endpoint-slope forcing in O(rR)."""
     degree = jnp.arange(padded_rank - 1, dtype=jnp.float64)
-    beta = jnp.sqrt((degree + 1) * (degree + 3) / ((2 * degree + 3) * (2 * degree + 5)))
+    beta = gegenbauer_beta(degree)
     off = beta * jnp.sqrt(1 - ((degree + 2) / copies) ** 2)
 
     def multiply_coordinate(vector):
@@ -364,6 +355,8 @@ def _assemble(strength: jax.Array, copies: int, rank: int, padded_rank: int):
         return jnp.pad(off * vector[:-1], (1, 0)) + jnp.pad(off * vector[1:], (0, 1))
 
     constant, quadratic = 1 - strength / 2, strength / 2
+    # Symmetric selection gives g(z)=z/(a+b*z²). Z² connects only degrees
+    # of the same parity, splitting the denominator into two tridiagonals.
     diagonal = constant + quadratic * (
         jnp.pad(off**2, (1, 0)) + jnp.pad(off**2, (0, 1))
     )
@@ -405,6 +398,9 @@ def _assemble(strength: jax.Array, copies: int, rank: int, padded_rank: int):
 
     seed = jnp.zeros(padded_rank).at[0].set(1)
     indices = jnp.arange(2, padded_rank + 1, dtype=jnp.float64)
+    # Squared discrete/continuous normalization factors have ratios (M-k)/(M+k).
+    # Accumulate their logarithms before taking the square root to avoid
+    # underflow in a long product at large rank.
     scales = jnp.concatenate(
         (
             jnp.ones(1),
@@ -415,10 +411,14 @@ def _assemble(strength: jax.Array, copies: int, rank: int, padded_rank: int):
         )
     )
     solved = solve(solve(seed))
+    # h(g(z))/h(z) = (a²-b²*z²)/(a+b*z²)² for h(z)=1-z² and a+b=1.
+    # This supplies the first envelope-weighted column with no endpoint poles.
     first = constant**2 * solved - quadratic**2 * multiply_coordinate(
         multiply_coordinate(solved)
     )
     forcing = scales[:rank] * (quadratic * mapped_coordinate(seed))[:rank]
+    # The forcing represents g(z)-z = b*z*h(z)/(a+b*z²), needed when the
+    # endpoint interpolant has nonzero slope in full-state evolution.
     if rank == 1:
         return ((1 - 1 / copies) * scales[:rank] * first[:rank])[:, None], forcing
     second = mapped_coordinate(first) / beta[0]
@@ -465,7 +465,7 @@ class _JacobiGeometry(eqx.Module):
         # itself twice, so halve its weight; odd polynomials vanish there.
         if node_count % 2:
             self.weights = self.weights.at[-1].multiply(0.5)
-        self.polynomials = _polynomials(nodes, rank)
+        self.polynomials = gegenbauer_values(nodes, rank)
         probability = (nodes + 1) / 2
         trials = copies - 2
         # trials is a host count: math produces the fixed stencil width, while
@@ -522,28 +522,7 @@ class _JacobiGeometry(eqx.Module):
                 1 - frequency_map / 2 + frequency_map / 2 * coordinates**2
             )
             weighted = (1 - 1 / self.copies) * (1 - mapped) * (1 + mapped) * mass
-        first, second = jnp.ones_like(mapped), jnp.sqrt(5.0) * mapped
-
-        def step(carry, degree):
-            """Contract a polynomial with mass before proceeding to the next degree."""
-            previous, current = carry
-            lower = jnp.sqrt(
-                degree * (degree + 2) / ((2 * degree + 1) * (2 * degree + 3))
-            )
-            upper = jnp.sqrt(
-                (degree + 1) * (degree + 3) / ((2 * degree + 3) * (2 * degree + 5))
-            )
-            following = (mapped * current - lower * previous) / upper
-            return (current, following), weighted @ following
-
-        coefficients = jnp.array([weighted @ first])
-        if self.rank > 1:
-            _, rest = jax.lax.scan(
-                step, (first, second), jnp.arange(1, self.rank - 1, dtype=jnp.float64)
-            )
-            coefficients = jnp.concatenate(
-                (coefficients, jnp.array([weighted @ second]), rest)
-            )
+        coefficients = gegenbauer_moments(mapped, weighted, rank=self.rank)
         return (
             coefficients
             if segregating
@@ -578,6 +557,9 @@ class _JacobiGeometry(eqx.Module):
         )
         if segregating:
             return interior
+        # Full coordinates retain total mass and its first z moment. Recover
+        # the two endpoint masses from those constraints after decoding the
+        # interior; this also works for signed inputs without normalization.
         left = (
             coefficients[0] - coefficients[1] - (1 - self.coordinates) @ interior
         ) / 2
@@ -588,8 +570,8 @@ class _JacobiGeometry(eqx.Module):
 
 
 @final
-class Jacobi(eqx.Module):
-    r"""Reusable reduced Jacobi geometry for diploid selection and mutation.
+class Jacobi(AbstractTransitionBackend):
+    r"""Jacobi geometry for binomial expectations and reduced Krylov evolution.
 
     For gene-copy count $M$ and destination values $v_j$, the binomial expectation is
 
@@ -617,14 +599,20 @@ class Jacobi(eqx.Module):
     the power of $H^T$; representation rank and padding control different
     approximations from the method's power tolerance.
 
-    Supports neutral and diploid selection, standalone mutation, and one
-    mutation composed with one supported selection rule in either order.
+    `Transition` and `Sequential` accept arbitrary valid offspring probabilities
+    through the common expectation interface. Reduced Krylov assembly supports
+    neutral and diploid selection, standalone mutation, and one mutation
+    composed with one supported selection rule in either order. Custom maps and
+    longer compositions are not supported by reduced assembly.
     Recurrent mutation couples the endpoint states to the interior; full-state
     evolution retains this coupling, while segregating evolution discards
     endpoint mass each generation. Construct outside JIT with JAX x64 enabled;
     the prepared geometry is independent of the dynamic process parameters.
-    Process domains are checked at runtime: selection must stay within the
-    configured bound, and mutation rates must be finite and in [0, 1].
+    Reduced epoch domains are checked at runtime, including for zero generations:
+    selection must stay within the configured bound, and mutation rates must be
+    finite and in [0, 1]. In `DemographicTransition`, size-changing steps use the
+    same backend by default; an explicit FFT or NUFFT `boundary_backend` can be
+    supplied instead.
     """
 
     gene_copies: int = eqx.field(static=True)
@@ -650,9 +638,9 @@ class Jacobi(eqx.Module):
         - `rank`: Interior polynomial count, between one and `gene_copies - 1`.
           If omitted, use an ideal one-step polynomial tail bound.
         - `max_strength`: Static bound in `[0, 1)` on the absolute values of
-          both diploid fitness reductions, used for padding. `Underdominance`
-          and `Overdominance` retain their finite, nonnegative strength domains,
-          including in mutation compositions.
+          both diploid fitness reductions, used for reduced Krylov padding.
+          In reduced assembly, `Underdominance` and `Overdominance` retain their
+          finite, nonnegative strength domains, including in mutation compositions.
         - `one_step_tolerance`: Planning tolerance in `(0, 1)` for polynomial
           truncation and Jacobi padding separately; not a total error guarantee.
 
@@ -699,8 +687,73 @@ class Jacobi(eqx.Module):
         )
         self._geometry = _JacobiGeometry(gene_copies, rank)
 
+    def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
+        r"""Evaluate the binomial expectation at arbitrary offspring probabilities.
+
+        **Arguments:**
+
+        - `probabilities`: Float64 probability vector, including endpoints.
+        - `values`: Finite real destination values of length `gene_copies + 1`.
+
+        **Returns:**
+
+        One expectation per probability. The operation is linear in `values`
+        and supports transposition, batching, and polynomial derivatives.
+        Frequency-map and `max_strength` restrictions apply only to reduced
+        epoch assembly, not this arbitrary-probability operation.
+
+        **Raises:**
+
+        `ValueError` for incompatible input shapes. Probability ranges and
+        finiteness are caller preconditions, as for other transition backends.
+        """
+        probabilities = jnp.asarray(probabilities, dtype=jnp.float64)
+        values = jnp.asarray(values, dtype=jnp.float64)
+        if probabilities.ndim != 1 or values.shape != (self.gene_copies + 1,):
+            raise ValueError(
+                "expect requires a probability vector and gene_copies + 1 destination values"
+            )
+
+        # Transpose the existing decoder to obtain E v. The linear endpoint
+        # interpolant is evaluated directly, preserving exact endpoint values.
+        def interior_decode(coefficients):
+            return self._geometry.decode(
+                jnp.concatenate((jnp.zeros(2), coefficients)), False
+            )
+
+        spec = jax.ShapeDtypeStruct((self.rank,), jnp.float64)
+        coefficients = jax.linear_transpose(interior_decode, spec)(values)[0]
+        polynomial = gegenbauer_moments(
+            2 * probabilities - 1, coefficients, rank=self.rank, transposed=True
+        )
+        return (
+            (1 - probabilities) * values[0]
+            + probabilities * values[-1]
+            + (1 - 1 / self.gene_copies)
+            * 4
+            * probabilities
+            * (1 - probabilities)
+            * polynomial
+        )
+
     def validate(self, frequency_map: AbstractFrequencyMap) -> None:
-        """Reject frequency maps unsupported by reduced assembly."""
+        r"""Check whether a frequency map supports reduced Krylov assembly.
+
+        **Arguments:**
+
+        - `frequency_map`: Neutral, supported diploid selection, mutation, or
+          one mutation composed with one supported selection rule in either order.
+
+        **Returns:**
+
+        `None`. Checks the map structure only. Reduced evolution checks dynamic
+        parameter domains separately, even for zero generations. One-generation
+        `expect` and Sequential do not impose these assembly restrictions.
+
+        **Raises:**
+
+        `TypeError` for unsupported maps or compositions.
+        """
         _map_parameters(frequency_map)
 
     def _validate_mass(
@@ -749,77 +802,3 @@ class Jacobi(eqx.Module):
             "selection strength must lie in [0, max_strength]",
         )
         return distribution, strength
-
-
-@_prepare_epoch.register(Jacobi)
-def _prepare_jacobi(
-    backend, distribution, frequency_map, generations, segregating, immigration
-):
-    """Encode the reduced action and affine forcing without choosing a power algorithm."""
-    distribution, source = _epoch_inputs(
-        distribution, immigration, backend.gene_copies, generations, segregating
-    )
-    distribution, strength = backend._validate_mass(distribution, frequency_map)
-    if generations == 0:
-        operator = lx.IdentityLinearOperator(
-            jax.ShapeDtypeStruct(distribution.shape, distribution.dtype)
-        )
-        return _PowerProblem(
-            operator,
-            distribution,
-            0,
-            _identity,
-            jnp.zeros_like(distribution),
-            False,
-            jnp.asarray(1.0),
-        )
-    seed = backend._geometry.encode(distribution, frequency_map, segregating)
-    decode = eqx.Partial(backend._geometry.decode, segregating=segregating)
-    if generations == 1:
-        operator = lx.IdentityLinearOperator(
-            jax.ShapeDtypeStruct(seed.shape, seed.dtype)
-        )
-        return _PowerProblem(operator, seed, 0, decode, source, False, jnp.asarray(1.0))
-    if isinstance(frequency_map, (Neutral, Underdominance)):
-        matrix, forcing = _assemble(
-            strength, backend.gene_copies, backend.rank, backend.padded_rank
-        )
-        if not segregating:
-            extended = jnp.zeros((backend.rank + 2, backend.rank + 2))
-            extended = extended.at[:2, :2].set(jnp.eye(2))
-            extended = extended.at[2:, 1].set(forcing)
-            matrix = extended.at[2:, 2:].set(matrix)
-    else:
-        matrix = _assemble_diploid(
-            frequency_map,
-            backend.gene_copies,
-            backend.rank,
-            backend._diploid_padded_rank,
-        )
-        if segregating:
-            matrix = (
-                matrix[2:, 2:] + backend._geometry.endpoint_correction @ matrix[:2, 2:]
-            )
-    matrix = matrix.T
-    augmented = immigration is not None
-    if augmented:
-        encoded_source = backend._geometry.encode(source, frequency_map, segregating)
-        extended = jnp.zeros((seed.size + 1, seed.size + 1))
-        extended = extended.at[:-1, :-1].set(matrix)
-        extended = extended.at[:-1, -1].set(encoded_source)
-        matrix = extended.at[-1, -1].set(1)
-        seed = jnp.concatenate((seed, jnp.ones(1)))
-    defect_scale = (
-        1 + (generations - 1) * jnp.sum(jnp.abs(source))
-        if augmented
-        else jnp.asarray(1.0)
-    )
-    return _PowerProblem(
-        lx.MatrixLinearOperator(matrix),
-        seed,
-        generations - 1,
-        decode,
-        source,
-        augmented,
-        defect_scale,
-    )

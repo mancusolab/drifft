@@ -13,13 +13,9 @@ import jax
 import jax.numpy as jnp
 from jax.typing import DTypeLike
 
+from .._polynomial import compute_cosine_coefficients, filter_cosine_coefficients
 from ._base import AbstractTransitionBackend
-from ._spectral import (
-    _evaluate,
-    compute_cosine_coefficients,
-    filter_cosine_coefficients,
-    sample_bernstein,
-)
+from ._spectral import _evaluate, sample_bernstein
 
 
 @final
@@ -129,6 +125,8 @@ class NUFFT(AbstractTransitionBackend):
             "jax_enable_x64"
         ):
             raise ValueError("float64 and jax_enable_x64=True are required")
+        # Bound planners act on unit-bounded input values; allocating the budget
+        # does not certify FINUFFT or roundoff errors for a particular device.
         budget = accuracy / 4
         taper_width = 0
         if encoding == "filtered":
@@ -239,6 +237,9 @@ class NUFFT(AbstractTransitionBackend):
         **Raises:**
 
         `ValueError` for incompatible vector shapes, including during JIT tracing.
+
+        Finiteness and probability ranges follow the unchecked preconditions of
+        `AbstractTransitionBackend.expect`; signed values are supported.
         """
         if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:
             raise ValueError(

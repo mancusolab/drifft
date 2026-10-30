@@ -1,17 +1,19 @@
 """Selection-independent, host-side FFT geometry construction."""
 
-# Functional Core: deterministic planning, no file or network I/O.
+# pattern: Functional Core
+# Deterministic planning, no file or network I/O.
 # NumPy/SciPy are intentional here: quantile-based windows and FFT buckets have
 # variable host-side sizes. The constructor converts the prepared geometry to JAX
 # arrays; this module's construction routines never run inside a matvec or solve.
 import math
-from functools import partial
-from typing import final
+from typing import cast, final
 
 import equinox as eqx
 import jax
+import jax.core
 import jax.numpy as jnp
 import numpy as np
+from jax.experimental import hijax
 from jax.scipy.special import xlog1py, xlogy
 from numpy.typing import DTypeLike
 from scipy.special import expit, logit
@@ -82,12 +84,15 @@ def _build_block(
         - _stirling_correction(j0)
         - _stirling_correction(M - j0)
     )
-    # A constant balancing shift preserves the exact product.
+    # Opposite shifts in log(a) and log(b) preserve the exact product while
+    # centering log(b)'s range, limiting large intermediate diagonal factors.
     shift = (np.max(logb) + np.min(logb)) / 2 if balance else 0.0
     a = np.exp(logB + loga + shift).astype(np.float64)
     b = np.exp(logb - shift).astype(np.float64)
     L, R = hi - lo + 1, rhi - rlo + 1
     nfft = 1 << (R + 2 * L - 3).bit_length()
+    # The kernel has R+L-1 entries; convolution with L inputs needs R+2L-2
+    # slots. Padding to at least that length prevents circular wraparound.
     d = np.arange(rlo - (hi - j0), rhi - (lo - j0) + 1, dtype=np.float64)
     kernel = np.exp(-float(h) * d * d / 2)
     if not (np.all(np.isfinite(a)) and np.all(np.isfinite(b))):
@@ -370,6 +375,9 @@ class FFT(AbstractTransitionBackend):
         **Raises:**
 
         `ValueError` for incompatible vector shapes, including during JIT tracing.
+
+        Finiteness and probability ranges follow the unchecked preconditions of
+        `AbstractTransitionBackend.expect`; signed values are supported.
         """
         values = jnp.asarray(values, dtype=jnp.float64)
         if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:
@@ -451,42 +459,83 @@ class FFT(AbstractTransitionBackend):
         return jnp.where(is_boundary, direct, interpolated)
 
 
-@partial(jax.custom_jvp, nondiff_argnums=(0,))
+class _BinomialWeights(hijax.HiPrim):
+    """Endpoint-safe binomial weights with polynomial probability derivatives.
+
+    Counts are integer indices and size is static. Probability and log-weight
+    derivatives retain their existing rules. The operation is nonlinear in
+    both arguments, so reverse mode transposes the JVP's linearization rather
+    than the weight evaluation itself.
+    """
+
+    def __init__(self, counts, logchoose, probabilities, *, size):
+        """Declare the row-by-count output and static binomial degree."""
+        self.in_avals = (counts, logchoose, probabilities)
+        self.out_aval = jax.core.ShapedArray(
+            (probabilities.shape[0], counts.shape[0]), probabilities.dtype
+        )
+        self.params = dict(size=size)
+        super().__init__()
+
+    def expand(self, *args):
+        """Evaluate weights with exact endpoint values and zero out-of-range indices."""
+        counts, logchoose, probabilities = args
+        size = cast(int, self.params["size"])
+        endpoint = (probabilities == 0) | (probabilities == 1)
+        safe = jnp.where(endpoint, 0.5, probabilities)[:, None]
+        weights = jnp.exp(
+            logchoose + xlogy(counts, safe) + xlog1py(size - counts, -safe)
+        )
+        weights = jnp.where(
+            probabilities[:, None] == 0,
+            counts == 0,
+            jnp.where(probabilities[:, None] == 1, counts == size, weights),
+        )
+        return jnp.where((counts >= 0) & (counts <= size), weights, 0.0)
+
+    def jvp(self, primals, tangents):
+        """Apply the lower-degree binomial identity, including at endpoints."""
+        counts, logchoose, probabilities = primals
+        _, dlogchoose, dprobabilities = tangents
+        dlogchoose, dprobabilities = map(
+            hijax.instantiate_zeros, (dlogchoose, dprobabilities)
+        )
+        size = cast(int, self.params["size"])
+        weights = self(counts, logchoose, probabilities)
+        if size == 0:
+            derivative = jnp.zeros_like(weights)
+        else:
+            # d B[n,j]/dp = n*(B[n-1,j-1] - B[n-1,j]). Reusing this
+            # rule recursively also gives finite, matched higher derivatives.
+            # size is static, so math.log supplies a trace-time constant.
+            left_logchoose = (
+                logchoose + jnp.log(jnp.maximum(counts, 1)) - math.log(size)
+            )
+            right_logchoose = (
+                logchoose + jnp.log(jnp.maximum(size - counts, 1)) - math.log(size)
+            )
+            derivative = size * (
+                _binomial_weights(size - 1, counts - 1, left_logchoose, probabilities)
+                - _binomial_weights(size - 1, counts, right_logchoose, probabilities)
+            )
+        return weights, weights * dlogchoose + derivative * dprobabilities[:, None]
+
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def batch_dim_rule(self, axis_data, dims):
+        """Keep tangent-only batching from marking the primal output as mapped."""
+        return 0 if any(dim is not None for dim in dims) else None
+
+
 def _binomial_weights(size, counts, logchoose, probabilities):
-    """Binomial basis with exact endpoint values and polynomial derivatives."""
-    endpoint = (probabilities == 0) | (probabilities == 1)
-    safe = jnp.where(endpoint, 0.5, probabilities)[:, None]
-    weights = jnp.exp(logchoose + xlogy(counts, safe) + xlog1py(size - counts, -safe))
-    weights = jnp.where(
-        probabilities[:, None] == 0,
-        counts == 0,
-        jnp.where(probabilities[:, None] == 1, counts == size, weights),
-    )
-    return jnp.where((counts >= 0) & (counts <= size), weights, 0.0)
-
-
-@_binomial_weights.defjvp
-def _binomial_weights_jvp(size, primals, tangents):
-    """Apply the lower-degree binomial identity, including at endpoints."""
-    counts, logchoose, probabilities = primals
-    _, dlogchoose, dprobabilities = tangents
-    weights = _binomial_weights(size, counts, logchoose, probabilities)
-    if size == 0:
-        derivative = jnp.zeros_like(weights)
-    else:
-        # d B[n,j]/dp = n*(B[n-1,j-1] - B[n-1,j]). Reusing this
-        # rule recursively also gives finite, matched higher derivatives.
-        # size is a static nondifferentiable integer, so math.log supplies a
-        # trace-time constant; counts/logchoose/probabilities remain JAX values.
-        left_logchoose = logchoose + jnp.log(jnp.maximum(counts, 1)) - math.log(size)
-        right_logchoose = (
-            logchoose + jnp.log(jnp.maximum(size - counts, 1)) - math.log(size)
-        )
-        derivative = size * (
-            _binomial_weights(size - 1, counts - 1, left_logchoose, probabilities)
-            - _binomial_weights(size - 1, counts, right_logchoose, probabilities)
-        )
-    return weights, weights * dlogchoose + derivative * dprobabilities[:, None]
+    """Bind endpoint-safe weights with rules preserved through nested transforms."""
+    return _BinomialWeights(
+        jax.typeof(counts),
+        jax.typeof(logchoose),
+        jax.typeof(probabilities),
+        size=size,
+    )(counts, logchoose, probabilities)
 
 
 def _expect_boundary(

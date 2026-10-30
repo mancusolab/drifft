@@ -5,30 +5,11 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
-from jax.scipy.special import gammaln, xlog1py, xlogy
+from _reference import dense_transition
 
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-
-
-def dense_transition(source_ne, destination_ne, strength):
-    """Build a binomial reference independently of either approximate backend."""
-    frequency = jnp.arange(2 * source_ne + 1) / (2 * source_ne)
-    # Absorbing rows are exact and independent of selection; differentiate only
-    # interior probabilities to avoid log derivatives at zero and one.
-    probability = drifft.Underdominance(strength)(frequency[1:-1])[:, None]
-    copies = 2 * destination_ne
-    count = jnp.arange(copies + 1, dtype=jnp.float64)[None, :]
-    interior = jnp.exp(
-        gammaln(copies + 1)
-        - gammaln(count + 1)
-        - gammaln(copies - count + 1)
-        + xlogy(count, probability)
-        + xlog1py(copies - count, -probability)
-    )
-    endpoints = jnp.eye(copies + 1)[jnp.array([0, copies])]
-    return jnp.concatenate([endpoints[:1], interior, endpoints[1:]])
 
 
 @pytest.mark.parametrize("backend", [drifft.FFT, drifft.NUFFT])

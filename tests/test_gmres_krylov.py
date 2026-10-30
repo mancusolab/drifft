@@ -8,10 +8,10 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 import pytest
-from test_demography import dense_transition
+from _reference import dense_transition
 
 import drifft
-from drifft._epochs import _PowerProblem
+from drifft._evolution.problem import _PowerProblem
 
 jax.config.update("jax_enable_x64", True)
 
@@ -103,7 +103,7 @@ def test_gmres_composed_demography_gradients(backend_type):
 
 def test_failed_gmres_budget_and_residual():
     """A finite underresolved shifted solve must retain an explicit failure flag."""
-    from drifft._krylov import _gmres_power_action
+    from drifft._evolution.projection import _gmres_power_action
 
     diagonal = jnp.linspace(0.01, 0.999, 40)
     operator = lx.FunctionLinearOperator(
@@ -113,7 +113,7 @@ def test_failed_gmres_budget_and_residual():
         operator, jnp.ones(40), 100, lambda x: x, jnp.zeros(40), False, jnp.asarray(1.0)
     )
     action, stats = _gmres_power_action(problem, 8, max_steps=1, restart=2)
-    assert not action[-1]
+    assert not action.success
     assert stats["num_steps"] > 0
     assert jnp.isfinite(stats["max_residual_norm"])
 

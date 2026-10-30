@@ -27,7 +27,7 @@ def test_spectral_backend_degree_and_storage():
 @pytest.mark.parametrize("degree", [1, 2, 3, 16])
 def test_cosine_coefficients(degree):
     """Recover independent cosine modes with the DCT endpoint convention."""
-    from drifft.backends._spectral import compute_cosine_coefficients
+    from drifft._polynomial import compute_cosine_coefficients
 
     theta = np.pi * np.arange(degree + 1) / degree
     coefficients = np.random.default_rng(degree).normal(size=degree + 1)

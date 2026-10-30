@@ -6,6 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.benchmark
+
 
 def test_demography_benchmark_runs_isolated_cold_and_warm_passes(tmp_path):
     """Compare both backends on a small changing-size history and retain provenance."""

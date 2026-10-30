@@ -18,11 +18,13 @@ visits = result.visits
 
 ## Solver settings and limitations
 
-The solver choices are `solver="gmres"` (default) and `"bicgstab"`. Defaults are
-`rtol=1e-9`, `atol=1e-11`, `max_steps=2000`, `restart=50` (GMRES only). There is
-no conjugate-gradient option: the transition need not be symmetric. The solver
-uses the interior transition without renormalizing it. Finite visits require
-eventual endpoint hitting.
+Choose solver tolerances for the residual you need, then check `converged`
+before interpreting the visit vector. Long absorption times can amplify errors
+in the underlying transition even when the solve converges.
+
+Choose `solver="gmres"` (default) or `"bicgstab"`; adjust `rtol`, `atol`,
+and iteration limits as needed. The [transition API](../api/transitions.md)
+lists defaults and available settings.
 
 `result.converged` requires a successful Lineax status, finite output, and a
 fresh infinity-norm residual no larger than `atol+rtol`. Always check it.
@@ -30,9 +32,7 @@ fresh infinity-norm residual no larger than `atol+rtol`. Always check it.
 `num_steps` is not a count of individual matvecs. Failures retain the candidate
 iterate for diagnosis, but it must not be treated as a valid occupation vector.
 
-A small residual establishes convergence for the approximate transition.
-Long absorption times can amplify approximation errors, especially near
-neutrality. Compare visits and total absorption time under tighter backend
-settings; use a dense reference for small populations. Check gradients separately
-when using visits in an inference objective. Convergence alone does not certify
-accuracy for the exact Wright–Fisher model.
+Compare visits and total absorption time under tighter backend settings,
+using the [accuracy guide](numerics.md). The
+[model chapter](model.md#interior-states-and-expected-visits) derives the
+occupation equation and its transience requirement.

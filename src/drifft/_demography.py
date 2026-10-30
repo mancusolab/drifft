@@ -1,23 +1,18 @@
-"""Population histories and their matrix-free demographic transitions."""
+"""Population histories and their demographic transitions."""
 
 # pattern: Functional Core
 import operator
 from collections.abc import Callable, Iterable
-from typing import NamedTuple, cast, final
+from typing import NamedTuple, final
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from ._epochs import (
-    AbstractEpochMethod,
-    EvolutionStatus,
-    Sequential,
-    _epoch_result,
-    _prepare_epoch,
-)
+from ._evolution.methods import AbstractEpochMethod, Sequential, _prepare_evolution
+from ._evolution.preparation import validate_domain
+from ._evolution.problem import EvolutionStatus, _epoch_result
 from ._frequency import AbstractFrequencyMap
-from ._jacobi import Jacobi
 from ._operator import Transition
 from .backends import AbstractTransitionBackend
 
@@ -112,6 +107,14 @@ class IntervalDiagnostics(NamedTuple):
     includes both the hold and final boundary generation. `error_estimate`
     covers only the hold power approximation, while `converged` and `status`
     also account for nonfinite boundary output.
+
+    **Fields:**
+
+    - `source_ne`, `destination_ne`: Python integers giving diploid sizes.
+    - `generations`: Interval duration, including its final boundary generation.
+    - `error_estimate`: Scalar absolute L1 hold-power estimate, zero without a hold.
+    - `converged`: Scalar boolean for the complete interval.
+    - `status`: First hold or boundary failure, or successful `EvolutionStatus`.
     """
 
     source_ne: int
@@ -122,11 +125,35 @@ class IntervalDiagnostics(NamedTuple):
     status: EvolutionStatus
 
 
+# Document the generated constructor without replacing its implementation.
+IntervalDiagnostics.__new__.__module__ = __name__
+IntervalDiagnostics.__new__.__doc__ = r"""Construct an immutable result without validation.
+
+**Arguments:**
+
+The fields documented on `IntervalDiagnostics`, supplied by position or keyword.
+
+**Returns:**
+
+An `IntervalDiagnostics` holding the supplied values. Normal evolution calls construct this
+result automatically; constructing it directly performs no numerical checks.
+"""
+
+
 class DemographicResult(NamedTuple):
     r"""Final mass and per-interval numerical outcomes, without a total error certificate.
 
     `status` retains the first numerical failure. Identity histories have empty
     `diagnostics` and still check mass finiteness. No factorization or basis is retained.
+
+    **Fields:**
+
+    - `distribution`: Float64 mass of length `2 * final_ne + 1`, or
+      `2 * final_ne - 1` for segregating evolution; not normalized.
+    - `converged`: Scalar boolean, true when the entire history succeeded.
+    - `status`: First numerical failure in chronological order, or success.
+    - `diagnostics`: Tuple of `IntervalDiagnostics`, one per interval in order.
+      Local error estimates are not a bound on the total propagated error.
     """
 
     distribution: jax.Array
@@ -135,13 +162,28 @@ class DemographicResult(NamedTuple):
     diagnostics: tuple[IntervalDiagnostics, ...]
 
 
+# Document the generated constructor without replacing its implementation.
+DemographicResult.__new__.__module__ = __name__
+DemographicResult.__new__.__doc__ = r"""Construct an immutable result without validation.
+
+**Arguments:**
+
+The fields documented on `DemographicResult`, supplied by position or keyword.
+
+**Returns:**
+
+A `DemographicResult` holding the supplied values. Normal evolution calls construct this
+result automatically; constructing it directly performs no numerical checks.
+"""
+
+
 @final
 class DemographicTransition(eqx.Module):
     r"""Compose constant-size evolution and rectangular boundary transitions.
 
     An interval of g generations holds its source size for g-1 generations,
-    then changes size on its last generation. FFT/NUFFT with Sequential provide
-    a matched expectation transpose. Both Krylov methods support all three
+    then changes size on its last generation. Sequential provides
+    a matched expectation transpose. Both Krylov methods support all
     backends for forward evolution only. Frequency-map parameters remain differentiable array leaves.
     """
 
@@ -149,14 +191,14 @@ class DemographicTransition(eqx.Module):
     frequency_map: AbstractFrequencyMap
     method: AbstractEpochMethod
     _sizes: tuple[int, ...]
-    _backends: tuple[AbstractTransitionBackend | Jacobi, ...]
+    _backends: tuple[AbstractTransitionBackend, ...]
     _boundary_backends: tuple[AbstractTransitionBackend, ...]
 
     def __init__(
         self,
         demography: Demography,
         *,
-        backend: Callable[[int], AbstractTransitionBackend | Jacobi],
+        backend: Callable[[int], AbstractTransitionBackend],
         frequency_map: AbstractFrequencyMap,
         boundary_backend: Callable[[int], AbstractTransitionBackend] | None = None,
         method: AbstractEpochMethod | None = None,
@@ -169,7 +211,7 @@ class DemographicTransition(eqx.Module):
         - `backend`: Factory receiving a gene-copy count for constant-size geometry.
         - `frequency_map`: Process shared by every generation.
         - `boundary_backend`: Factory for rectangular transitions; defaults to the
-          hold geometry for FFT/NUFFT. Required explicitly for Jacobi.
+          hold geometry for all backends.
         - `method`: Geometry-free epoch algorithm; defaults to `Sequential()`.
 
         **Returns:**
@@ -180,8 +222,10 @@ class DemographicTransition(eqx.Module):
         **Raises:**
 
         `TypeError` for unsupported combinations, including histories without holds;
-        `ValueError` for incorrect backend sizes. RationalKrylov selects internal
-        GMRES for FFT/NUFFT; no dense population matrix is materialized.
+        `ValueError` for incorrect backend sizes. RationalKrylov selects dense LU
+        for Jacobi and GMRES for other transition backends. Dense is intended for
+        small reference calculations; optimized backends avoid a dense population
+        matrix.
         """
         if not isinstance(demography, Demography):
             raise TypeError("demography must be a Demography")
@@ -201,21 +245,13 @@ class DemographicTransition(eqx.Module):
         self._sizes = tuple(dict.fromkeys(demography.ne))
         self._backends = tuple(backend(2 * size) for size in self._sizes)
         for size, geometry in zip(self._sizes, self._backends, strict=True):
-            if not isinstance(geometry, (AbstractTransitionBackend, Jacobi)):
-                raise TypeError("backend must return transition or Jacobi geometry")
+            if not isinstance(geometry, AbstractTransitionBackend):
+                raise TypeError("backend must return an AbstractTransitionBackend")
             if geometry.gene_copies != 2 * size:
                 raise ValueError("backend must preserve the requested gene-copy count")
             self.method.validate(geometry, frequency_map)
         if boundary_backend is None or boundary_backend is backend:
-            if not all(
-                isinstance(item, AbstractTransitionBackend) for item in self._backends
-            ):
-                raise TypeError(
-                    "Jacobi requires an explicit FFT or NUFFT boundary_backend"
-                )
-            self._boundary_backends = cast(
-                tuple[AbstractTransitionBackend, ...], self._backends
-            )
+            self._boundary_backends = self._backends
         else:
             self._boundary_backends = tuple(
                 boundary_backend(2 * size) for size in self._sizes
@@ -308,12 +344,14 @@ class DemographicTransition(eqx.Module):
         size = 2 * self.demography.initial_ne + (-1 if segregating else 1)
         if distribution.shape != (size,):
             raise ValueError(f"distribution must have {size} entries")
-        # Validate every prepared Jacobi domain even for identity/boundary-only histories.
+        # Validate every prepared domain even for identity/boundary-only histories.
         for backend in self._backends:
-            if isinstance(backend, Jacobi):
-                distribution, _ = backend._validate_mass(
-                    distribution, self.frequency_map
-                )
+            distribution = validate_domain(
+                backend,
+                distribution,
+                self.frequency_map,
+                reduced=not isinstance(self.method, Sequential),
+            )
         initial_result = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
         status = initial_result.status
         diagnostics = []
@@ -323,6 +361,9 @@ class DemographicTransition(eqx.Module):
             self.demography.generations,
             strict=True,
         ):
+            # The final generation belongs to the rectangular boundary action.
+            # Holding for duration instead would add an extra generation and,
+            # in segregating mode, an extra immigration event at the source size.
             error = jnp.asarray(0.0)
             interval_status = EvolutionStatus.successful
             if duration > 1:
@@ -331,7 +372,8 @@ class DemographicTransition(eqx.Module):
                     if segregating
                     else None
                 )
-                problem = _prepare_epoch(
+                problem = _prepare_evolution(
+                    self.method,
                     self._backends[self._sizes.index(source)],
                     distribution,
                     self.frequency_map,
@@ -376,7 +418,7 @@ class DemographicTransition(eqx.Module):
                 distribution,
                 ~converged,
                 "demographic evolution failed: inspect interval diagnostics with throw=False; "
-                "check input mass and increase dimension or use FFT/NUFFT with Sequential",
+                "check input mass and increase dimension or use Sequential",
             )
         return DemographicResult(distribution, converged, status, tuple(diagnostics))
 
@@ -404,6 +446,8 @@ class DemographicTransition(eqx.Module):
         values = jnp.asarray(values, dtype=jnp.float64)
         if values.shape != (2 * self.demography.final_ne + 1,):
             raise ValueError("values must have 2 * final_ne + 1 entries")
+        # Transposition reverses composition: apply the last boundary's
+        # expectation first, then its source-size hold, moving backward in time.
         for source, destination, duration in reversed(
             tuple(
                 zip(
