@@ -6,5 +6,9 @@
     | replace("typing.Union[jax.Array, numpy.ndarray, numpy.bool, numpy.number, bool, int, float, complex]", "ArrayLike")
     | replace("typing.Union[jax.Array,numpy.ndarray,numpy.bool,numpy.number,bool,int,float,complex]", "ArrayLike")
     | replace("equinox._module._module.Module", "equinox.Module")
+    | replace("collections.abc.Callable", "Callable")
+    | replace("drifft._frequency.AbstractFrequencyMap", "drifft.AbstractFrequencyMap")
+    | replace("drifft._backend._base.AbstractTransitionBackend", "drifft.AbstractTransitionBackend")
+    | replace("drifft._evolution.methods.AbstractEpochMethod", "drifft.AbstractEpochMethod")
   -}}
 {%- endmacro -%}
