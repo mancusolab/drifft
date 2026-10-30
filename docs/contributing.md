@@ -31,6 +31,31 @@ and derivative transformations. Test count alone is therefore a poor runtime
 measure. Reuse compiled callables across equivalent parameter cases while
 retaining checks of distinct numerical regimes and failure paths.
 
+## Continuous integration
+
+Checks run automatically on pull requests and pushes to main, with manual
+dispatch available for other branches. Superseded checks runs are cancelled.
+Pre-commit and distribution builds run once; both Python 3.12 and 3.13 run the
+complete test suite across two parallel jobs each.
+
+Reproduce an individual test job with:
+
+```bash
+uv run pytest -q --ci-shard=1 --durations=20
+uv run pytest -q --ci-shard=2 --durations=20
+```
+
+The two shards are disjoint and together include every test. Whole modules stay
+in one process to reuse JAX compilation, including the shared demographic
+reference. New test modules enter shard 2 automatically. Default pytest still
+runs everything without a shard option, including benchmark and slow categories.
+
+CI uploads per-shard JUnit timing reports as artifacts. Use those timings to
+rebalance the module set in `tests/conftest.py` when costs shift. Parallel jobs
+reduce elapsed time by using more concurrent runners; they do not reduce the
+numerical coverage or guarantee fewer billed runner minutes. Dependency wheels
+and pre-commit environments are cached; tests retain cold JAX compilation.
+
 ## Naming and code organization
 
 Use nouns for models, prepared geometry, and results; use verbs for operations.

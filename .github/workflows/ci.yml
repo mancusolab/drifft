@@ -2,22 +2,59 @@ name: checks
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Cached FINUFFT builds must run on different hosted-runner CPUs.
+  # Match jax-finufft's portable wheel builds instead of -march=native.
+  CMAKE_ARGS: "-DFINUFFT_ARCH_FLAGS="
+
 jobs:
-  checks:
+  quality:
     runs-on: ubuntu-latest
-    env:
-      # Cached FINUFFT builds must run on different hosted-runner CPUs.
-      # Match jax-finufft's portable wheel builds instead of -march=native.
-      CMAKE_ARGS: "-DFINUFFT_ARCH_FLAGS="
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.24"
+          python-version: "3.12"
+          cache-suffix: finufft-portable-v1
+      - name: Install FFTW development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfftw3-dev
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Identify hook interpreter
+        id: python
+        run: echo "version=$(uv run --no-sync python -VV | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Cache pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ runner.arch }}-${{ steps.python.outputs.version }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run quality checks
+        run: uv run --locked --no-sync pre-commit run --all-files
+      - name: Build distributions
+        run: uv build
+
+  tests:
+    name: tests (${{ matrix.python-version }}, shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
+        shard: ["1", "2"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -30,7 +67,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libfftw3-dev
-      - run: uv sync --locked
-      - run: uv run pre-commit run --all-files
-      - run: uv run pytest -p no:capture -v
-      - run: uv build
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run complete test shard
+        run: >-
+          uv run --locked --no-sync pytest -q --ci-shard=${{ matrix.shard }}
+          --durations=20
+          --junitxml=test-results/pytest-${{ matrix.python-version }}-${{ matrix.shard }}.xml
+      - name: Upload test timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pytest-${{ matrix.python-version }}-${{ matrix.shard }}
+          path: test-results/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
