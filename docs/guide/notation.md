@@ -20,7 +20,7 @@ transitions. The matrix orientation fixes how propagation and expectation relate
 | Source and destination allele counts | $i,j$ |
 | Allele frequency | $x$, with $x_i=i/M_s$ |
 | Offspring frequency after the full frequency map | $q_\theta(x)$; omit the subscript when parameters are implicit |
-| Model parameter collection | $\theta$ |
+| Model parameter collection and its dimension | $\theta,n_\theta$ |
 | Selection coefficients and dominance | $s_{\mathrm{het}},s_{\mathrm{hom}},h$ |
 | Multiplicative fitness ratio | $\rho$ (API parameter `r`) |
 | Directional mutation rates | $\mu_{0\to1},\mu_{1\to0}$ |
@@ -28,7 +28,8 @@ transitions. The matrix orientation fixes how propagation and expectation relate
 | Population mass column vector | $v_t$ |
 | Observable or destination-value vector | $f$ |
 | Generation index and interval duration | $t,g$ |
-| Interior transition and expected-visits vector | $Q,u$ |
+| Exact and represented interior transitions | $Q,\widetilde Q$ |
+| Expected-visits vector | $u$ |
 | Immigration/source vector | $b$ |
 
 Rows of $P$ index source states; columns index destination states. Vectors
@@ -49,6 +50,7 @@ the representations; each algorithm chapter defines its construction.
 | Concept | Symbol |
 | --- | --- |
 | Prepared forward operator; input and output working states | $A;\ z,y$ |
+| Represented forward population operator | $\widetilde P^T$ |
 | Prepared exponent; reconstruction map and offset | $k;\ R,c$ |
 | Working dimension and Krylov basis dimension | $d,m$ |
 | Krylov basis and projected operator | $V_m$, $H_m$ |
@@ -63,8 +65,10 @@ the representations; each algorithm chapter defines its construction.
 | FFT log-odds spacing | $\Delta_{\mathrm{logit}}$ |
 
 Use $k$ for the prepared exponent and $g$ for physical generations. A tilde
-marks a numerical approximation; $A$ is the represented working operator,
-and $T=\widetilde P^T$ abbreviates forward propagation in the autodiff chapter.
+marks a numerical approximation. $P$ and $\widetilde P$ act on population
+observables; $\widetilde P^T$ propagates population mass. $A$ is the operator
+in the coordinates used for the power calculation: $\widetilde P^T$ in
+population coordinates, or $H_{\mathrm J}^T$ in reduced Jacobi coordinates.
 
 Polynomial families retain the standard notation $T_j,U_j$ for Chebyshev,
 $P_j^{(\alpha,\beta)}$ for Jacobi, and $C_j^{(\lambda)}$ for Gegenbauer;
@@ -76,9 +80,28 @@ $\phi_j$ denotes a normalized basis. These conventions follow
 Derivative notation distinguishes perturbations of a calculation from
 sensitivities propagated backward from its output.
 
-A dot denotes a directional derivative; a bar denotes a reverse-mode cotangent.
-Write $\mathcal L_f(A,\Delta A)$ for a matrix function's Fréchet derivative,
-and $\mathcal L_k$ for the power function $f(A)=A^k$. The matrix-function
+A dot denotes a directional derivative; a bar denotes the cotangent of the
+same named quantity. Subscripts identify coordinates or projection spaces;
+they do not change the underlying symbol's role.
+
+| Concept | Symbol |
+| --- | --- |
+| Scalar objective | $\ell$ |
+| Population, working-state, and operator cotangents | $\bar v_t,\bar z,\bar y,\bar A$ |
+| Coupled tangent/state operator and vectors | $A_{\mathrm{blk}},z_{\mathrm{blk}},y_{\mathrm{blk}}$ |
+| Coupled Krylov basis and projected operator (at most $2m$ columns) | $V_{2m,\mathrm{blk}},H_{2m,\mathrm{blk}}$ |
+| Backward/forward adjoint bases (at most $m$ columns each) | $V_{m,\mathrm L},V_{m,\mathrm R}$ |
+| Their projected operators and seeds | $H_{m,\mathrm L},H_{m,\mathrm R};\ \bar y_{m,\mathrm L},z_{m,\mathrm R}$ |
+| Projected operator-cotangent core and lifted left factor | $C,F$ |
+| Rational Krylov shift and shifted operator | $\tau,S=I+\tau(I-A)$ |
+| Expected-visits incoming cotangent and adjoint solve variable | $\bar u,\eta_u$ |
+
+The [autodiff chapter](../methods/autodiff.md) defines the labelled constructions.
+It uses $\bar\theta_A$ for the contribution to the parameter cotangent through
+$A$ alone; other parameter-dependent inputs contribute separately.
+
+Write $\mathcal L_\varphi(A,\Delta A)$ for the Fréchet derivative of a matrix function $\varphi$,
+and $\mathcal L_k$ for the power function $\varphi(A)=A^k$. The matrix-function
 literature commonly uses $E$ for the perturbation; we use $\Delta A$ to avoid
 confusion with the Jacobi transform. See
 [Kandolf et al.](https://arxiv.org/abs/2008.12926).

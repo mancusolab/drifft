@@ -1,369 +1,497 @@
-# Automatic differentiation and gradients
+# Differentiating Wright–Fisher evolution
 
-Here we present the mathematical aspects of differentiating Wright–Fisher
-evolution and how drifft computes these derivatives. We distinguish the
-one-generation transition, the power used to evolve through an interval, and
-the encoding and reconstruction around that power. Each derivative identity
-below is paired with the operation that implements it.
+Here we derive the sensitivities of Wright–Fisher evolution and the numerical
+rules drifft uses to compute them. The derivation proceeds from the first
+variation of a transition to adjoints of matrix powers, their Krylov
+approximations, and implicit derivatives of occupation equations.
+Notation follows the [shared conventions](../guide/notation.md); practical
+usage and validation are covered in the [user guide](../guide/numerics.md#differentiating-biological-parameters).
 
-!!! note "Advanced: matrix-power differentiation"
+## Problem and assumptions
 
-    The derivations introduce Fréchet derivatives and use Krylov projection to
-    compute sensitivities without forming a matrix-sized operator cotangent.
-    Read the [Krylov chapter](jacobi_krylov.md) for the projection construction,
-    or start with the [selection-sensitivity example](../examples/selection_sensitivity.md)
-    and [derivative support](#accuracy-and-limitations) for practical use.
+Differentiation acts on model parameters and states while population sizes,
+generation counts, and numerical dimensions remain fixed. We distinguish the
+exact biological operator from its numerical representation so that the target
+of each derivative is explicit.
 
-## Problem and representation
-
-Evolution derivatives combine changes in the transition operator with changes
-in the input mass. Separating those contributions gives rules that work for
-both population and reduced coordinates.
-
-Let $\theta$ collect the differentiable model parameters and $v$ be a column
-vector of population mass, following the [shared notation](../guide/notation.md).
-The [model chapter](../guide/model.md) defines the exact expectation matrix $P$.
-For $g$ generations at fixed size and parameters, the exact target is
-$v_g=(P^T)^g v_0$.
-
-Write $T=\widetilde P^T$ for the represented forward operator. The calculations
-below use
+Let $\theta\in\mathbb R^{n_\theta}$ collect the $n_\theta$ differentiable inputs. The exact
+one-generation expectation matrix is $P_t(\theta)$, and its numerical
+representation is $\widetilde P_t(\theta)$. Both act on observables; their
+transposes propagate population mass.
+With a source vector $b_t$ added after each generation,
 
 $$
-v_{t+1}=T(\theta)v_t,
+v_{t+1}=\widetilde P_t^T  v_t+b_t,\qquad t=0,\ldots,g-1,
+\qquad \ell=\ell(v_g,\theta).
 $$
 
-and differentiate this numerical representation. Its approximation error is
-separate from the error of a method used to compute the power $T^g$.
+The matrices may be rectangular at population-size changes. All first-variation
+identities below assume differentiability at the parameters considered. A dot
+means differentiation along a direction $\dot\theta$, including any induced
+changes in $v_0$ and $b_t$. Transposes and inner products are real.
 
-| Mathematical operation | drifft operation |
-| --- | --- |
-| $\widetilde P f$: destination values to source expectations | `Transition.expect(values)` |
-| $Tv$: source mass to destination mass | `Transition.advance(distribution)` |
-| $T^g v$: evolution across a constant-size interval | An evolution method's `advance(...)` |
-| Composition of intervals and size changes | `DemographicTransition.advance(...)` |
+Prepared grids, ranks, quadrature nodes, and interpolation settings are held
+fixed. Selection-dependent operator entries and transforms are differentiated.
+The identities are exact for the represented operators; this alone does not
+establish accuracy relative to the exact Wright–Fisher process.
 
-Selection coefficients, mutation rates, initial mass and immigration can be
-differentiated. Population sizes, generation counts, ranks and method settings
-are fixed configuration. Prepared backend geometry is held fixed while dynamic
-model parameters change.
+## First variation and matrix powers
 
-### The prepared power
+The first variation separates perturbations already present in the state from
+those introduced by the next transition. Iterating this identity gives the
+sensitivity of a whole history without a stationarity or mixing assumption.
 
-Encoding and reconstruction surround the power calculation. Keeping them
-explicit ensures their parameter dependence is included in the derivative.
-An evolution method receives a working-state problem
+Expanding one step to first order,
 
 $$
-y=A^k z,\qquad v_{\mathrm{out}}=Ry+c.
+\begin{aligned}
+(\widetilde P_t^T +\varepsilon\dot{\widetilde P}_t^{\,T})(v_t+\varepsilon\dot v_t)
+ +b_t+\varepsilon\dot b_t
+&=\widetilde P_t^T v_t+b_t\\
+&\quad+\varepsilon(\widetilde P_t^T \dot v_t+\dot{\widetilde P}_t^{\,T}v_t+\dot b_t)
+ +O(\varepsilon^2).
+\end{aligned}
 $$
 
-Here $A$ is the working-state operator, $z$ the encoded initial state, $k$ a
-nonnegative integer exponent, $R$ a linear reconstruction map, and $c$ an
-output offset. These need not have the same dimensions as the population state.
+Hence
 
-For an interval without immigration:
+$$
+\boxed{\dot v_{t+1}=\widetilde P_t^T \dot v_t+\dot{\widetilde P}_t^{\,T}v_t+\dot b_t.}
+$$
 
-| Representation | $z$ | $A$ | $k$ | $R$ |
+`Sequential` implements the corresponding coupled state/tangent recurrence.
+The action $\dot{\widetilde P}_t^{\,T}v_t$ comes from differentiating the operator action with
+its vector argument held fixed; no explicit derivative matrix is required.
+
+### Constant-operator power
+
+Within a constant-size interval, repeated application becomes a matrix power.
+Its first variation sums the contributions from perturbing each factor in the
+product; this is the derivative subsequently approximated by Krylov methods.
+
+The operator being powered depends on the coordinates used for evolution.
+In population coordinates it is $\widetilde P^T$. With Jacobi's factorization
+$\widetilde P=DE$, evolution instead powers the smaller matrix
+$H_{\mathrm J}^T=(ED)^T$ between encoding and reconstruction.
+
+We use $A$ only for this **working-coordinate operator**, with the following
+explicit correspondence for an interval without immigration:
+
+| Coordinates | Operator $A$ | Input $z$ | Exponent $k$ | Population output |
 | --- | --- | --- | --- | --- |
-| Population coordinates: Sequential with any backend; Krylov with FFT, NUFFT or Dense | $v_0$ | $T$ | $g$ | $I$ |
-| Reduced coordinates: Jacobi with Krylov, $g\ge1$ | $D^T v_0$ | $H_{\mathrm J}^T$, where $H_{\mathrm J}=ED$ | $g-1$ | $E^T$ |
+| Population | $\widetilde P^T$ | $v_0$ | $g$ | $v_g=y$ |
+| Jacobi, $g\ge1$ | $H_{\mathrm J}^T$ | $D^Tv_0$ | $g-1$ | $v_g=E^Ty$ |
 
-The Jacobi encoding includes one selected transition factor, hence $k=g-1$;
-zero generations is an identity. The [Jacobi chapter](jacobi.md) derives this
-representation and its approximation error.
-
-## Forward sensitivities: the JVP
-
-A JVP measures how the output changes along one parameter or state perturbation.
-For a matrix power, that change is a sum over the steps at which the operator
-can be perturbed.
-
-A dot denotes a directional derivative along a supplied perturbation of
-$\theta$. For $y=A^k z$, define the Fréchet derivative of the matrix power by
+The common power calculation is $y=A^kz$. Thus $P$ always denotes the
+population expectation matrix, whereas $A$ denotes the operator in the
+coordinates actually evolved; it may even have a different dimension.
+The [coordinate-transform derivation](#jacobi-coordinates) explains the Jacobi
+row. The product rule for this common calculation gives
 
 $$
 \mathcal L_k(A,\Delta A)
+:=\mathrm D(A^k)[\Delta A]
 =\sum_{j=0}^{k-1}A^{k-1-j}(\Delta A)A^j,
 \qquad \mathcal L_0(A,\Delta A)=0.
 $$
 
-The joint operator-and-state derivative is
+This linear map in $\Delta A$ is the Fréchet derivative of the power function.
+Including the input-state perturbation gives
 
 $$
 \boxed{\dot y=\mathcal L_k(A,\dot A)z+A^k\dot z.}
 $$
 
-The first term changes the operator at each possible step; the second changes
-the initial state. This is a finite-time derivative and requires neither a
-stationary distribution nor ergodicity.
+For $k=0$, this reduces to $\dot y=\dot z$. No inverse of $A$ appears, so
+singular transitions and absorbing states do not invalidate the identity.
 
-### Sequential: evolve the state and tangent together
+### Coupled block representation
 
-Sequential evolution can carry a tangent alongside the state, applying the
-product rule at each generation. Set $z_0=z$ and $\dot z_0=\dot z$. Differentiate each step:
+The tangent recurrence can itself be evaluated as a power action. This lets
+drifft apply its evolution algorithms to the derivative without constructing
+the full Fréchet derivative as a linear operator on matrices.
+
+Define the coupled operator and its input and output states by
 
 $$
-\begin{aligned}
-z_{t+1}&=Az_t,\\
-\dot z_{t+1}&=A\dot z_t+\dot A z_t.
-\end{aligned}
+A_{\mathrm{blk}}=\begin{pmatrix}A&\dot A\\0&A\end{pmatrix},\quad
+z_{\mathrm{blk}}=\begin{pmatrix}\dot z\\z\end{pmatrix},\quad
+y_{\mathrm{blk}}=\begin{pmatrix}\dot y\\y\end{pmatrix}.
 $$
 
-`Sequential` implements this coupled recurrence. The action $\dot A z_t$
-comes from a filtered JVP of the operator's matrix-vector action, so the same
-rule works for explicit matrices and callable operators.
+Block multiplication and induction give
 
-### Krylov: approximate a coupled block power
+$$
+A_{\mathrm{blk}}^k=
+\begin{pmatrix}A^k&\mathcal L_k(A,\dot A)\\0&A^k\end{pmatrix},
+\qquad
+\boxed{
+A_{\mathrm{blk}}^k\begin{pmatrix}\dot z\\z\end{pmatrix}
+=\begin{pmatrix}\dot y\\y\end{pmatrix}.}
+$$
 
-Stacking the state and tangent turns the sensitivity into another power
-problem, which either Krylov method can approximate. The recurrence becomes:
+Indeed, the upper-right block at step $k+1$ is
+$A\mathcal L_k(A,\dot A)+\dot A A^k=\mathcal L_{k+1}(A,\dot A)$.
+For a pure state perturbation, $\dot A=0$, only the action $A^k\dot z$ is needed.
+
+## Adjoint and parameter gradients
+
+An adjoint contracts the first variation with a scalar objective, avoiding a
+separate tangent calculation for every parameter. The same pairing yields both
+the demographic-history gradient and the matrix cotangent used in the power rule.
+
+Set $\bar v_g=\nabla_{v_g}\ell$ and define
+$\bar v_t=\widetilde P_t\bar v_{t+1}$. Pairing the tangent recurrence with
+$\bar v_{t+1}$ gives
+
+$$
+\bar v_{t+1}^T\dot v_{t+1}-\bar v_t^T\dot v_t
+=\bar v_{t+1}^T(\dot{\widetilde P}_t^{\,T}v_t+\dot b_t).
+$$
+
+Summing telescopes, so
+
+$$
+\dot\ell
+=\bar v_0^T\dot v_0
+ +\sum_{t=0}^{g-1}\bar v_{t+1}^T(\dot{\widetilde P}_t^{\,T}v_t+\dot b_t)
+ +\left.\partial_\theta\ell\right|_{v_g}\dot\theta.
+$$
+
+Consequently, for parameter $\theta_a$,
 
 $$
 \boxed{
-\begin{pmatrix}A&\dot A\\0&A\end{pmatrix}^{k}
-\begin{pmatrix}\dot z\\z\end{pmatrix}
-=
-\begin{pmatrix}\dot y\\y\end{pmatrix}.
-}
+\frac{\mathrm d\ell}{\mathrm d\theta_a}
+=\bar v_0^T\frac{\partial v_0}{\partial\theta_a}
+ +\sum_{t=0}^{g-1}\bar v_{t+1}^T
+ \left(\frac{\partial\widetilde P_t^T}{\partial\theta_a}v_t
+       +\frac{\partial b_t}{\partial\theta_a}\right)
+ +\left.\frac{\partial\ell}{\partial\theta_a}\right|_{v_g}.}
 $$
 
-Both Krylov methods approximate this block action with their respective
-projection algorithms. The doubled state can use up to twice `dimension`
-basis vectors. For a pure state perturbation, $\dot A=0$, the derivative
-reduces to another power action $A^k\dot z$.
+This also covers rectangular boundary transitions: the transpose maps each
+adjoint back to the preceding state's dimension.
 
-## Reverse sensitivities: the VJP
+### Matrix cotangent of a power
 
-Reverse mode propagates sensitivity from a scalar objective back to the
-initial state and model parameters. It avoids a separate forward sensitivity
-calculation for every parameter.
+For a constant operator, contributions from all steps can be collected into
+one matrix cotangent. This expression is useful for deriving a factored
+parameter pullback even when forming the matrix would be too expensive.
 
-Let $\ell(y)$ be a scalar objective and let $\bar y=\nabla_y\ell$ be the
-cotangent arriving at the power action. Define the forward and backward orbits
+For $y=A^kz$ and incoming cotangent $\bar y$, define
+$z_j=A^jz$ and $\bar z_j=(A^T)^{k-j}\bar y$. Thus $z_0=z$,
+$z_k=y$, $\bar z_k=\bar y$, and $\bar z_0=\bar z$: the bars consistently
+identify cotangents of the corresponding states. Then
 
 $$
-z_j=A^j z,\qquad
-\lambda_j=(A^T)^{k-j}\bar y,\qquad j=0,\ldots,k.
+\bar y^T\dot y
+=\bar z_0^T\dot z
+ +\sum_{j=0}^{k-1}\bar z_{j+1}^T\dot A z_j.
 $$
 
-Pairing the JVP with $\bar y$ gives the reverse sensitivities.
-
-Thus the input cotangent and matrix cotangent are
+Each operator contribution satisfies
+$\bar z_{j+1}^T\dot A z_j=\langle\bar z_{j+1}z_j^T,\dot A\rangle_F$,
+where $\langle X,Y\rangle_F=\operatorname{tr}(X^TY)$. Therefore
 
 $$
 \boxed{\bar z=(A^T)^k\bar y,\qquad
-G=\sum_{j=0}^{k-1}\lambda_{j+1}z_j^T,}
+\bar A=\sum_{j=0}^{k-1}(A^T)^{k-1-j}\bar y z^T(A^T)^j,}
+\qquad
+\dot\ell=\bar z^T\dot z+\langle \bar A,\dot A\rangle_F.
 $$
 
-where $\dot\ell=\bar z^T\dot z+\langle G,\dot A\rangle_F$ and
-$\langle U,V\rangle_F=\operatorname{tr}(U^TV)$.
-For $k=0$, $\bar z=\bar y$ and $G=0$.
+Thus $\bar A$ is the cotangent of $A$. For $k=0$, $\bar A=0$ and $\bar z=\bar y$.
+Sequential reverse mode follows by transposing its coupled derivative rule.
 
-### Compute operator cotangents without forming a large matrix
+## Krylov sensitivity approximations
 
-The matrix cotangent can be population-sized even when the final objective
-is scalar. A factored approximation lets drifft contract it with operator
-parameters without constructing that matrix.
+Krylov methods replace large power actions by projected ones. Forward and
+reverse sensitivities use their own projection spaces, rather than derivatives
+of the basis selected during the primal calculation.
 
-!!! note "Advanced: low-rank adjoints"
+!!! warning "Derivative target"
 
-    This derivation uses two Krylov projections and a block matrix power.
-    The [accuracy contract](#accuracy-and-limitations) is sufficient if you
-    only need to use and validate gradients.
+    drifft approximates $\mathrm D(A^kz)$, not the derivative of the executed
+    approximation $V_m(V_m^TAV_m)^kV_m^Tz$ with its input-dependent basis.
+    At finite dimension, these derivatives need not agree. The custom rule's
+    target is the mathematical power of the represented operator $A$.
 
-Sequential obtains reverse mode by transposing its coupled derivative rule;
-the initial-state transpose applies the transposed operator repeatedly.
+### Projected forward sensitivity
 
-Krylov approximates $G$ in two spaces: a basis $U$ for the backward orbit
-under $A^T$, and a basis $V$ for the forward orbit under $A$. Each space uses
-at most $m=$ `dimension` vectors. With
+Applying Krylov projection to the coupled block operator approximates the
+state and tangent together. The projection can depend on the supplied
+perturbation, so this numerical calculation needs a dedicated AD rule.
 
-$$
-H_{m,\mathrm L}=U^TA^TU,\quad H_{m,\mathrm R}=V^TAV,\quad
-\alpha=U^T\bar y,\quad \beta=V^Tz,
-$$
-
-the projected matrix cotangent is
+Let $V_{2m,\mathrm{blk}}$ be the basis constructed for
+$A_{\mathrm{blk}}$ with seed $z_{\mathrm{blk}}$, and define
 
 $$
-G\approx UCV^T,\qquad
-C=\sum_{j=0}^{k-1}H_{m,\mathrm L}^{k-1-j}\alpha\beta^T(H_{m,\mathrm R}^T)^j.
+H_{2m,\mathrm{blk}}
+=V_{2m,\mathrm{blk}}^T A_{\mathrm{blk}}
+ V_{2m,\mathrm{blk}}.
 $$
 
-The small matrix $C$ is the upper-right block of
+The projected action is
 
 $$
-\begin{pmatrix}H_{m,\mathrm L}&\alpha\beta^T\\0&H_{m,\mathrm R}^T\end{pmatrix}^{k}.
+y_{\mathrm{blk}}\approx
+V_{2m,\mathrm{blk}}
+H_{2m,\mathrm{blk}}^k
+V_{2m,\mathrm{blk}}^T z_{\mathrm{blk}}.
 $$
 
-drifft retains the factors $F=UC$ and $V$. For operator parameters $\theta$,
-it contracts their columns through VJPs of the operator action:
+The basis has at most $2m$ columns, where $m$ is the configured `dimension`.
+The `blk` label distinguishes this coupled projection from the primal
+$V_m,H_m$ pair. Polynomial and rational methods use their respective
+basis constructions from the [Krylov chapter](jacobi_krylov.md).
+For dense rational block solves, write $S=I+\tau(I-A)$, $\tau=k/8$. Then
 
 $$
-\bar\theta_A\approx
-\sum_i
-\left(\frac{\partial\,[A(\theta)V_i]}{\partial\theta}\right)^T F_i.
+I+\tau(I-A_{\mathrm{blk}})=
+\begin{pmatrix}S&-\tau\dot A\\0&S\end{pmatrix}.
 $$
 
-Here $F_i$ and $V_i$ are held fixed during each contraction. This returns
-cotangents in the operator's original parameter PyTree without materializing
-$G$ or a population-sized Jacobian.
-
-## Encoding, immigration and demographic histories
-
-Parameters can affect the transforms and source terms as well as the power.
-The chain rule connects those contributions across an entire demographic history.
-For
-$v_{\mathrm{out}}=Ry+c$ and $y=A^k z$,
+Assuming $S$ is invertible, the inverse has the block form
 
 $$
+[I+\tau(I-A_{\mathrm{blk}})]^{-1}
+=\begin{pmatrix}S^{-1}&\tau S^{-1}\dot A S^{-1}\\0&S^{-1}\end{pmatrix}.
+$$
+
+The implementation applies these inverses by solves, processing the lower
+block first and reusing one LU factorization of $S$.
+
+### Two-sided low-rank adjoint
+
+The sum defining $\bar A$ contains a backward orbit under $A^T$ and a forward orbit
+under $A$. Approximating each orbit in its own space gives a low-rank matrix
+cotangent without storing a population-sized square matrix.
+
+Choose orthonormal bases $V_{m,\mathrm L},V_{m,\mathrm R}$ seeded by $\bar y,z$, respectively, and define
+
+$$
+H_{m,\mathrm L}=V_{m,\mathrm L}^TA^TV_{m,\mathrm L},\quad H_{m,\mathrm R}=V_{m,\mathrm R}^TAV_{m,\mathrm R},\qquad
+\bar y_{m,\mathrm L}=V_{m,\mathrm L}^T\bar y,\quad z_{m,\mathrm R}=V_{m,\mathrm R}^Tz.
+$$
+
+Each basis has at most $m$ columns; their actual dimensions may differ.
+The labels $\mathrm L,\mathrm R$ identify the backward and forward spaces;
+$\bar y_{m,\mathrm L},z_{m,\mathrm R}$ are their projected seeds.
+Substitute the orbit approximations
+$(A^T)^i\bar y\approx V_{m,\mathrm L}H_{m,\mathrm L}^i\bar y_{m,\mathrm L}$ and
+$A^jz\approx V_{m,\mathrm R}H_{m,\mathrm R}^jz_{m,\mathrm R}$ into the cotangent sum:
+
+$$
+\bar A\approx V_{m,\mathrm L}CV_{m,\mathrm R}^T,\qquad
+C=\sum_{j=0}^{k-1}
+H_{m,\mathrm L}^{k-1-j}\bar y_{m,\mathrm L}z_{m,\mathrm R}^T(H_{m,\mathrm R}^T)^j.
+$$
+
+The same block-power identity shows that $C$ is the upper-right block of
+
+$$
+\begin{pmatrix}
+H_{m,\mathrm L}&\bar y_{m,\mathrm L}z_{m,\mathrm R}^T\\0&H_{m,\mathrm R}^T
+\end{pmatrix}^{k}.
+$$
+
+The transpose on the right block follows from transposing the forward orbit
+in $\bar A$; omitting it would give a different matrix cotangent.
+With $F=V_{m,\mathrm L}C$,
+
+$$
+\langle V_{m,\mathrm L}CV_{m,\mathrm R}^T,\dot A\rangle_F
+=\sum_i F_i^T\dot A (V_{m,\mathrm R})_i,
+\qquad
+\bar\theta_A\approx\sum_i
+\left(\frac{\partial[A(\theta)(V_{m,\mathrm R})_i]}{\partial\theta}\right)^TF_i.
+$$
+
+The operator pullback holds $F_i,(V_{m,\mathrm R})_i$ fixed during these contractions.
+Differentiating their construction would introduce derivatives of the
+approximation algorithm instead of evaluating this adjoint. The result is
+returned in the operator's parameter structure without materializing $\bar A$.
+
+## Encoding, reconstruction, and sources
+
+A reduced-coordinate power is only part of the population calculation.
+Parameter-dependent transforms and affine source terms contribute additional
+chain-rule terms, even when the power derivative itself is evaluated exactly.
+
+Write the prepared calculation as
+
+$$
+y=A^kz,\qquad v_{\mathrm{out}}=Ry+c.
+$$
+
+Its first variation is
+
+$$
+\boxed{
 \dot v_{\mathrm{out}}
-=\dot R\,y
- +R\left[\mathcal L_k(A,\dot A)z+A^k\dot z\right]
- +\dot c.
+=\dot R\,y+R[\mathcal L_k(A,\dot A)z+A^k\dot z]+\dot c.}
 $$
 
-For example, Jacobi's encoded state $z=D^Tv_0$ contributes
+For incoming population cotangent $\bar v_{\mathrm{out}}$, the corresponding reverse
+contributions are $\bar y=R^T\bar v_{\mathrm{out}}$, $\bar R=\bar v_{\mathrm{out}}y^T$, and
+$\bar c=\bar v_{\mathrm{out}}$, followed by the power pullback. Ordinary JAX differentiation
+propagates these contributions through the maps defining $A,z,R,c$.
+
+### Jacobi coordinates
+
+Jacobi's one-generation factorization determines both the reduced exponent
+and the transforms surrounding it. Differentiating only the reduced matrix
+would omit changes in how population mass enters and leaves coefficient space.
+
+For $\widetilde P=DE$ and $H_{\mathrm J}=ED$,
 
 $$
-\dot z=\dot D^T v_0+D^T\dot v_0.
+(\widetilde P^T)^gv_0
+=E^T(H_{\mathrm J}^T)^{g-1}D^Tv_0,\qquad g\ge1.
 $$
 
-Ordinary JAX differentiation handles preparation and reconstruction around
-the custom power rule. Selection-dependent encoding, reduced assembly and
-source terms therefore remain connected to model parameters.
-
-### Immigration is an affine recurrence
-
-Immigration adds mass after each generation. Augmenting the state with a
-constant coordinate lets the same power machinery handle this affine update.
-For $v_{t+1}=Tv_t+b$, the derivative is
+Thus $z=D^Tv_0$, $A=H_{\mathrm J}^T$, $k=g-1$, $R=E^T$, and $c=0$
+without immigration. Their variations include
 
 $$
-\dot v_{t+1}=T\dot v_t+\dot T v_t+\dot b.
+\dot z=\dot D^Tv_0+D^T\dot v_0,\quad
+\dot A=(\dot E D+E\dot D)^T,\quad \dot R=\dot E^T.
 $$
 
-A constant source can be included in a linear power by augmenting the state:
+Any parameter-independent transform has zero variation. Zero generations is
+handled separately as an identity; population-coordinate evolution instead
+uses $z=v_0$, $A=\widetilde P^T$, $k=g$, and $R=I$.
+
+### Affine sources
+
+A constant source can be included in a linear power by adding a constant
+coordinate. This preserves the post-transition timing of immigration and
+allows source sensitivities to use the same power rule.
 
 $$
 \begin{pmatrix}v_{t+1}\\1\end{pmatrix}
-=
-\begin{pmatrix}T&b\\0&1\end{pmatrix}
-\begin{pmatrix}v_t\\1\end{pmatrix}.
+=\begin{pmatrix}\widetilde P^T&b\\0&1\end{pmatrix}
+ \begin{pmatrix}v_t\\1\end{pmatrix}.
 $$
 
-The prepared power uses this construction. In Jacobi coordinates, earlier
-source events are encoded into the reduced recurrence and the last event is
-added by the output offset $c$. The
-[epoch operations page](../guide/epochs.md#mass-and-immigration) specifies the timing.
+The augmented operator's tangent is
+$\left(\begin{smallmatrix}\dot{\widetilde P}^{\,T}&\dot b\\0&0\end{smallmatrix}\right)$;
+the added constant coordinate has zero tangent.
 
-### Size changes compose through the chain rule
-
-Population-size changes alter the state dimension but still compose through
-the chain rule. For a generation-specific, possibly rectangular forward operator $T_t$,
+In Jacobi coordinates, the encoded source is $D^Tb$. The population output
+for $g\ge1$ is
 
 $$
-\dot v_{t+1}=T_t\dot v_t+\dot T_t v_t+\dot b_t.
+v_g=E^T\left[(H_{\mathrm J}^T)^{g-1}D^Tv_0
+ +\sum_{j=0}^{g-2}(H_{\mathrm J}^T)^jD^Tb\right]+b,
 $$
 
-`DemographicTransition` applies the interval method for the first $g-1$
-generations, then a boundary transition for the final generation. Ordinary AD
-composes their derivatives in chronological order, and their pullbacks in
-reverse order. Population sizes and durations remain fixed.
-
-## How drifft connects these rules to JAX
-
-Custom derivative rules let JAX use the power identities above without
-tracing through the adaptive Krylov basis. All drifft-owned custom
-differentiation uses `jax.experimental.hijax.HiPrim`.
-
-HiJAX derives linearization and reverse mode from JVP rules; explicit
-transposes handle linear inputs. The Krylov Fréchet primitive supplies its
-operator pullback explicitly. Ordinary JAX differentiation connects these
-rules to preparation, reconstruction, and the frequency map; Dense uses
-ordinary JAX AD as an independent binomial reference.
-
-!!! warning "Derivative of the power versus derivative of the algorithm"
-
-    At finite basis dimension, drifft approximates $\mathrm d(A^k z)$.
-    It does **not** differentiate the executed approximation
-    $V(V^TAV)^kV^Tz$, whose basis depends on its inputs. These derivatives need
-    not agree until the approximations are sufficiently accurate.
-
-Use `jax.jvp` for a parameter direction and `jax.grad` or
-`jax.value_and_grad` for a scalar objective. The
-[selection-sensitivity example](../examples/selection_sensitivity.md) shows
-parameter replacement and gradient validation. Backend chapters describe the
-one-generation derivative rules.
+with an empty sum for $g=1$. Thus the source contributes through both the
+augmented reduced operator and the final offset $c=b$. For changing sizes
+or parameters, the first-variation and adjoint recurrences above compose
+the interval and boundary operations directly.
 
 ## Implicit derivatives of linear solves
 
-Linear solves appear in expected visits and rational Krylov construction.
-Their derivatives follow from the defining equation, so they do not require
-differentiating an iterative solver trajectory.
+Expected visits are defined by a linear system, rather than a finite-time
+power. Differentiating that defining equation avoids differentiating a
+factorization or an iterative solver trajectory.
 
-A solve $Bz=b$ has directional derivative and reverse solve
+Write $\widetilde Q$ for the represented interior transition, retaining $Q$
+for the exact restriction of $P$. Expected visits satisfy
 
 $$
-\boxed{B\dot z=\dot b-\dot Bz,\qquad B^T\lambda=\bar z.}
+(I-\widetilde Q^T)u=e_1.
 $$
 
-Consequently, $\bar b=\lambda$ and $\bar B=-\lambda z^T$.
-Lineax differentiates this defining equation rather than the factorization or
-iterative-solver trajectory.
+Since the initial unit vector $e_1$ is fixed, the product rule gives
 
-| Use of a solve | Role in differentiation |
-| --- | --- |
-| Expected visits: $(I-Q^T)u=e_1$ | Lineax's implicit rule differentiates the occupation vector $u$ |
-| Rational Krylov: $[I+\tau(I-A)]z=b$ | Builds the primal and sensitivity spaces; the outer power derivative uses the custom rules above |
+$$
+-\dot{\widetilde Q}^{\,T}u+(I-\widetilde Q^T)\dot u=0,
+\qquad
+\boxed{(I-\widetilde Q^T)\dot u=\dot{\widetilde Q}^{\,T}u.}
+$$
 
-These equations require invertible $B$. For rational Krylov, an eigenvalue
-$1$ of $A$ becomes eigenvalue $1$ of $B=I+\tau(I-A)$; absorption alone does
-not make this shifted system singular. Expected visits instead require a
-transient interior kernel. Solve strategies are described in the
-[Krylov chapter](jacobi_krylov.md#computation).
+Given the incoming cotangent $\bar u$, define the adjoint solve variable
+$\eta_u$ by $(I-\widetilde Q)\eta_u=\bar u$. Pairing with $\dot u$ yields
+
+$$
+\bar u^T\dot u
+=\eta_u^T(I-\widetilde Q^T)\dot u
+=\eta_u^T\dot{\widetilde Q}^{\,T}u
+=\langle u\eta_u^T,\dot{\widetilde Q}\rangle_F.
+$$
+
+Therefore $\overline{\widetilde Q}=u\eta_u^T$. The variable $\eta_u$ is the
+solution of an adjoint linear system, distinct from the incoming cotangent
+$\bar u$; $u$ remains the expected-visits vector throughout.
+The occupation interpretation requires transience, and the represented system
+must be invertible. The derivative inherits solve and representation errors.
+
+Lineax supplies these implicit rules. Shifted solves also occur in rational
+Krylov construction, but the outer power derivative uses the custom
+sensitivity rules above, not differentiation of the Arnoldi basis.
+
+## Implementation correspondence
+
+The mathematical power rules enter JAX through custom primitives, while
+ordinary differentiation connects them to biological parameters and coordinate
+transforms. This boundary keeps adaptive numerical construction separate from
+the derivative target.
+
+All drifft-owned custom differentiation uses
+`jax.experimental.hijax.HiPrim`. HiJAX derives linearization and reverse mode
+from JVP rules, with explicit transposes for linear inputs. The Krylov Fréchet
+primitive supplies its operator pullback explicitly and rejects unsupported
+higher derivatives. Dense's binomial operation uses ordinary JAX AD.
+
+The primal power is computed with convergence diagnostics and passed through
+a cached-power primitive. Its derivative is attached to $A$ and $z$; the
+cached value and primal Arnoldi basis are not differentiated. Preparation and
+reconstruction remain connected to parameters through ordinary JAX operations.
 
 ## Accuracy and limitations
 
-A successful forward calculation does not establish derivative accuracy.
-The derivative target and supported derivative orders depend on the evolution
-method, and Krylov sensitivities have their own convergence checks.
+Exact derivative identities do not make their projected evaluations exact.
+The supported derivative orders and convergence checks depend on the evolution
+method, and must be distinguished from backend approximation error.
 
 | Calculation | Derivative target | Higher-order support |
 | --- | --- | --- |
 | Sequential | Repeated numerical transition, including its backend approximation | Supported through the recurrence and supported backend rules |
-| PolynomialKrylov / RationalKrylov | Approximate sensitivity of the prepared power $A^k z$ | Higher-order differentiation through the Fréchet rule raises explicitly |
+| PolynomialKrylov / RationalKrylov | Approximate sensitivity of the prepared power $A^kz$ | Higher-order differentiation through the Fréchet rule raises explicitly |
 
-Zero seeds and invariant-subspace breakdown are supported by the first-order
-Krylov rules when their convergence checks pass. Derivative checks are separate
-from the primal checks:
+For the coupled forward action, the combined error estimate must satisfy both
+state and tangent tolerances. Each block uses
+$\mathtt{atol}+\mathtt{rtol}\,\|\cdot\|_1$; the smaller tolerance is applied
+to the combined estimate so a large state cannot mask a small sensitivity.
+The reverse operator rule compares nested projected cotangents in Frobenius
+norm and checks intermediate orbit recurrence defects. These checks can detect
+unresolved propagation even when nested approximations agree.
 
-- The coupled JVP's combined error estimate must satisfy both the state and
-  sensitivity tolerances.
-- The operator pullback combines a nested-space Frobenius difference with
-  recurrence defects along both projected orbits. This detects unresolved
-  propagation even when both projected pullbacks vanish.
-- A failed sensitivity or pullback raises even with `throw=False`; a failing
-  member under `vmap` can fail the batch. There is no automatic fallback.
+!!! note "Diagnostic estimates, not error bounds"
 
-Defect estimates use unit amplification and are heuristic for general nonnormal
-operators. They do not certify total Wright–Fisher model accuracy. Error
-estimates and status fields are diagnostics, not differentiation targets.
+    Recurrence-defect estimates use unit amplification rather than bounds on
+    subsequent operator powers. For general nonnormal operators, they are
+    heuristic. Neither these estimates nor primal convergence certifies
+    derivative accuracy for the exact Wright–Fisher process.
 
-Validate by increasing backend accuracy and Krylov dimension separately,
-comparing against small dense references, and checking JVP/VJP adjoint pairing.
-Finite differences of an underresolved Krylov primal need not match its custom
-derivative. Measure derivative time and memory separately from forward costs.
-See [accuracy and differentiation](../guide/numerics.md) for the validation
-procedure and [Krylov power methods](jacobi_krylov.md) for the primal algorithms.
+Zero seeds and invariant-subspace breakdown are supported when sensitivity
+checks pass. A failed sensitivity or pullback raises even with `throw=False`;
+a failing member under `vmap` can fail the batch. There is no automatic fallback.
+Numerical error estimates and status fields are not differentiation targets.
+
+The [accuracy guide](../guide/numerics.md) covers validation. In particular,
+finite differences of an underresolved Krylov primal can disagree with its
+custom derivative because they differentiate different finite approximations.
 
 ## References
 
-The JAX and Lineax references describe the differentiation interfaces;
-Kandolf et al. develop the low-rank matrix-function derivative approach.
+The implementation follows the matrix-function sensitivity framework above;
+the references provide the low-rank approximation background and the AD
+interfaces used to express it.
 
-- [JAX automatic differentiation](https://docs.jax.dev/en/latest/automatic-differentiation.html).
+- [Kandolf et al., low-rank Fréchet derivative approximations](https://arxiv.org/abs/2008.12926).
 - [JAX custom derivative rules and HiJAX](https://docs.jax.dev/en/latest/301/custom-derivatives.html).
 - [Lineax linear solves](https://docs.kidger.site/lineax/api/linear_solve/).
-- [Kandolf et al., low-rank Fréchet derivative approximations](https://arxiv.org/abs/2008.12926).
