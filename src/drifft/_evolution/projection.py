@@ -1,5 +1,6 @@
 """Arnoldi projection kernels and reconstructed power-error estimates."""
 
+# pattern: Functional Core
 from typing import NamedTuple
 
 import equinox as eqx
@@ -147,12 +148,10 @@ def _guard_krylov_derivative(value, basis, norm_squared):
 
 
 class _ShiftedSolveResult(NamedTuple):
-    """Checked resolvent application with solver-specific diagnostic counters."""
+    """Resolvent application and its solver and residual acceptance flag."""
 
     value: jax.Array
     success: jax.Array
-    num_steps: jax.Array
-    residual_norm: jax.Array
 
 
 def _rational_shift(steps: int) -> float:
@@ -175,8 +174,6 @@ def _dense_shifted_solve(matrix, steps):
         return _ShiftedSolveResult(
             result.value,
             result.result == lx.RESULTS.successful,
-            jnp.asarray(0),
-            jnp.asarray(0.0, dtype=rhs.dtype),
         )
 
     return solve
@@ -195,22 +192,14 @@ def _rational_projection(problem, dimension, shifted_solve, *, return_basis):
 
     def step(index, carry):
         """Apply the resolvent and accumulate checks before reorthogonalization."""
-        basis, success, num_steps, max_residual = carry
+        basis, success = carry
         solution = shifted_solve(basis[:, index])
         success = success & solution.success & jnp.all(jnp.isfinite(solution.value))
         basis = basis.at[:, index + 1].set(_orthogonalize(basis, solution.value))
-        return (
-            basis,
-            success,
-            num_steps + solution.num_steps,
-            jnp.maximum(max_residual, solution.residual_norm),
-        )
+        return basis, success
 
-    basis, success, num_steps, max_residual = jax.lax.fori_loop(
-        0,
-        dimension - 1,
-        step,
-        (basis, jnp.asarray(True), jnp.asarray(0), jnp.asarray(0.0, dtype=seed.dtype)),
+    basis, success = jax.lax.fori_loop(
+        0, dimension - 1, step, (basis, jnp.asarray(True))
     )
     # Project the original operator, not an inverted projected resolvent.
     images = (
@@ -218,7 +207,7 @@ def _rational_projection(problem, dimension, shifted_solve, *, return_basis):
         if isinstance(problem.operator, lx.MatrixLinearOperator)
         else jax.lax.map(problem.operator.mv, basis.T).T
     )
-    action = _project_basis(
+    return _project_basis(
         basis,
         images,
         seed,
@@ -227,7 +216,6 @@ def _rational_projection(problem, dimension, shifted_solve, *, return_basis):
         success=success,
         return_basis=return_basis,
     )
-    return action, {"num_steps": num_steps, "max_residual_norm": max_residual}
 
 
 def _gmres_power_action(
@@ -243,7 +231,7 @@ def _gmres_power_action(
     """Build a resolvent basis with checked, unpreconditioned operator-based GMRES.
 
     Private settings permit numerical experiments without exposing solver choice
-    on the public method. Statistics count GMRES restart cycles, not matvecs.
+    on the public method.
     """
     seed = problem.initial
     shift = _rational_shift(problem.steps)
@@ -288,8 +276,6 @@ def _gmres_power_action(
         return _ShiftedSolveResult(
             value,
             (solution.result == lx.RESULTS.successful) & (residual <= tolerance),
-            solution.stats["num_steps"],
-            residual,
         )
 
     return _rational_projection(problem, dimension, solve, return_basis=return_basis)
@@ -378,9 +364,7 @@ def project(problem, dimension, *, polynomial, return_basis=False, shifted_solve
             if shifted_solve is None
             else shifted_solve
         )
-        action, _ = _rational_projection(
+        return _rational_projection(
             problem, dimension, solve, return_basis=return_basis
         )
-        return action
-    action, _ = _gmres_power_action(problem, dimension, return_basis=return_basis)
-    return action
+    return _gmres_power_action(problem, dimension, return_basis=return_basis)

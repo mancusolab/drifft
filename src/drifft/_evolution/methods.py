@@ -1,5 +1,6 @@
 """Geometry-free evolution methods and their common orchestration."""
 
+# pattern: Functional Core
 import math
 from abc import abstractmethod
 from typing import ClassVar, final
@@ -27,7 +28,8 @@ class AbstractEpochMethod(eqx.Module):
 
     Concrete methods declare `uses_reduced_representation`: true allows backend
     reduction during preparation; false retains population coordinates. Direct
-    calls and demographic histories use the same declaration.
+    calls and demographic histories use the same declaration. Implement
+    `validate` and `solve`; the default `advance` prepares and solves an epoch.
     """
 
     uses_reduced_representation: eqx.AbstractClassVar[bool]
@@ -82,7 +84,7 @@ class AbstractEpochMethod(eqx.Module):
         """
         ...
 
-    @abstractmethod
+    @eqx.filter_jit
     def advance(
         self,
         backend: AbstractTransitionBackend,
@@ -112,14 +114,29 @@ class AbstractEpochMethod(eqx.Module):
 
         **Returns:**
 
-        `EpochResult`; zero generations preserves the input without immigration.
+        An `EpochResult` in population coordinates; zero generations preserves
+        the input without immigration. Sequential reports zero power-approximation
+        error; Krylov estimates exclude backend and representation errors.
+        Check `converged` with `throw=False`.
 
         **Raises:**
 
         `TypeError` for unsupported combinations; `ValueError` for static input errors.
-        Runtime domain checks remain active even with `throw=False`.
+        Runtime domain checks remain active even with `throw=False`; Krylov
+        sensitivity failures also raise independently of `throw`. Sequential
+        supports higher derivatives; higher-order Krylov operator sensitivities
+        are unsupported.
         """
-        ...
+        problem = prepare_epoch(
+            self,
+            backend,
+            distribution,
+            frequency_map=frequency_map,
+            generations=generations,
+            segregating=segregating,
+            immigration=immigration,
+        )
+        return self.solve(problem, throw=throw)
 
 
 def prepare_epoch(
@@ -238,42 +255,6 @@ class Sequential(AbstractEpochMethod):
 
         return jax.lax.fori_loop(0, steps, step, (initial, tangent_initial))
 
-    @eqx.filter_jit
-    def advance(
-        self,
-        backend: AbstractTransitionBackend,
-        distribution: jax.Array,
-        *,
-        frequency_map: AbstractFrequencyMap,
-        generations: int,
-        segregating: bool = False,
-        immigration: jax.Array | None = None,
-        throw: bool = True,
-    ) -> EpochResult:
-        r"""Repeat the one-generation transition in population coordinates.
-
-        **Arguments:**
-
-        - `backend`, `distribution`, `frequency_map`, `generations`, `segregating`,
-          `immigration`, `throw`: See `AbstractEpochMethod.advance` for shapes,
-          source timing and failure behavior.
-
-        **Returns:**
-
-        An `EpochResult` with zero power-approximation error. Backend errors and
-        roundoff remain; Sequential supports higher-order differentiation.
-        """
-        return _advance(
-            self,
-            backend,
-            distribution,
-            frequency_map=frequency_map,
-            generations=generations,
-            segregating=segregating,
-            immigration=immigration,
-            throw=throw,
-        )
-
 
 Sequential.__init__.__doc__ = r"""Configure repeated one-generation evolution.
 
@@ -287,133 +268,118 @@ No arguments. Supply geometry separately to `advance` or `DemographicTransition`
 """
 
 
-def _check_krylov_configuration(self) -> None:
-    if (
-        isinstance(self.dimension, bool)
-        or not isinstance(self.dimension, int)
-        or self.dimension < 2
-    ):
-        raise ValueError("dimension must be a Python integer >= 2")
-    # math validates Python configuration at construction; tolerances are
-    # not traced model parameters or differentiable numerical inputs.
-    if not all(math.isfinite(value) and value >= 0 for value in (self.rtol, self.atol)):
-        raise ValueError("rtol and atol must be finite and nonnegative")
+class _AbstractKrylovMethod(AbstractEpochMethod):
+    """Shared Krylov configuration, power orchestration, and sensitivities."""
 
+    uses_reduced_representation: ClassVar[bool] = True
+    _polynomial: eqx.AbstractClassVar[bool]
 
-def _validate_krylov(
-    self, backend: AbstractTransitionBackend, frequency_map: AbstractFrequencyMap
-) -> None:
-    r"""Check backend and map compatibility for reduced power evolution.
+    dimension: int = 64
+    rtol: float = 1e-8
+    atol: float = 1e-12
 
-    **Arguments:**
+    def __check_init__(self) -> None:
+        """Validate static algorithm settings before preparing any geometry."""
+        if (
+            isinstance(self.dimension, bool)
+            or not isinstance(self.dimension, int)
+            or self.dimension < 2
+        ):
+            raise ValueError("dimension must be a Python integer >= 2")
+        # math validates Python configuration at construction; tolerances are
+        # not traced model parameters or differentiable numerical inputs.
+        if not all(
+            math.isfinite(value) and value >= 0 for value in (self.rtol, self.atol)
+        ):
+            raise ValueError("rtol and atol must be finite and nonnegative")
 
-    - `backend`, `frequency_map`: Geometry and process as in
-      `AbstractEpochMethod.validate`.
+    def validate(
+        self, backend: AbstractTransitionBackend, frequency_map: AbstractFrequencyMap
+    ) -> None:
+        r"""Check backend and map compatibility for reduced power evolution.
 
-    **Returns:**
+        **Arguments:**
 
-    `None`. Jacobi additionally checks that the map supports reduced assembly.
+        - `backend`, `frequency_map`: Geometry and process as in
+          `AbstractEpochMethod.validate`.
 
-    **Raises:**
+        **Returns:**
 
-    `TypeError` for unsupported types or Jacobi map compositions. Parameter
-    value checks are deferred to preparation, including for zero generations.
-    """
-    validate_representation(
-        backend, frequency_map, reduced=True, method_name=type(self).__name__
-    )
+        `None`. Jacobi additionally checks that the map supports reduced assembly.
 
+        **Raises:**
 
-def _krylov_power_action(self, operator, initial, steps):
-    """Evaluate an unencoded power and require its numerical checks to pass."""
-    return self.solve(_working_problem(operator, initial, steps)).distribution
-
-
-def _krylov_power_jvp(
-    self, operator, tangent_operator, initial, tangent_initial, steps
-):
-    """Approximate the mathematical power sensitivity without basis AD."""
-    value = _power_action(self, operator, initial, steps)
-    if tangent_operator is None:
-        tangent = _power_action(self, operator, tangent_initial, steps)
-    else:
-        tangent = _frechet_action(
-            self,
-            operator,
-            initial,
-            tangent_operator.tangent,
-            tangent_initial,
-            steps,
+        `TypeError` for unsupported types or Jacobi map compositions. Parameter
+        value checks are deferred to preparation, including for zero generations.
+        """
+        validate_representation(
+            backend, frequency_map, reduced=True, method_name=type(self).__name__
         )
-    return value, tangent
 
+    def _power_action(self, operator, initial, steps):
+        """Evaluate an unencoded power and require its numerical checks to pass."""
+        return self.solve(_working_problem(operator, initial, steps)).distribution
 
-def _advance(
-    self,
-    backend: AbstractTransitionBackend,
-    distribution: jax.Array,
-    *,
-    frequency_map: AbstractFrequencyMap,
-    generations: int,
-    segregating: bool = False,
-    immigration: jax.Array | None = None,
-    throw: bool = True,
-) -> EpochResult:
-    """Prepare the selected representation and solve through the method's contract."""
-    problem = prepare_epoch(
-        self,
-        backend,
-        distribution,
-        frequency_map=frequency_map,
-        generations=generations,
-        segregating=segregating,
-        immigration=immigration,
-    )
-    return self.solve(problem, throw=throw)
+    def _power_jvp(self, operator, tangent_operator, initial, tangent_initial, steps):
+        """Approximate the mathematical power sensitivity without basis AD."""
+        value = _power_action(self, operator, initial, steps)
+        if tangent_operator is None:
+            tangent = _power_action(self, operator, tangent_initial, steps)
+        else:
+            tangent = _frechet_action(
+                self,
+                operator,
+                initial,
+                tangent_operator.tangent,
+                tangent_initial,
+                steps,
+            )
+        return value, tangent
 
+    def solve(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
+        r"""Approximate a prepared power and attach its mathematical sensitivities.
 
-def _solve_krylov(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
-    r"""Approximate a prepared power and attach its mathematical sensitivities.
+        **Arguments:**
 
-    **Arguments:**
+        - `problem`: Prepared problem; see `AbstractEpochMethod.solve`.
+        - `throw`: Raise on a failed primal action when true.
 
-    - `problem`: Prepared problem; see `AbstractEpochMethod.solve`.
-    - `throw`: Raise on a failed primal action when true.
+        **Returns:**
 
-    **Returns:**
+        An `EpochResult` with reconstructed mass and a power-error estimate from
+        nested spaces and recurrence defects. This estimate is not a certificate
+        and excludes backend approximation. With `throw=False`, inspect `converged`.
 
-    An `EpochResult` with reconstructed mass and a power-error estimate from
-    nested spaces and recurrence defects. This estimate is not a certificate
-    and excludes backend approximation. With `throw=False`, inspect `converged`.
+        **Raises:**
 
-    **Raises:**
-
-    Runtime errors for failed primal checks with `throw=True`, or failed
-    sensitivities regardless of `throw`. Higher-order operator sensitivities
-    raise explicitly; use Sequential when they are needed.
-    """
-    if not isinstance(problem, _PowerProblem):
-        raise TypeError("Krylov methods require a problem returned by prepare_epoch")
-    if problem.steps == 0:
-        return _epoch_result(
-            problem.reconstruct(problem.initial), jnp.asarray(0.0), self.atol, throw
+        Runtime errors for failed primal checks with `throw=True`, or failed
+        sensitivities regardless of `throw`. Higher-order operator sensitivities
+        raise explicitly; use Sequential when they are needed.
+        """
+        if not isinstance(problem, _PowerProblem):
+            raise TypeError(
+                "Krylov methods require a problem returned by prepare_epoch"
+            )
+        if problem.steps == 0:
+            return _epoch_result(
+                problem.reconstruct(problem.initial), jnp.asarray(0.0), self.atol, throw
+            )
+        arrays, static = eqx.partition(problem, eqx.is_array)
+        # Basis construction is an adaptive approximation, not the derivative of
+        # A**g x. Stop its AD path and attach that mathematical rule to the cached
+        # value below, retaining the primal diagnostics without a second projection.
+        raw_problem = eqx.combine(jax.tree.map(jax.lax.stop_gradient, arrays), static)
+        projection = project(raw_problem, self.dimension, polynomial=self._polynomial)
+        fine = _cached_power_action(
+            self, problem.operator, problem.initial, problem.steps, projection.fine
         )
-    arrays, static = eqx.partition(problem, eqx.is_array)
-    # Basis construction is an adaptive approximation, not the derivative of
-    # A**g x. Stop its AD path and attach that mathematical rule to the cached
-    # value below, retaining the primal diagnostics without a second projection.
-    raw_problem = eqx.combine(jax.tree.map(jax.lax.stop_gradient, arrays), static)
-    projection = project(raw_problem, self.dimension, polynomial=self._polynomial)
-    fine = _cached_power_action(
-        self, problem.operator, problem.initial, problem.steps, projection.fine
-    )
-    return _projected_result(
-        problem, projection._replace(fine=fine), self.rtol, self.atol, throw
-    )
+        return _projected_result(
+            problem, projection._replace(fine=fine), self.rtol, self.atol, throw
+        )
 
 
 @final
-class RationalKrylov(AbstractEpochMethod):
+class RationalKrylov(_AbstractKrylovMethod):
     r"""Approximate a prepared power action using a resolvent Krylov basis.
 
     Each basis vector solves $[I+\tau(I-A)]y=z$, with $\tau=k/8$ for
@@ -433,89 +399,11 @@ class RationalKrylov(AbstractEpochMethod):
     The input-dependent primal approximation has no matched expectation transpose.
     """
 
-    uses_reduced_representation: ClassVar[bool] = True
     _polynomial: ClassVar[bool] = False
-
-    dimension: int = 64
-    rtol: float = 1e-8
-    atol: float = 1e-12
-
-    __check_init__ = _check_krylov_configuration
-
-    validate = _validate_krylov
-
-    solve = _solve_krylov
-
-    _power_action = _krylov_power_action
-
-    _power_jvp = _krylov_power_jvp
-
-    @eqx.filter_jit
-    def advance(
-        self,
-        backend: AbstractTransitionBackend,
-        distribution: jax.Array,
-        *,
-        frequency_map: AbstractFrequencyMap,
-        generations: int,
-        segregating: bool = False,
-        immigration: jax.Array | None = None,
-        throw: bool = True,
-    ) -> EpochResult:
-        r"""Evolve mass using a checked Krylov power approximation.
-
-        **Arguments:**
-
-        - `backend`, `distribution`, `frequency_map`, `generations`, `segregating`,
-          `immigration`, `throw`: See `AbstractEpochMethod.advance` for shapes
-          and source timing.
-
-        **Returns:**
-
-        An `EpochResult` whose power-error estimate excludes representation,
-        quadrature and assembly error. Check `converged` with `throw=False`;
-        increase rank and dimension independently to assess both approximations.
-
-        **Raises:**
-
-        Static input errors follow `AbstractEpochMethod.advance`. Runtime Jacobi
-        domain checks and sensitivity convergence checks raise even with
-        `throw=False`. Higher-order operator sensitivities are unsupported.
-        """
-        return _advance(
-            self,
-            backend,
-            distribution,
-            frequency_map=frequency_map,
-            generations=generations,
-            segregating=segregating,
-            immigration=immigration,
-            throw=throw,
-        )
-
-
-RationalKrylov.__init__.__doc__ = r"""Configure the power algorithm without preparing geometry.
-
-**Arguments:**
-
-- `dimension`: Maximum Krylov basis size, an integer at least two; capped by
-  the prepared working-state dimension.
-- `rtol`, `atol`: Finite nonnegative relative and absolute tolerances for the
-  reconstructed power-action error estimate, excluding backend error.
-
-**Returns:**
-
-`None`. Shifted solves use dense LU for Jacobi and operator-based GMRES for
-other transition backends. Solver selection is internal.
-
-**Raises:**
-
-`ValueError` for invalid dimension or tolerances.
-"""
 
 
 @final
-class PolynomialKrylov(AbstractEpochMethod):
+class PolynomialKrylov(_AbstractKrylovMethod):
     r"""Approximate repeated evolution with matrix-free polynomial Arnoldi.
 
     For a prepared operator $A$, initial working state $z$, and exponent $k$,
@@ -526,6 +414,7 @@ class PolynomialKrylov(AbstractEpochMethod):
     are supported, including Dense for small reference calculations.
 
     The basis uses O(d m) storage for working-state size d and dimension m.
+    Its size is also capped by the prepared number of steps plus one.
     Larger dimensions can be necessary for long intervals; no restart or
     automatic Sequential fallback is performed. Convergence checks exclude
     backend approximation error. First-order derivatives use a coupled Krylov
@@ -535,73 +424,15 @@ class PolynomialKrylov(AbstractEpochMethod):
     not provide a matched expectation transpose of its primal approximation.
     """
 
-    uses_reduced_representation: ClassVar[bool] = True
     _polynomial: ClassVar[bool] = True
 
-    dimension: int = 64
-    rtol: float = 1e-8
-    atol: float = 1e-12
 
-    __check_init__ = _check_krylov_configuration
-
-    validate = _validate_krylov
-
-    solve = _solve_krylov
-
-    _power_action = _krylov_power_action
-
-    _power_jvp = _krylov_power_jvp
-
-    @eqx.filter_jit
-    def advance(
-        self,
-        backend: AbstractTransitionBackend,
-        distribution: jax.Array,
-        *,
-        frequency_map: AbstractFrequencyMap,
-        generations: int,
-        segregating: bool = False,
-        immigration: jax.Array | None = None,
-        throw: bool = True,
-    ) -> EpochResult:
-        r"""Evolve mass using a checked Krylov power approximation.
-
-        **Arguments:**
-
-        - `backend`, `distribution`, `frequency_map`, `generations`, `segregating`,
-          `immigration`, `throw`: See `AbstractEpochMethod.advance` for shapes
-          and source timing.
-
-        **Returns:**
-
-        An `EpochResult` whose power-error estimate excludes representation,
-        quadrature and assembly error. Check `converged` with `throw=False`;
-        increase rank and dimension independently to assess both approximations.
-
-        **Raises:**
-
-        Static input errors follow `AbstractEpochMethod.advance`. Runtime Jacobi
-        domain checks and sensitivity convergence checks raise even with
-        `throw=False`. Higher-order operator sensitivities are unsupported.
-        """
-        return _advance(
-            self,
-            backend,
-            distribution,
-            frequency_map=frequency_map,
-            generations=generations,
-            segregating=segregating,
-            immigration=immigration,
-            throw=throw,
-        )
-
-
-PolynomialKrylov.__init__.__doc__ = r"""Configure polynomial powering independently of geometry.
+_krylov_init_doc = r"""Configure Krylov powering independently of geometry.
 
 **Arguments:**
 
-- `dimension`: Maximum basis size, a Python integer at least two. Capped by
-  the working-state size and the number of steps plus one.
+- `dimension`: Maximum Krylov basis size, a Python integer at least two;
+  capped by the prepared working-state dimension.
 - `rtol`, `atol`: Finite nonnegative relative and absolute tolerances for the
   power-action error estimate; these do not control backend approximation.
 
@@ -613,3 +444,5 @@ PolynomialKrylov.__init__.__doc__ = r"""Configure polynomial powering independen
 
 `ValueError` for invalid dimension or tolerances.
 """
+RationalKrylov.__init__.__doc__ = _krylov_init_doc
+PolynomialKrylov.__init__.__doc__ = _krylov_init_doc

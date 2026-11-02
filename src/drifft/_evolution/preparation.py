@@ -1,5 +1,6 @@
 """Adapt transition representations to linear power problems."""
 
+# pattern: Functional Core
 from functools import partial, singledispatch
 
 import equinox as eqx
@@ -26,7 +27,7 @@ def validate_representation(backend, frequency_map, *, reduced, method_name):
 def validate_domain(backend, distribution, frequency_map, *, reduced):
     """Retain runtime domain checks even when no power action is scheduled."""
     if reduced and isinstance(backend, Jacobi):
-        distribution, _ = backend._validate_mass(distribution, frequency_map)
+        distribution = backend._validate_parameters(distribution, frequency_map)
     return distribution
 
 
@@ -88,7 +89,7 @@ def _prepare_jacobi(
     distribution, source = _epoch_inputs(
         distribution, immigration, backend.gene_copies, generations, segregating
     )
-    distribution, _ = backend._validate_mass(distribution, frequency_map)
+    distribution = backend._validate_parameters(distribution, frequency_map)
     if generations == 0:
         operator = lx.IdentityLinearOperator(
             jax.ShapeDtypeStruct(distribution.shape, distribution.dtype)

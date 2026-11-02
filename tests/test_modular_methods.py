@@ -205,12 +205,6 @@ def test_custom_population_method_uses_same_representation_in_demography(history
             )
             return problem.result(state, throw=throw)
 
-        @eqx.filter_jit
-        def advance(self, backend, distribution, *, throw=True, **kwargs):
-            """Share preparation with the built-in methods."""
-            problem = drifft.prepare_epoch(self, backend, distribution, **kwargs)
-            return self.solve(problem, throw=throw)
-
     frequency_map = drifft.FrequencyMap(lambda x: x**2)
     initial = jnp.eye(9)[1]
     backend = drifft.Jacobi(8)

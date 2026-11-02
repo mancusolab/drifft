@@ -112,10 +112,9 @@ def test_failed_gmres_budget_and_residual():
     problem = _PowerProblem(
         operator, jnp.ones(40), 100, lambda x: x, jnp.zeros(40), False, jnp.asarray(1.0)
     )
-    action, stats = _gmres_power_action(problem, 8, max_steps=1, restart=2)
+    action = _gmres_power_action(problem, 8, max_steps=1, restart=2)
     assert not action.success
-    assert stats["num_steps"] > 0
-    assert jnp.isfinite(stats["max_residual_norm"])
+    assert jnp.all(jnp.isfinite(action.fine))
 
 
 def test_singular_matrix_free_shift_reports_failure():

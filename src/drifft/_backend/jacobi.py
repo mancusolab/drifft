@@ -755,9 +755,9 @@ class Jacobi(AbstractTransitionBackend):
                 )
         return matrix
 
-    def _validate_mass(
+    def _validate_parameters(
         self, distribution: jax.Array, frequency_map: AbstractFrequencyMap
-    ) -> tuple[jax.Array, jax.Array]:
+    ) -> jax.Array:
         """Check process parameters even for identity and boundary-only histories."""
         self.validate(frequency_map)
         if not isinstance(frequency_map, (Neutral, Underdominance)):
@@ -789,7 +789,7 @@ class Jacobi(AbstractTransitionBackend):
                     jnp.any(~jnp.isfinite(rates) | (rates < 0) | (rates > 1)),
                     "mutation rates must be finite and lie in [0, 1]",
                 )
-            return distribution, jnp.asarray(0.0)
+            return distribution
         if isinstance(frequency_map, Neutral):
             strength = jnp.asarray(0.0)
         else:
@@ -800,4 +800,4 @@ class Jacobi(AbstractTransitionBackend):
             ~jnp.isfinite(strength) | (strength < 0) | (strength > self.max_strength),
             "selection strength must lie in [0, max_strength]",
         )
-        return distribution, strength
+        return distribution

@@ -73,15 +73,16 @@ both direct and demographic calls.
 
 ## Custom evolution methods
 
-Implement `AbstractEpochMethod` to supply a different power algorithm. Public
-preparation handles representation and source timing; the method computes the
-prepared power and returns checked population mass. This example uses ordinary
+Implement `validate` and `solve` on `AbstractEpochMethod` to supply a different
+power algorithm. The inherited `advance` handles preparation, including
+representation and source timing; `solve` computes the prepared power and
+returns checked population mass. Override `advance` only for custom orchestration.
+This example uses ordinary
 JAX differentiation through a fixed loop; custom methods own their derivative
 and batching behavior.
 
 ```python
 from typing import ClassVar, final
-import equinox as eqx
 
 @final
 class RepeatedTransition(drifft.AbstractEpochMethod):
@@ -102,12 +103,6 @@ class RepeatedTransition(drifft.AbstractEpochMethod):
             problem.initial,
         )
         return problem.result(state, throw=throw)
-
-    @eqx.filter_jit
-    def advance(self, backend, distribution, *, throw=True, **kwargs):
-        """Prepare population inputs using the supported public interface."""
-        problem = drifft.prepare_epoch(self, backend, distribution, **kwargs)
-        return self.solve(problem, throw=throw)
 
 method = RepeatedTransition()
 result = method.advance(

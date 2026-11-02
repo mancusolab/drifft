@@ -36,10 +36,12 @@ power.
 
 ::: drifft.PolynomialKrylov
     options:
+        show_bases: false
         members: [__init__, advance]
 
 ---
 
 ::: drifft.RationalKrylov
     options:
+        show_bases: false
         members: [__init__, advance]
