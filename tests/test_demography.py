@@ -12,6 +12,42 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 
 
+@pytest.mark.parametrize("duration", [1, 3])
+def test_demographic_holds_use_custom_method_advance(duration):
+    """Honor custom population-space evolution only when a hold is required."""
+
+    class ScaledAdvance(drifft.AbstractEpochMethod):
+        uses_reduced_representation = False
+
+        def validate(self, backend, frequency_map):
+            drifft.Sequential().validate(backend, frequency_map)
+
+        def solve(self, problem, *, throw=True):
+            raise AssertionError("The custom advance handles the hold")
+
+        def advance(self, backend, distribution, *, throw=True, **kwargs):
+            assert not throw
+            return drifft.Sequential().advance(
+                backend, 2 * distribution, throw=throw, **kwargs
+            )
+
+    model = drifft.DemographicTransition(
+        drifft.Demography([4, 3], [duration]),
+        backend_factory=drifft.Dense,
+        frequency_map=drifft.Neutral(),
+        method=ScaledAdvance(),
+    )
+    initial = jnp.eye(9)[2]
+    expected = (
+        initial
+        @ jnp.linalg.matrix_power(dense_transition(4, 4, 0), duration - 1)
+        @ dense_transition(4, 3, 0)
+    )
+    if duration > 1:
+        expected *= 2
+    assert jnp.allclose(model.advance(initial).distribution, expected, atol=1e-12)
+
+
 def test_factories_reuse_geometry_for_repeated_sizes_and_shared_boundaries():
     """Prepare each distinct size once when hold and boundary factories agree."""
     calls = []

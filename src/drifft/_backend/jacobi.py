@@ -14,43 +14,15 @@ from scipy.special import roots_jacobi
 from .._banded import PentadiagonalCholesky, SymmetricPentadiagonalOperator
 from .._frequency import (
     AbstractFrequencyMap,
-    AdditiveSelection,
     Composition,
-    DiploidSelection,
-    DominanceSelection,
-    DominantSelection,
-    MultiplicativeSelection,
     Mutation,
     Neutral,
     Overdominance,
-    RecessiveSelection,
     Underdominance,
+    _selection_parameters,
 )
 from .._polynomial import gegenbauer_beta, gegenbauer_moments, gegenbauer_values
 from ._base import AbstractTransitionBackend
-
-
-def _selection_parameters(frequency_map):
-    """Resolve supported diploid constraints without constructing new map instances."""
-    if isinstance(frequency_map, Neutral):
-        return jnp.asarray(0.0), jnp.asarray(0.0)
-    if isinstance(frequency_map, DiploidSelection):
-        return frequency_map.s_het, frequency_map.s_hom
-    if isinstance(frequency_map, Underdominance):
-        return frequency_map.strength, jnp.asarray(0.0)
-    if isinstance(frequency_map, Overdominance):
-        return -frequency_map.strength, jnp.asarray(0.0)
-    if isinstance(frequency_map, AdditiveSelection):
-        return frequency_map.s / 2, frequency_map.s
-    if isinstance(frequency_map, DominanceSelection):
-        return frequency_map.h * frequency_map.s, frequency_map.s
-    if isinstance(frequency_map, RecessiveSelection):
-        return jnp.asarray(0.0), frequency_map.s
-    if isinstance(frequency_map, DominantSelection):
-        return frequency_map.s, frequency_map.s
-    if isinstance(frequency_map, MultiplicativeSelection):
-        return 1 - frequency_map.r, 1 - frequency_map.r**2
-    raise TypeError("Jacobi requires a supported diploid selection rule")
 
 
 def _map_parameters(frequency_map):
@@ -458,7 +430,7 @@ class _JacobiGeometry(eqx.Module):
     def encode(
         self,
         mass: jax.Array,
-        frequency_map: AbstractFrequencyMap | jax.Array,
+        frequency_map: AbstractFrequencyMap,
         segregating: bool,
     ) -> jax.Array:
         """Apply the transpose of selected polynomial evaluation using O(M+r) storage."""
@@ -469,19 +441,11 @@ class _JacobiGeometry(eqx.Module):
                 (jnp.array([-1.0]), self.coordinates, jnp.array([1.0]))
             )
         )
-        if isinstance(frequency_map, AbstractFrequencyMap):
-            probabilities = frequency_map.apply((coordinates + 1) / 2)
-            mapped = 2 * probabilities - 1
-            weighted = (
-                (1 - 1 / self.copies) * 4 * probabilities * (1 - probabilities) * mass
-            )
-        else:
-            # Preserve the strength-only private transform used by benchmark
-            # research scripts, without constructing a map inside the kernel.
-            mapped = coordinates / (
-                1 - frequency_map / 2 + frequency_map / 2 * coordinates**2
-            )
-            weighted = (1 - 1 / self.copies) * (1 - mapped) * (1 + mapped) * mass
+        probabilities = frequency_map.apply((coordinates + 1) / 2)
+        mapped = 2 * probabilities - 1
+        weighted = (
+            (1 - 1 / self.copies) * 4 * probabilities * (1 - probabilities) * mass
+        )
         coefficients = gegenbauer_moments(mapped, weighted, rank=self.rank)
         return (
             coefficients

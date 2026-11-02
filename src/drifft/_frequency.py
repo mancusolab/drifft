@@ -213,7 +213,7 @@ class DiploidSelection(AbstractFrequencyMap):
 
         Selected frequencies with the same shape as the input.
         """
-        return _diploid_selection(self.s_het, self.s_hom, frequencies)
+        return _diploid_selection(*_selection_parameters(self), frequencies)
 
 
 # Document the generated constructor without replacing its implementation.
@@ -432,7 +432,7 @@ class Underdominance(AbstractFrequencyMap):
 
         Selected frequencies with the same shape as the input.
         """
-        return _diploid_selection(self.strength, 0.0, frequencies)
+        return _diploid_selection(*_selection_parameters(self), frequencies)
 
 
 # Document the generated constructor without replacing its implementation.
@@ -487,7 +487,7 @@ class AdditiveSelection(AbstractFrequencyMap):
 
         Selected frequencies with the same shape as the input.
         """
-        return _diploid_selection(self.s / 2, self.s, frequencies)
+        return _diploid_selection(*_selection_parameters(self), frequencies)
 
 
 # Document the generated constructor without replacing its implementation.
@@ -542,7 +542,7 @@ class DominanceSelection(AbstractFrequencyMap):
 
         Selected frequencies with the same shape as the input.
         """
-        return _diploid_selection(self.h * self.s, self.s, frequencies)
+        return _diploid_selection(*_selection_parameters(self), frequencies)
 
 
 # Document the generated constructor without replacing its implementation.
@@ -595,7 +595,7 @@ class RecessiveSelection(AbstractFrequencyMap):
 
         Selected frequencies with the same shape as the input.
         """
-        return _diploid_selection(0.0, self.s, frequencies)
+        return _diploid_selection(*_selection_parameters(self), frequencies)
 
 
 # Document the generated constructor without replacing its implementation.
@@ -647,7 +647,7 @@ class DominantSelection(AbstractFrequencyMap):
 
         Selected frequencies with the same shape as the input.
         """
-        return _diploid_selection(self.s, self.s, frequencies)
+        return _diploid_selection(*_selection_parameters(self), frequencies)
 
 
 # Document the generated constructor without replacing its implementation.
@@ -699,7 +699,7 @@ class Overdominance(AbstractFrequencyMap):
 
         Selected frequencies with the same shape as the input.
         """
-        return _diploid_selection(-self.strength, 0.0, frequencies)
+        return _diploid_selection(*_selection_parameters(self), frequencies)
 
 
 # Document the generated constructor without replacing its implementation.
@@ -827,3 +827,26 @@ its configured `max_strength`.
 
 `ValueError` for nonscalar parameters.
 """
+
+
+def _selection_parameters(frequency_map):
+    """Resolve supported diploid constraints without constructing new map instances."""
+    if isinstance(frequency_map, Neutral):
+        return jnp.asarray(0.0), jnp.asarray(0.0)
+    if isinstance(frequency_map, DiploidSelection):
+        return frequency_map.s_het, frequency_map.s_hom
+    if isinstance(frequency_map, Underdominance):
+        return frequency_map.strength, jnp.asarray(0.0)
+    if isinstance(frequency_map, Overdominance):
+        return -frequency_map.strength, jnp.asarray(0.0)
+    if isinstance(frequency_map, AdditiveSelection):
+        return frequency_map.s / 2, frequency_map.s
+    if isinstance(frequency_map, DominanceSelection):
+        return frequency_map.h * frequency_map.s, frequency_map.s
+    if isinstance(frequency_map, RecessiveSelection):
+        return jnp.asarray(0.0), frequency_map.s
+    if isinstance(frequency_map, DominantSelection):
+        return frequency_map.s, frequency_map.s
+    if isinstance(frequency_map, MultiplicativeSelection):
+        return 1 - frequency_map.r, 1 - frequency_map.r**2
+    raise TypeError("Jacobi requires a supported diploid selection rule")

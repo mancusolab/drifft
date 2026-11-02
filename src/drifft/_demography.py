@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 
 from ._backend import AbstractTransitionBackend
-from ._evolution.methods import AbstractEpochMethod, Sequential, prepare_epoch
+from ._evolution.methods import AbstractEpochMethod, Sequential
 from ._evolution.preparation import validate_domain
 from ._evolution.problem import EvolutionStatus, _epoch_result
 from ._frequency import AbstractFrequencyMap
@@ -190,9 +190,8 @@ class DemographicTransition(eqx.Module):
     demography: Demography
     frequency_map: AbstractFrequencyMap
     method: AbstractEpochMethod
-    _sizes: tuple[int, ...]
-    _backends: tuple[AbstractTransitionBackend, ...]
-    _boundary_backends: tuple[AbstractTransitionBackend, ...]
+    _backends: dict[int, AbstractTransitionBackend]
+    _boundary_backends: dict[int, AbstractTransitionBackend]
 
     def __init__(
         self,
@@ -214,6 +213,7 @@ class DemographicTransition(eqx.Module):
         - `boundary_backend_factory`: Factory for rectangular transitions; defaults to the
           hold geometry for all backends.
         - `method`: Geometry-free epoch algorithm; defaults to `Sequential()`.
+          Holds call its `advance` method, including custom overrides.
 
         **Returns:**
 
@@ -245,9 +245,10 @@ class DemographicTransition(eqx.Module):
         self.method = Sequential() if method is None else method
         if not isinstance(self.method, AbstractEpochMethod):
             raise TypeError("method must be an AbstractEpochMethod")
-        self._sizes = tuple(dict.fromkeys(demography.ne))
-        self._backends = tuple(backend_factory(2 * size) for size in self._sizes)
-        for size, geometry in zip(self._sizes, self._backends, strict=True):
+        self._backends = {
+            size: backend_factory(2 * size) for size in dict.fromkeys(demography.ne)
+        }
+        for size, geometry in self._backends.items():
             if not isinstance(geometry, AbstractTransitionBackend):
                 raise TypeError(
                     "backend_factory must return an AbstractTransitionBackend"
@@ -263,13 +264,13 @@ class DemographicTransition(eqx.Module):
         ):
             self._boundary_backends = self._backends
         else:
-            self._boundary_backends = tuple(
-                boundary_backend_factory(2 * size) for size in self._sizes
-            )
+            self._boundary_backends = {
+                size: boundary_backend_factory(2 * size) for size in self._backends
+            }
 
     def __check_init__(self) -> None:
         """Require rectangular transition geometry at all boundaries."""
-        for size, backend in zip(self._sizes, self._boundary_backends, strict=True):
+        for size, backend in self._boundary_backends.items():
             if not isinstance(backend, AbstractTransitionBackend):
                 raise TypeError(
                     "boundary_backend_factory must return an AbstractTransitionBackend"
@@ -281,7 +282,7 @@ class DemographicTransition(eqx.Module):
 
     def _transition(self, source_ne: int, destination_ne: int) -> Transition:
         return Transition(
-            self._boundary_backends[self._sizes.index(destination_ne)],
+            self._boundary_backends[destination_ne],
             self.frequency_map,
             source_gene_copies=2 * source_ne,
         )
@@ -347,7 +348,7 @@ class DemographicTransition(eqx.Module):
         if distribution.shape != (size,):
             raise ValueError(f"distribution must have {size} entries")
         # Validate every prepared domain even for identity/boundary-only histories.
-        for backend in self._backends:
+        for backend in self._backends.values():
             distribution = validate_domain(
                 backend,
                 distribution,
@@ -374,16 +375,15 @@ class DemographicTransition(eqx.Module):
                     if segregating
                     else None
                 )
-                problem = prepare_epoch(
-                    self.method,
-                    self._backends[self._sizes.index(source)],
+                result = self.method.advance(
+                    self._backends[source],
                     distribution,
                     frequency_map=self.frequency_map,
                     generations=duration - 1,
                     segregating=segregating,
                     immigration=immigration,
+                    throw=False,
                 )
-                result = self.method.solve(problem, throw=False)
                 distribution, error, interval_status = (
                     result.distribution,
                     result.error_estimate,
@@ -460,7 +460,7 @@ class DemographicTransition(eqx.Module):
         ):
             values = self._transition(source, destination).expect(values)
             if duration > 1:
-                backend = self._backends[self._sizes.index(source)]
+                backend = self._backends[source]
                 assert isinstance(backend, AbstractTransitionBackend)
                 transition = Transition(backend, self.frequency_map)
                 values = jax.lax.fori_loop(
