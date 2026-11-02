@@ -99,10 +99,12 @@ def test_jacobi_sequential_history_matches_its_actual_transition_transpose():
         ).advance(expected)
     actual = model.advance(initial).distribution
     assert jnp.allclose(actual, expected, atol=2e-12)
-    assert jnp.allclose(actual @ values, initial @ model.expect(values), atol=2e-12)
+    assert jnp.allclose(
+        actual @ values, initial @ model.expect(values).values, atol=2e-12
+    )
     assert jnp.allclose(
         jax.grad(lambda p: model.advance(p).distribution @ values)(initial),
-        model.expect(values),
+        model.expect(values).values,
         atol=2e-12,
     )
 

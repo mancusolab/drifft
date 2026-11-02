@@ -69,7 +69,7 @@ Keep names aligned with the direction of the transition:
 | `frequency_map` | Selection, mutation, or a composition of both |
 | `transition` | Backend bound to selection or explicit source probabilities |
 | `probabilities`, `stencil_width` | Computed quantities exposed as properties |
-| `expect(values)` | Destination values to source expectations |
+| `expect(values)` | Destination values to source expectations; demographic calls return `DemographicExpectation(values, offset)` |
 | `advance(distribution)` | Source mass to destination mass; demographic calls return a result |
 | `as_lineax()` | Convert to the linear-operator interface |
 | `expected_visits()` | Domain-named solve returning values and convergence diagnostics |
@@ -114,12 +114,15 @@ the representation boundary; Sequential uses the one-generation transition,
 while Krylov methods may use a reduced representation. Keep Dense's reference
 calculation independent of the optimized polynomial kernels.
 
-Evolution methods declare `uses_reduced_representation` on the abstract method
-contract. Preparation and demographic validation use that declaration rather
+Evolution methods declare `allows_reduced_representation` on the abstract method
+contract. True permits reduction when the backend provides it; false requires
+population coordinates. Preparation and demographic validation use that declaration rather
 than concrete method-type checks. The internal power protocol owns primal/JVP
 callbacks; HiJAX calls the sensitivity kernels directly for Krylov pullbacks.
 Dense and GMRES resolvent applications share one rational Arnoldi loop, while
 Jacobi owns its reduced expectation assembly in `_backend/jacobi.py`.
+Use `method.validate(backend, frequency_map)` for public compatibility checks;
+Jacobi's `_validate_reduced_map` is an internal reduced-assembly check.
 
 Internal callers import from the owning modules. Public classes are available
 directly from `drifft`. Backend implementations live in `_backend`; import

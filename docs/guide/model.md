@@ -124,6 +124,19 @@ $P_{\mathrm{epoch},0}\cdots P_{\mathrm{epoch},K-1}$, and propagation applies its
 processes intervals chronologically; `.expect()` applies them in reverse order.
 No initial equilibrium or extra resampling operation is implicit.
 
+Singleton input makes forward evolution affine. For one step,
+$v_{t+1}=P^Tv_t+b$, where $b$ is the new mass added after reproduction.
+Backward propagation carries both values $f$ and a scalar offset $c$:
+
+$$
+c_t=c_{t+1}+b^Tf_{t+1},\qquad f_t=Pf_{t+1}.
+$$
+
+Starting with zero terminal offset, the final reward is $v_0^Tf_0+c_0$.
+`DemographicTransition.expect(...)` returns a `DemographicExpectation` with
+`values` and `offset`;
+see [singleton input and expectations](demography.md#segregating-mass-and-mutation-input).
+
 ## Interior states and expected visits
 
 Expected visits accumulate time spent at segregating counts before the first

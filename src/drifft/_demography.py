@@ -17,6 +17,27 @@ from ._frequency import AbstractFrequencyMap
 from ._operator import Transition
 
 
+def _singleton_inputs(vector, segregating, singleton_mutation_rate):
+    """Normalize a vector and validate the shared singleton-source contract."""
+    if not isinstance(segregating, bool):
+        raise ValueError("segregating must be a Python bool")
+    if not segregating and singleton_mutation_rate is not None:
+        raise ValueError("singleton_mutation_rate requires segregating=True")
+    vector = jnp.asarray(vector, dtype=jnp.float64)
+    rate = jnp.asarray(
+        0.0 if singleton_mutation_rate is None else singleton_mutation_rate,
+        dtype=jnp.float64,
+    )
+    if rate.shape != ():
+        raise ValueError("singleton_mutation_rate must be scalar")
+    vector = eqx.error_if(
+        vector,
+        ~jnp.isfinite(rate) | (rate < 0),
+        "singleton_mutation_rate must be finite and nonnegative",
+    )
+    return vector, rate
+
+
 def _integer_schedule(values: Iterable[int] | jax.Array) -> tuple[int, ...]:
     """Copy concrete integer schedule entries to immutable host metadata."""
     result = []
@@ -177,6 +198,37 @@ result automatically; constructing it directly performs no numerical checks.
 """
 
 
+class DemographicExpectation(NamedTuple):
+    r"""Backward values and the reward contributed by singleton mutation input.
+
+    For initial mass `initial`, the terminal reward is
+    `initial @ result.values + result.offset`.
+
+    **Fields:**
+
+    - `values`: Float64 expectation vector on the initial population's full or
+      interior grid. Independent of the singleton source rate.
+    - `offset`: Float64 scalar reward from singleton input across the history.
+      Zero without a source or for an identity history.
+    """
+
+    values: jax.Array
+    offset: jax.Array
+
+
+DemographicExpectation.__new__.__module__ = __name__
+DemographicExpectation.__new__.__doc__ = """Construct an immutable result without validation.
+
+**Arguments:**
+
+The fields documented on `DemographicExpectation`, supplied by position or keyword.
+
+**Returns:**
+
+A `DemographicExpectation` holding the supplied values.
+"""
+
+
 @final
 class DemographicTransition(eqx.Module):
     r"""Compose constant-size evolution and rectangular boundary transitions.
@@ -321,23 +373,9 @@ class DemographicTransition(eqx.Module):
         mode. Invalid rates or process domains raise even with `throw=False`.
         Other numerical failures raise with `throw=True` and return status with false.
         """
-        if not isinstance(segregating, bool):
-            raise ValueError("segregating must be a Python bool")
-        if not segregating and singleton_mutation_rate is not None:
-            raise ValueError("singleton_mutation_rate requires segregating=True")
-        rate = None
-        if segregating:
-            rate = jnp.asarray(
-                0.0 if singleton_mutation_rate is None else singleton_mutation_rate,
-                dtype=jnp.float64,
-            )
-            if rate.shape != ():
-                raise ValueError("singleton_mutation_rate must be scalar")
-            distribution = eqx.error_if(
-                jnp.asarray(distribution, dtype=jnp.float64),
-                ~jnp.isfinite(rate) | (rate < 0),
-                "singleton_mutation_rate must be finite and nonnegative",
-            )
+        distribution, rate = _singleton_inputs(
+            distribution, segregating, singleton_mutation_rate
+        )
         return self._advance(
             distribution, segregating=segregating, singleton_rate=rate, throw=throw
         )
@@ -353,7 +391,7 @@ class DemographicTransition(eqx.Module):
                 backend,
                 distribution,
                 self.frequency_map,
-                reduced=self.method.uses_reduced_representation,
+                reduced=self.method.allows_reduced_representation,
             )
         initial_result = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
         status = initial_result.status
@@ -423,29 +461,50 @@ class DemographicTransition(eqx.Module):
         return DemographicResult(distribution, converged, status, tuple(diagnostics))
 
     @eqx.filter_jit
-    def expect(self, values: jax.Array) -> jax.Array:
+    def expect(
+        self,
+        values: jax.Array,
+        *,
+        segregating: bool = False,
+        singleton_mutation_rate: float | jax.Array | None = None,
+    ) -> DemographicExpectation:
         r"""Compute the matched expectation transpose for Sequential histories.
 
         **Arguments:**
 
-        - `values`: Real vector of length `2 * final_ne + 1`, converted to float64.
+        - `values`: Real vector of length `2 * final_ne + 1`, or
+          `2 * final_ne - 1` when segregating, converted to float64.
+        - `segregating`: Discard endpoint mass after each generation.
+        - `singleton_mutation_rate`: Finite nonnegative scalar per-copy source
+          rate, as in `advance`. Requires segregating states.
+          Recurrent mutation remains part of the frequency map.
 
         **Returns:**
 
-        Float64 expectations of length `2 * initial_ne + 1`.
+        A `DemographicExpectation` with float64 `values` of length
+        `2 * initial_ne + 1`, or `2 * initial_ne - 1` when segregating, and a
+        scalar `offset`. The reward `initial @ result.values + result.offset`
+        equals the terminal reward from `advance` with the same layout and rate.
+        The offset is zero without a source or for an identity history.
+        Signed vectors are supported; no normalization occurs.
 
         **Raises:**
 
-        `ValueError` for incompatible shapes or a non-Sequential method, which
-        does not provide a matched transpose of its input-dependent approximation.
+        `ValueError` for incompatible shapes, nonboolean flags, invalid source
+        configuration or a non-Sequential method, which does not provide a matched
+        transpose of its input-dependent approximation. Invalid rate values raise
+        at runtime, including for identity histories. Input finiteness is a caller
+        precondition, as for `Transition.expect`.
         """
         if not isinstance(self.method, Sequential):
             raise ValueError(
                 "expect requires Sequential; adaptive epoch actions have no matched transpose"
             )
-        values = jnp.asarray(values, dtype=jnp.float64)
-        if values.shape != (2 * self.demography.final_ne + 1,):
-            raise ValueError("values must have 2 * final_ne + 1 entries")
+        values, rate = _singleton_inputs(values, segregating, singleton_mutation_rate)
+        size = 2 * self.demography.final_ne + (-1 if segregating else 1)
+        if values.shape != (size,):
+            raise ValueError(f"values must have {size} entries")
+        offset = jnp.asarray(0.0)
         # Transposition reverses composition: apply the last boundary's
         # expectation first, then its source-size hold, moving backward in time.
         for source, destination, duration in reversed(
@@ -458,17 +517,33 @@ class DemographicTransition(eqx.Module):
                 )
             )
         ):
-            values = self._transition(source, destination).expect(values)
+            # Sources enter after each forward step, so evaluate their reward
+            # before transposing that step's transition.
+            if segregating:
+                offset = offset + 2 * destination * rate * values[0]
+            values = self._transition(source, destination).expect(
+                values, segregating=segregating
+            )
             if duration > 1:
                 backend = self._backends[source]
                 assert isinstance(backend, AbstractTransitionBackend)
                 transition = Transition(backend, self.frequency_map)
-                values = jax.lax.fori_loop(
-                    0,
-                    duration - 1,
-                    lambda _, current, transition=transition: transition.expect(
-                        current
-                    ),
-                    values,
+
+                def step(_, carry, source=source, transition=transition):
+                    current, accumulated = carry
+                    if segregating:
+                        accumulated = accumulated + 2 * source * rate * current[0]
+                    return transition.expect(
+                        current, segregating=segregating
+                    ), accumulated
+
+                values, offset = jax.lax.fori_loop(
+                    0, duration - 1, step, (values, offset)
                 )
-        return values
+        # Keep validation live even when an outer JIT consumes only the
+        # identity history's offset and discards the expectation vector.
+        return eqx.error_if(
+            DemographicExpectation(values, offset),
+            ~jnp.isfinite(rate) | (rate < 0),
+            "singleton_mutation_rate must be finite and nonnegative",
+        )

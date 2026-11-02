@@ -25,3 +25,9 @@ evolution method to propagate distributions across the history.
 ::: drifft.IntervalDiagnostics
     options:
         members: []
+
+---
+
+::: drifft.DemographicExpectation
+    options:
+        members: []

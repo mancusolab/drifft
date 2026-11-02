@@ -21,7 +21,7 @@ def validate_representation(backend, frequency_map, *, reduced, method_name):
     if not isinstance(backend, AbstractTransitionBackend):
         raise TypeError(f"{method_name} requires an AbstractTransitionBackend")
     if reduced and isinstance(backend, Jacobi):
-        backend.validate(frequency_map)
+        backend._validate_reduced_map(frequency_map)
 
 
 def validate_domain(backend, distribution, frequency_map, *, reduced):

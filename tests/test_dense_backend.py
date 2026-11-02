@@ -111,7 +111,7 @@ def test_dense_demography_with_mutation_selection_and_immigration(segregating):
     np.testing.assert_allclose(tangent, reference_tangent, atol=3e-13, rtol=0)
     if not segregating:
         np.testing.assert_allclose(
-            actual @ values, initial @ dense.expect(values), atol=3e-14, rtol=0
+            actual @ values, initial @ dense.expect(values).values, atol=3e-14, rtol=0
         )
 
 

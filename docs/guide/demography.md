@@ -61,12 +61,21 @@ inspect the schedule.
 
 ## Expectations and selection gradients
 
-With the default Sequential method, `model.expect(values)` maps final-state
-values to expectations conditional on each initial allele count. Its input has
-`2 * history.final_ne + 1` entries and
-its output has `2 * history.initial_ne + 1` entries. It is the adjoint of
-the distribution returned by `.advance()`, not backward population evolution.
+With the default Sequential method, `model.expect(values)` returns a
+`DemographicExpectation`. Its `values` field contains expectations conditional
+on each initial allele count; `offset` contains the reward from singleton input.
+The input vector has `2 * history.final_ne + 1` entries, and `result.values`
+has `2 * history.initial_ne + 1` entries. Without singleton input,
+`initial @ model.expect(values).values == model.advance(initial).distribution @ values`
+up to numerical roundoff.
 Both methods accept signed vectors.
+
+Use `model.expect(values, segregating=True)` for interior states, with
+`2 * history.final_ne - 1` input entries and `2 * history.initial_ne - 1`
+entries in `result.values`. Endpoint mass is discarded at every generation,
+just as in segregating forward evolution. Recurrent mutation in the frequency map is
+supported. Expectations require `Sequential`; adaptive Krylov approximations
+do not provide this matched transpose.
 
 The frequency map applies on the source grid at every generation, including
 size changes. Update an Equinox selection model without rebuilding geometry:
@@ -120,18 +129,47 @@ Singleton input represents new mutations entering the segregating population
 each generation. It is a source of new mass, distinct from recurrent mutation
 of alleles already represented in the distribution.
 
-`model.advance(initial, segregating=True, singleton_mutation_rate=1e-8)` adds singleton mass
+`model.advance(interior_initial, segregating=True, singleton_mutation_rate=1e-8)` adds singleton mass
 equal to the destination gene-copy count times the mutation rate after each
 generation. Input and output contain interior counts only (`2 * ne - 1`
 entries), with [endpoint mass discarded](transitions.md#restricting-to-segregating-counts).
 Use full-state `advance()` when recurrent mutation should allow endpoint re-entry.
 For arbitrary source vectors, see [direct epoch operations](epochs.md#mass-and-immigration).
 
+The result includes the reward contributed by singleton input as a scalar offset:
+
+```python
+interior_initial = initial[1:-1]
+values = jnp.ones(2 * history.final_ne - 1)  # count terminal segregating mass
+expectation = model.expect(
+    values,
+    segregating=True,
+    singleton_mutation_rate=1e-8,
+)
+reward = interior_initial @ expectation.values + expectation.offset
+forward = model.advance(
+    interior_initial, segregating=True, singleton_mutation_rate=1e-8
+)
+assert jnp.allclose(reward, forward.distribution @ values)
+```
+
+The expectation vector accounts for initial mass; the scalar offset accounts
+for newly injected mass. Slicing `initial[1:-1]` discards any initial endpoint
+mass without renormalizing it.
+Without a source, or for an identity history, `offset` is zero. Both linear and
+affine expectations return the same `DemographicExpectation` type.
+The expectation operation uses the same Sequential restriction with or without
+singleton input.
+
 ## Results and failures
 
 Forward methods return the final distribution together with convergence
 information. Check that status before using a result from a call that disables
 exceptions.
+
+`DemographicExpectation` contains only `values` and `offset`, without a
+convergence status. As with `Transition.expect`, finite input values are a
+caller precondition. Singleton rates are checked even for identity histories.
 
 The `DemographicResult` contains `distribution`, `converged`, `status`, and
 per-interval `diagnostics`. It does not retain intermediate distributions.

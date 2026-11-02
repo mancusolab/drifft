@@ -88,7 +88,7 @@ from typing import ClassVar, final
 class RepeatedTransition(drifft.AbstractEpochMethod):
     """Evolve in population coordinates using repeated transition actions."""
 
-    uses_reduced_representation: ClassVar[bool] = False
+    allows_reduced_representation: ClassVar[bool] = False
 
     def validate(self, backend, frequency_map):
         """Accept the same representation/process combinations as Sequential."""
@@ -112,7 +112,7 @@ result = method.advance(
 ```
 
 The same method can be passed to `DemographicTransition`. Declare
-`uses_reduced_representation=True` only if the algorithm can consume the
+`allows_reduced_representation=True` only if the algorithm can consume the
 backend's reduced working coordinates. Always use the prepared `steps` and
 `problem.result`: reduction can absorb a generation into encoding, and source
 terms can add an auxiliary coordinate or a final offset. `problem.error_norm`

@@ -3,6 +3,7 @@
 # pattern: Functional Core
 from ._backend import FFT, NUFFT, AbstractTransitionBackend, Dense, Jacobi
 from ._demography import (
+    DemographicExpectation,
     DemographicResult,
     DemographicTransition,
     Demography,
@@ -40,6 +41,7 @@ __all__ = [
     "AbstractTransitionBackend",
     "AdditiveSelection",
     "Composition",
+    "DemographicExpectation",
     "DemographicResult",
     "DemographicTransition",
     "Demography",

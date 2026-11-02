@@ -660,7 +660,7 @@ class Jacobi(AbstractTransitionBackend):
             * polynomial
         )
 
-    def validate(self, frequency_map: AbstractFrequencyMap) -> None:
+    def _validate_reduced_map(self, frequency_map: AbstractFrequencyMap) -> None:
         r"""Check whether a frequency map supports reduced Krylov assembly.
 
         **Arguments:**
@@ -723,7 +723,7 @@ class Jacobi(AbstractTransitionBackend):
         self, distribution: jax.Array, frequency_map: AbstractFrequencyMap
     ) -> jax.Array:
         """Check process parameters even for identity and boundary-only histories."""
-        self.validate(frequency_map)
+        self._validate_reduced_map(frequency_map)
         if not isinstance(frequency_map, (Neutral, Underdominance)):
             components = (
                 frequency_map.maps

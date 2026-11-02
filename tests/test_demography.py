@@ -17,7 +17,7 @@ def test_demographic_holds_use_custom_method_advance(duration):
     """Honor custom population-space evolution only when a hold is required."""
 
     class ScaledAdvance(drifft.AbstractEpochMethod):
-        uses_reduced_representation = False
+        allows_reduced_representation = False
 
         def validate(self, backend, frequency_map):
             drifft.Sequential().validate(backend, frequency_map)
@@ -90,7 +90,7 @@ def test_demographic_evaluation_matches_dense_boundary_history(
     distribution /= distribution.sum()
     values = jnp.sin(jnp.arange(2 * sizes[-1] + 1))
     actual = model.advance(distribution).distribution
-    expected = model.expect(values)
+    expected = model.expect(values).values
     assert jnp.allclose(actual, distribution @ matrix, atol=2e-10, rtol=0)
     assert jnp.allclose(expected, matrix @ values, atol=2e-10, rtol=0)
     assert jnp.allclose(actual.sum(), 1, atol=2e-10, rtol=0)
@@ -193,7 +193,8 @@ def test_demographic_methods_reject_wrong_shape(method, size):
         getattr(model, method)(jnp.ones(size))
 
 
-def test_expect_transposes_custom_sequential_hold_backend():
+@pytest.mark.parametrize("segregating", [False, True])
+def test_expect_transposes_custom_sequential_hold_backend(segregating):
     """Transpose the configured hold operator even when boundary geometry differs."""
     model = drifft.DemographicTransition(
         drifft.Demography([200, 200], [5]),
@@ -203,11 +204,185 @@ def test_expect_transposes_custom_sequential_hold_backend():
         ),
         frequency_map=drifft.Underdominance(0.03),
     )
-    distribution = jnp.zeros(401).at[170].set(1)
-    values = jnp.sin(jnp.arange(401) * 0.13)
+    size = 399 if segregating else 401
+    distribution = jnp.zeros(size).at[170].set(1)
+    values = jnp.sin(jnp.arange(size) * 0.13)
     assert jnp.allclose(
-        model.advance(distribution).distribution @ values,
-        distribution @ model.expect(values),
+        model.advance(distribution, segregating=segregating).distribution @ values,
+        distribution @ model.expect(values, segregating=segregating).values,
         rtol=1e-10,
         atol=1e-12,
     )
+
+
+@pytest.mark.parametrize(
+    "backend", [drifft.Dense, drifft.FFT, drifft.NUFFT, drifft.Jacobi]
+)
+@pytest.mark.parametrize(
+    "sizes,durations", [([4, 3, 5], [3, 2]), ([4, 3], [1]), ([4, 4], [3]), ([4], [])]
+)
+def test_segregating_affine_expect_matches_dense_history(backend, sizes, durations):
+    """Match killed-chain rewards and singleton sources against dense histories."""
+    model = drifft.DemographicTransition(
+        drifft.Demography(sizes, durations),
+        backend_factory=backend,
+        frequency_map=drifft.Underdominance(0.03),
+    )
+    values = jnp.sin(jnp.arange(2 * sizes[-1] - 1) + 0.2)
+    matrix = jnp.eye(2 * sizes[0] - 1)
+    for source, destination, duration in zip(
+        sizes[:-1], sizes[1:], durations, strict=True
+    ):
+        matrix = (
+            matrix
+            @ jnp.linalg.matrix_power(
+                dense_transition(source, source, 0.03)[1:-1, 1:-1], duration - 1
+            )
+            @ dense_transition(source, destination, 0.03)[1:-1, 1:-1]
+        )
+    actual = model.expect(values, segregating=True).values
+    assert jnp.allclose(actual, matrix @ values, atol=1e-11, rtol=0)
+    rate = 0.007
+    result = model.expect(values, segregating=True, singleton_mutation_rate=rate)
+    assert isinstance(result, drifft.DemographicExpectation)
+    linear, offset = result.values, result.offset
+    mass = jnp.linspace(-0.2, 0.4, 2 * sizes[0] - 1)
+    expected = mass
+    for source, destination, duration in zip(
+        sizes[:-1], sizes[1:], durations, strict=True
+    ):
+        for _ in range(duration - 1):
+            expected = (
+                (expected @ dense_transition(source, source, 0.03)[1:-1, 1:-1])
+                .at[0]
+                .add(2 * source * rate)
+            )
+        expected = (
+            (expected @ dense_transition(source, destination, 0.03)[1:-1, 1:-1])
+            .at[0]
+            .add(2 * destination * rate)
+        )
+    assert jnp.allclose(linear, actual, atol=1e-12)
+    assert jnp.allclose(mass @ linear + offset, expected @ values, atol=1e-11)
+    forward = model.advance(mass, segregating=True, singleton_mutation_rate=rate)
+    assert jnp.allclose(
+        mass @ linear + offset, forward.distribution @ values, atol=1e-11
+    )
+
+
+def test_affine_expect_recurrent_mutation_gradients_and_batching():
+    """Match forward rewards and derivatives with recurrent mutation and influx."""
+    model = drifft.DemographicTransition(
+        drifft.Demography([4, 3, 5], [3, 2]),
+        backend_factory=drifft.Jacobi,
+        boundary_backend_factory=drifft.FFT,
+        frequency_map=drifft.Mutation(0.01, 0.02),
+    )
+    mass = jnp.linspace(-0.1, 0.3, 7)
+    values = jnp.sin(jnp.arange(9) + 0.2)
+
+    def objective(mutation, rate, terminal, *, backward):
+        updated = eqx.tree_at(lambda m: m.frequency_map.forward_rate, model, mutation)
+        if backward:
+            linear, offset = updated.expect(
+                terminal,
+                segregating=True,
+                singleton_mutation_rate=rate,
+            )
+            return mass @ linear + offset
+        return (
+            updated.advance(
+                mass, segregating=True, singleton_mutation_rate=rate
+            ).distribution
+            @ terminal
+        )
+
+    def backward(*args):
+        return objective(*args, backward=True)
+
+    def forward(*args):
+        return objective(*args, backward=False)
+
+    inputs = (jnp.asarray(0.01), jnp.asarray(0.007), values)
+    assert jnp.allclose(backward(*inputs), forward(*inputs), atol=1e-11)
+    for actual, expected in zip(
+        jax.grad(backward, argnums=(0, 1, 2))(*inputs),
+        jax.grad(forward, argnums=(0, 1, 2))(*inputs),
+        strict=True,
+    ):
+        assert jnp.allclose(actual, expected, atol=1e-10)
+    direction = jax.tree.map(jnp.ones_like, inputs)
+    assert jnp.allclose(
+        jax.jvp(backward, inputs, direction)[1],
+        jax.jvp(forward, inputs, direction)[1],
+        atol=1e-10,
+    )
+    batch = (
+        jnp.array([0.01, 0.03]),
+        jnp.array([0.0, 0.007]),
+        jnp.stack([values, 2 * values]),
+    )
+    assert jnp.allclose(
+        jax.jit(jax.vmap(backward))(*batch),
+        jax.jit(jax.vmap(forward))(*batch),
+        atol=1e-11,
+    )
+
+
+def test_expect_validates_layout_source_and_return_contract():
+    """Reject invalid inputs even for identity histories; never drop a source."""
+    model = drifft.DemographicTransition(
+        drifft.Demography([4], []),
+        backend_factory=drifft.Dense,
+        frequency_map=drifft.Neutral(),
+    )
+    for kwargs in (
+        {"segregating": 1},
+        {"singleton_mutation_rate": 0.01},
+        {
+            "segregating": True,
+            "singleton_mutation_rate": jnp.ones(2),
+        },
+    ):
+        with pytest.raises(ValueError):
+            model.expect(jnp.ones(7), **kwargs)  # ty: ignore[invalid-argument-type] -- intentionally invalid flags and source
+    for rate in (-0.1, float("nan"), float("inf")):
+        with pytest.raises(eqx.EquinoxRuntimeError, match="mutation_rate"):
+            model.expect(
+                jnp.ones(7),
+                segregating=True,
+                singleton_mutation_rate=rate,
+            )[0].block_until_ready()
+    with pytest.raises(ValueError, match="entries"):
+        model.expect(jnp.ones(9), segregating=True)
+    for method in (drifft.PolynomialKrylov(), drifft.RationalKrylov()):
+        updated = eqx.tree_at(lambda m: m.method, model, method)
+        with pytest.raises(ValueError, match="Sequential"):
+            updated.expect(jnp.ones(7), segregating=True)
+    values = jnp.arange(9.0)
+    result = model.expect(values)
+    assert isinstance(result, drifft.DemographicExpectation)
+    assert jnp.array_equal(result.values, values)
+    assert result.offset == 0
+
+
+@pytest.mark.parametrize("component", [0, 1])
+@pytest.mark.parametrize("rate", [-0.1, float("nan"), float("inf")])
+def test_affine_identity_rate_check_survives_partial_output(component, rate):
+    """An outer JIT must retain domain checks for either returned component."""
+    model = drifft.DemographicTransition(
+        drifft.Demography([4], []),
+        backend_factory=drifft.Dense,
+        frequency_map=drifft.Neutral(),
+    )
+
+    @eqx.filter_jit
+    def selected(rate):
+        return model.expect(
+            jnp.ones(7),
+            segregating=True,
+            singleton_mutation_rate=rate,
+        )[component]
+
+    with pytest.raises(eqx.EquinoxRuntimeError, match="mutation_rate"):
+        selected(jnp.asarray(rate)).block_until_ready()

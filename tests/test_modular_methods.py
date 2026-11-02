@@ -192,7 +192,7 @@ def test_custom_population_method_uses_same_representation_in_demography(history
     class PopulationMethod(drifft.AbstractEpochMethod):
         """Exercise the public extension contract without inheriting Sequential."""
 
-        uses_reduced_representation: ClassVar[bool] = False
+        allows_reduced_representation: ClassVar[bool] = False
 
         def validate(self, backend, frequency_map):
             """Accept the population-coordinate backend/map combinations."""

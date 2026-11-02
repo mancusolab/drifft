@@ -28,8 +28,11 @@ class AbstractTransitionBackend(eqx.Module):
 
         **Arguments:**
 
-        - `probabilities`: Float64 vector of finite source probabilities in `[0, 1]`.
-        - `values`: Finite float64 destination vector of length `gene_copies + 1`.
+        - `probabilities`: Vector of finite source probabilities in `[0, 1]`.
+        - `values`: Finite real destination vector of length `gene_copies + 1`.
+
+        Both inputs accept Python lists, NumPy arrays, or JAX arrays and are
+        converted to float64 before shape validation.
 
         **Returns:**
 

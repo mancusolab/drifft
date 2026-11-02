@@ -26,13 +26,13 @@ from .projection import _projected_result, project
 class AbstractEpochMethod(eqx.Module):
     r"""An algorithm for a prepared linear power action, independent of geometry.
 
-    Concrete methods declare `uses_reduced_representation`: true allows backend
+    Concrete methods declare `allows_reduced_representation`: true allows backend
     reduction during preparation; false retains population coordinates. Direct
     calls and demographic histories use the same declaration. Implement
     `validate` and `solve`; the default `advance` prepares and solves an epoch.
     """
 
-    uses_reduced_representation: eqx.AbstractClassVar[bool]
+    allows_reduced_representation: eqx.AbstractClassVar[bool]
     # This is a preparation requirement, not a test of the concrete method type.
     # Custom population-coordinate methods must declare False.
 
@@ -175,7 +175,7 @@ def prepare_epoch(
     if not isinstance(method, AbstractEpochMethod):
         raise TypeError("method must be an AbstractEpochMethod")
     method.validate(backend, frequency_map)
-    if not method.uses_reduced_representation:
+    if not method.allows_reduced_representation:
         return _prepare_transition(
             backend, distribution, frequency_map, generations, segregating, immigration
         )
@@ -192,7 +192,7 @@ class Sequential(AbstractEpochMethod):
     through `DemographicTransition`. The reported power-action error is zero.
     """
 
-    uses_reduced_representation: ClassVar[bool] = False
+    allows_reduced_representation: ClassVar[bool] = False
 
     def validate(
         self, backend: AbstractTransitionBackend, frequency_map: AbstractFrequencyMap
@@ -271,7 +271,7 @@ No arguments. Supply geometry separately to `advance` or `DemographicTransition`
 class _AbstractKrylovMethod(AbstractEpochMethod):
     """Shared Krylov configuration, power orchestration, and sensitivities."""
 
-    uses_reduced_representation: ClassVar[bool] = True
+    allows_reduced_representation: ClassVar[bool] = True
     _polynomial: eqx.AbstractClassVar[bool]
 
     dimension: int = 64

@@ -223,8 +223,11 @@ class NUFFT(AbstractTransitionBackend):
 
         **Arguments:**
 
-        - `probabilities`: Float64 vector of finite source probabilities in `[0, 1]`.
-        - `values`: Finite float64 destination vector of length `gene_copies + 1`.
+        - `probabilities`: Vector of finite source probabilities in `[0, 1]`.
+        - `values`: Finite real destination vector of length `gene_copies + 1`.
+
+        Both inputs accept Python lists, NumPy arrays, or JAX arrays and are
+        converted to float64 before shape validation.
 
         **Returns:**
 
@@ -237,6 +240,8 @@ class NUFFT(AbstractTransitionBackend):
         Finiteness and probability ranges follow the unchecked preconditions of
         `AbstractTransitionBackend.expect`; signed values are supported.
         """
+        probabilities = jnp.asarray(probabilities, dtype=jnp.float64)
+        values = jnp.asarray(values, dtype=jnp.float64)
         if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:
             raise ValueError(
                 "Expected values.shape == (M+1,) and one-dimensional probabilities"

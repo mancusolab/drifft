@@ -27,6 +27,36 @@ def test_abstract_backend_and_removed_api():
 
 
 @pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi", "Dense"])
+@pytest.mark.parametrize("input_kind", ["list", "numpy", "jax"])
+def test_backend_expect_normalizes_inputs(name, input_kind):
+    """Accept array-like inputs and compute expectations in float64."""
+    backend = getattr(drifft, name)(8)
+    probabilities = [0.0, 0.25, 0.75, 1.0]
+    values = list(range(9))
+    if input_kind != "list":
+        convert = np.asarray if input_kind == "numpy" else jnp.asarray
+        probabilities = convert(probabilities, dtype=np.float32)
+        values = convert(values, dtype=np.float32)
+    actual = eqx.filter_jit(backend.expect)(probabilities, values)
+    assert actual.dtype == jnp.float64
+    np.testing.assert_allclose(actual, [0.0, 2.0, 6.0, 8.0], atol=1e-12)
+
+
+@pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi", "Dense"])
+@pytest.mark.parametrize(
+    "probabilities,values",
+    [(0.5, list(range(9))), ([[0.5]], list(range(9))), ([0.5], [1.0])],
+)
+def test_backend_expect_rejects_malformed_array_like_inputs(
+    name, probabilities, values
+):
+    """Validate converted shapes rather than requiring existing array attributes."""
+    backend = getattr(drifft, name)(8)
+    with pytest.raises(ValueError):
+        backend.expect(probabilities, values)
+
+
+@pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi", "Dense"])
 def test_backend_dense_adjoint_and_selection_derivatives(name):
     """Check all backend contracts against dense transitions and finite differences."""
     backend = getattr(drifft, name)(32)

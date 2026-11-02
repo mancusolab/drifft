@@ -379,7 +379,7 @@ def test_composed_underdominance_keeps_its_nonnegative_domain():
 def test_unsupported_compositions_are_rejected_explicitly(frequency_map):
     """The quadratic implementation must not silently accept higher-degree maps."""
     with pytest.raises(TypeError, match="diploid selection|one Mutation"):
-        drifft.Jacobi(8).validate(frequency_map)
+        drifft.Jacobi(8)._validate_reduced_map(frequency_map)
 
 
 def test_truncated_selected_mutation_epoch_matches_dense_sample_probabilities():
