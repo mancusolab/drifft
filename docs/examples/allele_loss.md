@@ -37,7 +37,7 @@ for s in [0.0, 0.02, 0.1]:
         distribution = transition.advance(distribution)
         loss.append(float(distribution[0]))
         fixation.append(float(distribution[-1]))
-    assert jnp.isclose(distribution.sum(), 1.0, atol=1e-10)
+    assert jnp.isclose(distribution.sum(), 1.0, rtol=0, atol=1e-10)
     label = f"s = {s:g}"
     axes[0].plot(range(generations + 1), loss, label=label)
     axes[1].plot(range(generations + 1), fixation, label=label)

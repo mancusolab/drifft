@@ -39,7 +39,7 @@ transition = drifft.Transition(
     backend, frequency_map=drifft.Underdominance(strength=0.01)
 )
 
-# Start with one mutant copy and reuse the compiled operation across generations.
+# Start with one mutant copy.
 distribution = jnp.zeros(2001).at[1].set(1.0)
 next_distribution = transition.advance(distribution)
 ```

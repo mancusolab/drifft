@@ -40,8 +40,8 @@ for index, (label, history) in enumerate(histories.items()):
     distribution = result.distribution
     mean = distribution @ frequencies
     variance = distribution @ (frequencies - mean)**2
-    assert jnp.isclose(distribution.sum(), 1.0, atol=1e-10)
-    assert jnp.isclose(mean, 0.25, atol=1e-10)
+    assert jnp.isclose(distribution.sum(), 1.0, rtol=0, atol=1e-10)
+    assert jnp.isclose(mean, 0.25, rtol=0, atol=1e-10)
     print(f"{label}: mean={mean:.4f}, variance={variance:.4f}, "
           f"loss={distribution[0]:.4f}, fixation={distribution[-1]:.4f}")
     axes[0].step(frequencies, jnp.cumsum(distribution), where="post", label=label)

@@ -40,7 +40,7 @@ frequency_map = drifft.Composition(
 
 Positive `s` penalizes the derived allele: genotype fitnesses are
 $(1,1-s/2,1-s)$. `Composition` applies maps left to right, so mutation follows
-selection here. The [selection and mutation guide](api/frequency_maps.md)
+selection here. The [selection and mutation API](api/frequency_maps.md)
 covers other fitness models and custom maps.
 
 ## Apply one generation or a population history
@@ -93,7 +93,9 @@ To evaluate an observable for every possible initial count, use `expect()`:
 ```python
 absent_indicator = jnp.zeros(2 * history.final_ne + 1).at[0].set(1.0)
 expectation = model.expect(absent_indicator)
-assert jnp.allclose(initial @ expectation.values, absent_probability)
+assert jnp.allclose(
+    initial @ expectation.values, absent_probability, rtol=0, atol=1e-10
+)
 ```
 
 `advance()` evolves one initial distribution; `expect()` returns conditional
