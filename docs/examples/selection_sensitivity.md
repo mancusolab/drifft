@@ -64,21 +64,12 @@ plt.show()
 
 ## Interpretation
 
-A positive derivative means that increasing the fitness penalty increases loss
-probability locally. Its magnitude is in probability per unit of
-$s$: multiply it by a small coefficient change to estimate the
-change in loss probability. It is not a confidence interval or an estimate of
-the selection coefficient.
+Positive derivatives indicate greater loss probability with increasing fitness
+penalty. `eqx.tree_at` updates selection while reusing the prepared model.
+The full distribution retains absorbed mass, so its first entry gives loss
+probability by generation 20.
 
-The model and numerical geometry are prepared once. `eqx.tree_at` replaces
-only the selection parameter, so the derivative follows that parameter through
-the complete 20-generation calculation. The full distribution retains absorbed
-mass, making its first entry the probability of loss by the final time.
-
-Agreement across several finite-difference step sizes checks the automatic
-derivative of this numerical calculation. It does not establish accuracy for
-the exact Wright–Fisher transition; use a dense reference for small populations
-and tighter backend settings for your intended workload.
-
-See [accuracy and differentiation](../guide/numerics.md) for validation and
-[population histories](../guide/demography.md) for longer or changing-size models.
+The finite-difference comparison checks differentiation of this numerical
+calculation. See [accuracy and differentiation](../guide/numerics.md) for
+backend validation and [population histories](../api/demography.md) for
+changing-size models.

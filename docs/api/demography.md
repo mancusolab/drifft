@@ -1,8 +1,7 @@
 # Population histories
 
-Population histories specify effective population sizes and interval durations.
-A demographic transition combines a history, frequency map, backend, and
-evolution method to propagate distributions across the history.
+Population histories combine sizes and durations with a frequency map, backend,
+and evolution method.
 
 ::: drifft.Demography
     options:

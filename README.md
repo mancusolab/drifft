@@ -3,10 +3,7 @@
 drifft is a JAX-based Python library for Wright–Fisher population genetics. It
 propagates allele-count distributions, computes expectations and expected visits
 before absorption, and supports differentiation through selection parameters.
-To speed up calculations, it leverages Fast Fourier Transform (FFT) approaches,
-hence the name. However it has expanded beyond only FFT-based approaches to
-encompass more general compression techniques. It is end-to-end differentiable
-using JAX.
+FFT and polynomial compression accelerate the discrete-time binomial transition.
 
 [Read the usage and numerical guide](docs/index.md)
 
@@ -51,14 +48,9 @@ next_distribution = transition.advance(distribution)
 generation. Reuse the backend across selection strengths, or substitute
 `drifft.NUFFT` to use the Chebyshev/NUFFT implementation.
 
-The guide covers [selection and mutation](docs/guide/frequency_maps.md),
-[demographic histories](docs/guide/demography.md),
-[constant-size epochs and immigration](docs/guide/epochs.md),
-[backend tradeoffs](docs/guide/backends.md),
-[accuracy settings](docs/guide/numerics.md), and
-[expected visits and solver limitations](docs/guide/solves.md).
-`transition.expected_visits()` raises on numerical failure by default. Use
-`throw=False` to inspect a candidate and check `result.converged` before using it.
+Continue with [population histories](docs/api/demography.md),
+[expected visits](docs/api/transitions.md#drifft.Transition.expected_visits), or
+[accuracy checks](docs/guide/numerics.md).
 
 ## Development
 
@@ -69,23 +61,8 @@ uv run pytest -p no:capture
 uv run pre-commit run --all-files
 ```
 
-For a focused numerical run, use
-`uv run pytest -m "not benchmark and not slow"`. Run benchmark integration checks
-with `uv run pytest -m benchmark` and large-population checks with
-`uv run pytest -m slow`. The default command and CI run all categories.
-
-Prefer tests for distinct numerical regimes and failure modes over Cartesian
-products of every option. Keep independent reference formulas in
-`tests/_reference.py`; derivative checks should use objectives with nonzero
-sensitivity, alongside any conservation checks.
-
-See [validation and benchmarks](docs/benchmarks.md) for
-benchmark commands and [epoch comparisons](benchmarks/EPOCHS.md) for results
-against fastDTWF. The [demographic timing report](benchmarks/RATIONAL_KRYLOV.md)
-compares Sequential FFT with Jacobi + RationalKrylov on a human population history.
-
-Preview the documentation with `uv run --group docs zensical serve`; see
-[documentation development](docs/contributing.md#documentation) for build instructions.
+See [contributing](docs/contributing.md) for test conventions and documentation
+builds, and [benchmarks](docs/benchmarks.md) for numerical comparisons.
 
 ## Support
 

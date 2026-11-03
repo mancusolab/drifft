@@ -1,8 +1,7 @@
 # Transitions
 
-Transitions map allele-count distributions forward by one generation and
-destination values to conditional expectations. They also provide segregating
-operations and expected-visit solves.
+Transitions propagate allele-count distributions, compute conditional expectations,
+and solve for expected visits before absorption.
 
 ::: drifft.Transition
     options:

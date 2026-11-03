@@ -4,10 +4,7 @@
 supports one-generation transitions and supplies a reduced state for Krylov
 evolution. This differs from the Chebyshev interpolation used by `NUFFT`.
 
-For configuration, see the [API reference](../api/backends.md#drifft.Jacobi); for a workflow, see
-[choosing algorithms](../guide/backends.md). Notation follows the
-[shared conventions](../guide/notation.md). The
-[computational overview](overview.md) places this method within the full calculation.
+Configuration: [API reference](../api/backends.md#drifft.Jacobi).
 
 ## Problem and representation
 

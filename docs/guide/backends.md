@@ -1,42 +1,99 @@
 # Choosing numerical algorithms
 
-Start with FFT for one-generation calculations and FFT with Sequential for
-population histories. This supports all frequency maps, forward propagation,
-and conditional expectations. Keep that configuration until its time or memory
-cost becomes a limitation.
+Choose a **backend** to represent one generation and an **evolution method**
+to apply it across an interval. Start with FFT and Sequential; consider
+alternatives when time or memory becomes a limitation.
 
-A backend represents one generation; an evolution method applies that
-representation across an interval. The [computational overview](../methods/overview.md)
-explains the distinction and the errors each introduces.
+## Backends
 
-## Alternatives
+Backends prepare grids and weights for fixed population sizes and numerical
+settings. Reuse them while changing selection, mutation, or the initial
+distribution.
 
-Switch algorithms to address a measured cost in your calculation. These choices
-offer different tradeoffs; check compatibility before comparing performance.
-
-| Calculation | Alternative |
+| Backend | When to use it |
 | --- | --- |
-| Less retained transition geometry | NUFFT, which trades storage for computation |
-| Faster propagation across long constant-size intervals | Jacobi with RationalKrylov, which works in a reduced state |
-| Krylov propagation with a custom frequency map | PolynomialKrylov with FFT or NUFFT |
-| Independent checks on small populations | Dense, which explicitly forms binomial rows and uses ordinary JAX differentiation |
+| `FFT` | Default for one-generation transitions and Sequential evolution. |
+| `NUFFT` | When retained FFT geometry is too large; trades storage for computation. |
+| `Jacobi` | For reduced-state evolution with Krylov across long constant-size intervals. |
+| `Dense` | As an independent binomial reference for small populations. |
 
-Jacobi's reduced Krylov assembly supports a bounded family of diploid selection
-and mutation maps; check [compatibility and parameter bounds](../api/backends.md#drifft.Jacobi)
-before switching. Its one-generation operations and Sequential support arbitrary
-frequency maps producing valid probabilities. If you need `model.expect()`,
-use Sequential with any backend.
+For one generation, pass a backend instance to `Transition`:
 
-The [Schiffels–Durbin example](../examples/schiffels_durbin.md) demonstrates
-Jacobi and RationalKrylov with selection and recurrent mutation. The
-[numerical methods](../methods/jacobi.md) explain how the reduction works.
+```python
+import jax
+import jax.numpy as jnp
+import drifft
 
-## Validation
+jax.config.update("jax_enable_x64", True)
+selection = drifft.AdditiveSelection(s=0.02)
+initial = jnp.zeros(129).at[1].set(1.0)  # 128 gene copies, 64 diploid individuals.
+backend = drifft.FFT(gene_copies=128)
+transition = drifft.Transition(backend, frequency_map=selection)
+after_one_generation = transition.advance(initial)
+```
 
-Compare the final quantity you care about against your original configuration,
-then tighten the numerical settings and compare again. Agreement of a mean
-alone can hide errors in probabilities or gradients. See
-[accuracy and differentiation](numerics.md) for the validation procedure.
+Replace `drifft.FFT` with `drifft.NUFFT` to change the representation without
+changing the selection model or state layout. Backend arguments use gene-copy
+counts; `Demography` uses diploid sizes.
 
-Use the [timing guidance](numerics.md#memory-and-timing) to compare first-call
-and repeated-use costs consistently.
+All backends support arbitrary valid frequency maps for one-generation
+operations and Sequential evolution. Jacobi's reduced Krylov assembly supports
+a restricted family of selection and mutation maps within configured parameter
+bounds; check the [Jacobi API](../api/backends.md#drifft.Jacobi) before using it.
+
+## Evolution methods
+
+Evolution methods control repeated application of the represented transition.
+They are configured separately from the backend:
+
+| Method | When to use it |
+| --- | --- |
+| `Sequential` | Default: applies the transition each generation. Required for `model.expect()` and higher-order derivatives. |
+| `PolynomialKrylov` | To approximate long intervals using operator applications, without shifted linear solves. Works with FFT or NUFFT for custom frequency maps. |
+| `RationalKrylov` | To approximate long intervals using shifted solves. Pair with Jacobi to perform these solves in reduced coordinates. |
+
+For a population history, pass a backend **factory** and a method instance.
+Continuing the example above:
+
+```python
+history = drifft.Demography(ne=[64, 32, 64], generations=[100, 100])
+model = drifft.DemographicTransition(
+    history,
+    frequency_map=selection,
+    backend_factory=drifft.FFT,
+    method=drifft.Sequential(),
+)
+result = model.advance(initial)
+```
+
+To use reduced-state evolution within intervals and FFT at size changes:
+
+```python
+reduced_model = drifft.DemographicTransition(
+    history,
+    frequency_map=selection,
+    backend_factory=drifft.Jacobi,
+    boundary_backend_factory=drifft.FFT,
+    method=drifft.RationalKrylov(dimension=40),
+)
+reduced_result = reduced_model.advance(initial)
+```
+
+`dimension` limits the Krylov basis size; `rtol` and `atol` control its
+power-approximation acceptance criterion. These settings do not control
+backend error. Krylov methods support first-order sensitivities, but their
+input-dependent projections do not provide the matched transpose required by
+`model.expect()`.
+
+RationalKrylov also accepts other backends, but its shifted solves can be
+expensive in population coordinates. Neither Krylov method guarantees a speedup
+or falls back to Sequential on failure. See the [method API](../api/methods.md)
+for controls and the [Schiffels–Durbin example](../examples/schiffels_durbin.md)
+for a larger Jacobi/RationalKrylov calculation.
+
+## Compare configurations
+
+Validate the final statistic and its gradients with the [accuracy checks](numerics.md).
+Measure [setup, compilation, and warm execution](numerics.md#memory-and-timing)
+separately. The [computational overview](../methods/overview.md) explains how
+backend and evolution-method approximations combine.

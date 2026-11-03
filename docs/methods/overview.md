@@ -71,8 +71,8 @@ Dense, or encoded coefficients for Jacobi with Krylov. The
 [Jacobi chapter](jacobi.md#problem-and-representation) derives the reduced
 operator and its relation to the physical interval.
 
-[Expected visits](../guide/solves.md) use a linear solve on the interior
-transition rather than a finite-time power. The solver guide describes the
+[Expected visits](../api/transitions.md#drifft.Transition.expected_visits) use a linear solve on the interior
+transition rather than a finite-time power. The transition API documents
 residual checks and convergence requirements.
 
 ## Separating the errors

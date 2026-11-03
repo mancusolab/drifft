@@ -4,10 +4,7 @@
 It operates on population-sized vectors; it does not maintain a reduced state
 between generations.
 
-For configuration, see the [API reference](../api/backends.md#drifft.FFT); for a workflow, see
-[choosing algorithms](../guide/backends.md). Notation follows the
-[shared conventions](../guide/notation.md). The
-[computational overview](overview.md) places this method within the full calculation.
+Configuration: [API reference](../api/backends.md#drifft.FFT).
 
 ## Problem and representation
 

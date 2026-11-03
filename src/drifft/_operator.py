@@ -69,7 +69,8 @@ class Transition(eqx.Module):
         probability shape; `TypeError` for an invalid backend or frequency-map type.
 
         Finiteness and probability ranges are caller preconditions, not checked
-        here. Enable JAX x64 before preparing the backend.
+        here. Enable JAX x64 before preparing the backend. For derivatives through
+        explicit probabilities, compute them inside the differentiated function.
         """
         if not isinstance(backend, AbstractTransitionBackend):
             raise TypeError("backend must be an AbstractTransitionBackend")
@@ -268,6 +269,15 @@ class Transition(eqx.Module):
         An `ExpectedVisitsResult` with float64 `visits` of length
         `backend.gene_copies - 1`, plus convergence diagnostics.
 
+        !!! example "Visits from a singleton"
+
+            For an already configured square `transition`:
+
+            ```python
+            result = transition.expected_visits()
+            visits = result.visits
+            ```
+
         **Raises:**
 
         `ValueError` for a nonsquare transition, invalid solver controls, or map shape.
@@ -278,7 +288,9 @@ class Transition(eqx.Module):
 
             With `throw=False`, check `converged` before using visits; under vmap,
             check each result. Visits stop at the first endpoint
-            hit, even with mutation. Global differentiability of solves is not certified.
+            hit, even with mutation. Long absorption times can amplify backend
+            errors despite convergence; check [numerical accuracy](../guide/numerics.md).
+            Global differentiability of solves is not certified.
         """
         if self.source_gene_copies != self.backend.gene_copies:
             raise ValueError("expected_visits requires a square transition")

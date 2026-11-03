@@ -4,17 +4,11 @@ Frequency maps convert parental allele frequencies into offspring allele
 probabilities before binomial sampling. Selection, mutation, and their
 compositions use the same interface.
 
-## Interface and custom maps
-
 ??? abstract "AbstractFrequencyMap"
 
     ::: drifft.AbstractFrequencyMap
         options:
             members: [apply, __call__]
-
-::: drifft.FrequencyMap
-    options:
-        members: [__init__]
 
 ## Selection
 
@@ -79,5 +73,11 @@ compositions use the same interface.
 ---
 
 ::: drifft.Composition
+    options:
+        members: [__init__]
+
+## Custom maps
+
+::: drifft.FrequencyMap
     options:
         members: [__init__]

@@ -4,10 +4,7 @@ An evolution method controls how a prepared transition is applied over many
 generations. Polynomial and rational Krylov methods approximate the power
 acting on the supplied state, using a smaller projected problem.
 
-For configuration, see the [API reference](../api/methods.md); for a workflow, see
-[choosing algorithms](../guide/backends.md). Notation follows the
-[shared conventions](../guide/notation.md). The
-[computational overview](overview.md) places this method within the full calculation.
+Configuration: [API reference](../api/methods.md).
 
 ## Problem and representation
 

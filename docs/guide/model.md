@@ -1,7 +1,7 @@
 # Wright–Fisher model
 
 This page explains the probability model behind the public operations. For code
-examples, see [frequency maps](frequency_maps.md) and [demographic histories](demography.md).
+examples, see [frequency maps](../api/frequency_maps.md) and [demographic histories](../api/demography.md).
 For approximation error and derivatives, see [numerical accuracy](numerics.md).
 Symbols follow the [shared notation](notation.md).
 
@@ -27,7 +27,7 @@ $$
 P_{ij}=\binom{M_d}{j}q(x_i)^j[1-q(x_i)]^{M_d-j}.
 $$
 
-The [transition guide](transitions.md) shows how to apply this operator or
+The [transition guide](../api/transitions.md) shows how to apply this operator or
 supply offspring probabilities directly.
 
 ## Selection and mutation
@@ -135,7 +135,7 @@ $$
 Starting with zero terminal offset, the final reward is $v_0^Tf_0+c_0$.
 `DemographicTransition.expect(...)` returns a `DemographicExpectation` with
 `values` and `offset`;
-see [singleton input and expectations](demography.md#segregating-mass-and-mutation-input).
+see [singleton input and expectations](../api/demography.md#drifft.DemographicTransition.expect).
 
 ## Interior states and expected visits
 
@@ -158,7 +158,7 @@ $$
 when the series converges. Here $e_1$ puts unit mass on allele count one,
 which is array index zero after removing the endpoints. The $t=0$ term includes
 the initial generation. `expected_visits()` solves this system.
-See [expected visits](solves.md) for convergence diagnostics and limitations.
+See [expected visits](../api/transitions.md#drifft.Transition.expected_visits) for convergence diagnostics and limitations.
 
 Continue with [computational tasks and approximations](../methods/overview.md)
 for how drifft evaluates these quantities at larger population sizes.

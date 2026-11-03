@@ -61,13 +61,37 @@ RationalKrylov on a neutral history with singleton immigration. Its
 includes a rerun after the backend/method API separation; check each
 measurement's recorded revision and workload.
 
-The [Schiffels–Durbin example](examples/schiffels_durbin.md#numerical-checks)
-records a selected, recurrent-mutation calculation with Jacobi and RationalKrylov,
-including setup, compilation, synchronized execution, and an FFT numerical
-comparison. Those timings do not establish a speedup over Sequential FFT for
-that model.
-
 See [historical replacement results](https://github.com/mancusolab/drifft/blob/main/benchmarks/BERNSTEIN.md) for measured limitations.
 The older [CPU report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RESULTS.md) and
 [fastDTWF comparison](https://github.com/mancusolab/drifft/blob/main/benchmarks/FASTDTWF.md) describe the previous backend and
 record earlier revisions; their measurements have not been regenerated for this refactor.
+
+## Schiffels–Durbin likelihood calculation
+
+These recorded measurements accompany the [sample-likelihood example](examples/schiffels_durbin.md).
+They were not rerun for the documentation reorganization.
+
+For the default history, all 53 interval checks passed with 128 Krylov vectors.
+Total probability mass differed from one by $4.3\times10^{-12}$, and every
+population and sample bin was positive. Compared with the previous FFT plus
+512-vector `PolynomialKrylov` calculation, the likelihood of $K=5$ differed
+relatively by $1.3\times10^{-10}$. The largest relative difference across the
+conditional sample probabilities was $8.5\times10^{-8}$. These are comparisons
+between approximations, not exact-error bounds.
+
+A local float64 CPU run on macOS arm64 measured:
+
+| Stage | Time |
+| --- | ---: |
+| Geometry setup | 70.7 s |
+| JIT tracing and compilation | 57.3 s |
+| First synchronized propagation | 44.4 s |
+| Synchronized warm propagation | 40.8 s |
+
+The warm call reused the compiled model and restarted from the same ancestral
+distribution; both calls gave identical outputs. Timings exclude the sampling
+projection and plotting. BLAS/OpenMP thread limits were one, JAX CPU threading
+used its default, and persistent compilation caching was disabled. Peak process
+memory for the complete run, including both calls, sampling and plotting, was
+about 5.1 GB. These single-run measurements do not establish a speedup over
+Sequential FFT.

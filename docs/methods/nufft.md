@@ -4,10 +4,7 @@
 and evaluates the polynomial at source probabilities. It accelerates a single
 transition; the state between generations remains population-sized.
 
-For configuration, see the [API reference](../api/backends.md#drifft.NUFFT); for a workflow, see
-[choosing algorithms](../guide/backends.md). Notation follows the
-[shared conventions](../guide/notation.md). The
-[computational overview](overview.md) places this method within the full calculation.
+Configuration: [API reference](../api/backends.md#drifft.NUFFT).
 
 ## Problem and representation
 

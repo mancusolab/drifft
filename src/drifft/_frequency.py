@@ -67,6 +67,14 @@ class FrequencyMap(AbstractFrequencyMap):
     The wrapped function must be pure, preserve shape, and return finite
     probabilities in `[0, 1]`. Its parameters stay connected to differentiation;
     its output is returned without conversion, clipping, or normalization.
+
+    !!! example "Custom offspring probabilities"
+
+        ```python
+        import drifft
+
+        custom_map = drifft.FrequencyMap(lambda frequency: frequency**2)
+        ```
     """
 
     function: Callable[[jax.Array], jax.Array]

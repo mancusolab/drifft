@@ -38,7 +38,8 @@ class ExpectedVisitsResult(NamedTuple):
 
     The candidate occupation vector solves $(I-Q^T)u=e_1$, including generation
     zero. The convergence flag combines solver status, finiteness, and a residual
-    check against the approximate operator.
+    check against the approximate operator: `residual_norm <= atol + rtol`.
+    Failed solves retain the candidate for diagnosis, not interpretation.
 
     **Fields:**
 
@@ -46,6 +47,7 @@ class ExpectedVisitsResult(NamedTuple):
       zero. Entry zero corresponds to one mutant copy.
     - `status`: `ExpectedVisitsStatus` for the complete calculation.
     - `solver_status`, `stats`: Unmodified Lineax result code and iteration diagnostics.
+      GMRES `num_steps` counts outer steps, not individual matrix-vector products.
     - `residual_norm`: Scalar infinity norm of $(I-Q^T)u-e_1$.
     - `converged`: Scalar boolean, true exactly when the domain `status` is
       successful. This includes the solver, finiteness and residual checks.

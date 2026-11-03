@@ -61,21 +61,24 @@ plt.show()
 
 ## Interpretation
 
-The mean allele frequency remains $1/4$ in both calculations, while the
-bottleneck increases the variance and the probabilities of loss and fixation.
-Neutral drift changes the distribution even when it preserves its mean.
+The bottleneck increases variance and endpoint probabilities while preserving
+mean frequency $1/4$. The CDF includes loss and fixation; the right panel shows
+those masses separately.
 
-The left panel shows the complete cumulative distribution, including the mass
-at loss and fixation. The right panel displays those endpoint probabilities
-separately. Expanding the population again does not restore lost variation: an
-absorbed allele cannot reappear in this model.
+## When the size changes
 
-!!! note "When the size changes"
+Sizes run oldest to newest. Each interval holds its source size until its
+final generation, when the next size takes effect. For the bottleneck above:
 
-    Generation 1 changes the bottleneck population from 64 to 16 diploid
-    individuals. Generations 2–40 reproduce at size 16; generation 41 changes
-    back to size 64. The output is taken immediately after that final generation.
+| Generations | Reproduction |
+| --- | --- |
+| 1 | Change from 64 to 16 diploid individuals. |
+| 2–40 | Reproduce at size 16. |
+| 41 | Change from 16 to 64; take the final output. |
+
+Each boundary step includes selection (neutral here) and binomial reproduction.
+There is no extra resampling or subsequent evolution at the final size.
 
 The same elapsed time and final allele-count grid make the two outputs directly
-comparable. See [population histories](../guide/demography.md) for the timing
+comparable. See [population histories](../api/demography.md) for the timing
 convention and [the Wright–Fisher model](../guide/model.md) for the probability law.

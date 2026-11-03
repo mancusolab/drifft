@@ -497,31 +497,10 @@ class _JacobiGeometry(eqx.Module):
 class Jacobi(AbstractTransitionBackend):
     r"""Jacobi geometry for binomial expectations and reduced Krylov evolution.
 
-    For gene-copy count $M$ and destination values $f_j$, the binomial expectation is
-
-    $$B_M[f](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}f_j.$$
-
-    Write $\xi=2q-1$. After separating the linear interpolant between $f_0$ and
-    $f_M$, approximate the remaining function in the basis
-    $(1-\xi^2)\phi_k(\xi)$, $k=0,\ldots,r-1$. Here $r$ is `rank` and $\phi_k$
-    is a normalized Jacobi polynomial $P_k^{(1,1)}$, orthonormal for weight
-    $3(1-\xi^2)/4$ on $[-1,1]$. The envelope makes every interior basis function
-    vanish at the count endpoints. Gauss–Jacobi quadrature and binomial
-    stencils map count-space values to these coefficients.
-
-    Let $E$ denote this coefficient map and $D$ evaluation at the offspring
-    probabilities $q_i=q(i/M)$. The expectation operator factors as
-    $P\approx DE$, so forward mass evolves by its transpose. For $g\geq1$
-    generations with a fixed frequency map and no immigration,
-
-    $$v_g\approx E^T(H_{\mathrm J}^T)^{g-1}D^Tv_0,\qquad H_{\mathrm J}=ED.$$
-
-    The reduced operator has $r$ interior coordinates, plus two endpoint
-    coordinates for full-state evolution. It is assembled using polynomial
-    recurrences and a padded tridiagonal coordinate matrix, without forming
-    the population-sized transition matrix. A separate epoch method computes
-    the power of $H_{\mathrm J}^T$; representation rank and padding control
-    different approximations from the method's power tolerance.
+    Represents expectations in `rank` interior polynomial coordinates plus two
+    endpoint coordinates. Krylov methods evolve this reduced state; Sequential
+    applies the count-space transition each generation. See the
+    [Jacobi method](../methods/jacobi.md) for the basis and factorization.
 
     `Transition` and `Sequential` accept arbitrary valid offspring probabilities
     through the common expectation interface. Reduced Krylov assembly supports

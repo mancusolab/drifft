@@ -1,14 +1,19 @@
 # Accuracy and differentiation
 
-A calculation combines a transition approximation with a method for repeated
-evolution or a linear solve. Tightening one part does not remove errors from
-the others. Validate the final statistic and its gradients for your workload.
+Validate the final statistic and its gradients across the parameter range you
+will analyze. Backend approximation, repeated evolution, and linear solves
+introduce separate errors.
 
 ## Check the quantity you will use
 
-Compare the same calculation with tighter numerical settings. Use a nonlinear
-observable that exercises the transition approximation: a mean frequency alone
-can agree because low-degree polynomials are reproduced accurately.
+1. Compare the final statistic under tighter backend settings and, separately,
+   tighter power or solve settings. Check mass and negative entries; outputs
+   are not clipped or renormalized.
+2. Compare with `Dense` on a small population or an analytic reference. A mean
+   frequency alone is insufficient because low-degree polynomials can be
+   reproduced accurately.
+3. Compare gradients with the reference and finite differences at several step
+   sizes. Forward accuracy does not establish gradient accuracy.
 
 This example checks one-generation loss probability and its selection derivative.
 It also compares with the direct binomial formula for this particular event:
@@ -45,84 +50,49 @@ for label, backend in [("coarse", coarse), ("fine", fine)]:
           f"gradient error={abs(gradient - exact_gradient):.3e}")
 ```
 
-Inspect both errors against the precision required by your application.
-This reference uses exact binomial reproduction and the same selection map;
-it checks the transition approximation, not the selection formula itself.
-For general quantities, use [`Dense`](../api/backends.md#drifft.Dense) on a small
-population as an independent binomial reference.
-For a history or an expected-visits solve, also compare the final statistic
-under tighter settings: one-step agreement is not sufficient.
+This reference checks binomial reproduction with the same selection map.
+For histories and expected visits, apply the checks to the final quantity,
+not only a one-generation transition.
 
 ## Which settings control which errors?
 
-Choose controls for the component whose accuracy you want to test. Tightening
-a power or solve tolerance does not improve the transition representation.
-
-| Component | Controls | What to check |
-| --- | --- | --- |
-| FFT | `tail_tol`, `interp_order` | Omitted binomial tails and local interpolation |
-| NUFFT | `accuracy`, `tail_tol`, `nufft_tol`, `encoding` | Polynomial approximation, sampled rows, and transform evaluation |
-| Jacobi | `rank`, `one_step_tolerance`, `max_strength` | Polynomial truncation and padded assembly |
-| Krylov methods | `dimension`, `rtol`, `atol` | Approximation of repeated evolution |
-| Expected visits | Solver tolerances and iteration limits | Linear-solve residual and amplification of transition errors |
+| Component | How to tighten the approximation |
+| --- | --- |
+| FFT | Lower `tail_tol` for omitted binomial mass; increase `interp_order` for interpolation. |
+| NUFFT | Lower `accuracy` for polynomial degree, `tail_tol` for sampled tails, and `nufft_tol` for transform evaluation. |
+| Jacobi | Increase `rank`; lower `one_step_tolerance` for automatic rank and padding. |
+| Krylov | Increase `dimension`; lower `rtol` and `atol`. |
+| Expected visits | Lower solver tolerances and increase iteration limits. Check sensitivity to backend settings separately. |
 
 For reduced Jacobi evolution, prepare `max_strength` to cover the absolute
 values of both diploid selection coefficients over your parameter range.
 See the [Jacobi API](../api/backends.md#drifft.Jacobi) for assembly restrictions.
 
-With Krylov, inspect `converged` and `status` when using `throw=False`.
-Its `error_estimate` assesses the power approximation; the
+With `throw=False`, check `converged` before using a result. Krylov's
+`error_estimate` assesses the power approximation; expected-visits results
+report a solve residual. Neither includes backend error. The
 [Krylov chapter](../methods/jacobi_krylov.md#accuracy-and-controls) defines its
-acceptance criterion. Expected-visits results instead report a solve residual.
+acceptance criterion.
 
-!!! warning "Convergence is not total accuracy"
-
-    Krylov diagnostics assess the power approximation; expected-visits residuals
-    assess the linear solve for an approximate transition. Neither certifies
-    the exact Wright–Fisher result. Check backend accuracy separately, and
-    validate gradients independently of values.
-
-## Tune the representation separately from the method
-
-For FFT, tighten tail truncation and increase interpolation order. For NUFFT,
-lower `accuracy` and compare the final quantity again. Setting
-`derivative_accuracy=True` increases polynomial degree by 50%, capped at exact
-degree; it is a heuristic for derivative accuracy. Filtered encoding can reduce
-the sample count needed by its spectral bound, but must still be checked for
-your statistic and gradient.
-
-For Jacobi, increase `rank`; for Krylov, increase `dimension` separately. If a
-shifted solve fails, increasing the outer Krylov dimension does not fix it.
-See the [backend API](../api/backends.md) and [method API](../api/methods.md) for
-parameter defaults and [NUFFT transforms](../methods/nufft.md) for encoding bounds.
-
-Check mass, negative entries, and the final observable. The implementations do
-not clip or renormalize transition outputs; tiny negative entries can arise
-from the numerical approximation.
+NUFFT's `derivative_accuracy=True` increases polynomial degree by 50%, capped
+at exact degree; it is a heuristic, not a derivative-error bound. See the
+[backend API](../api/backends.md) for defaults and encoding options.
+If a Krylov shifted solve fails, increasing the outer `dimension` does not fix
+it; see [Krylov controls](../methods/jacobi_krylov.md#accuracy-and-controls).
 
 ## Differentiating biological parameters
-
-Differentiate biological parameters while holding numerical settings and
-prepared geometry fixed. Gradient accuracy needs its own checks, even when the forward result
-has converged.
 
 Selection and mutation parameters, initial mass, and immigration can be
 array-valued inputs to a differentiated function. Population sizes, durations,
 and numerical dimensions are fixed configuration. Construct backends outside
 the function, then create or update the frequency map inside it; the
-[population-history example](demography.md#expectations-and-selection-gradients)
+[tour](../tour.md#differentiate-selection)
 shows this pattern with `jax.grad`.
 
 Krylov operator sensitivities support first derivatives; use Sequential for
 higher-order calculations. Sensitivity failures raise even with `throw=False`.
 See the [autodiff accuracy contract](../methods/autodiff.md#accuracy-and-limitations)
 for the derivative targets and limitations.
-
-!!! tip "Validate derivatives on a small reference problem"
-
-    Compare automatic derivatives with finite differences at several step sizes
-    and with a dense model where feasible. Test the parameter range you will fit,
-    including relevant boundaries, rather than only the initial parameter value.
 
 For a complete finite-time calculation with a derivative plot and
 finite-difference checks, see [sensitivity to selection](../examples/selection_sensitivity.md).

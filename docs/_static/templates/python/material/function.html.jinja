@@ -1,0 +1,4 @@
+{# Keep constructor signatures and anchors without adding them to the page TOC. #}
+{% with heading_level = 6 if function.name in ["__init__", "__new__"] else heading_level %}
+  {% include "_base/function.html.jinja" with context %}
+{% endwith %}

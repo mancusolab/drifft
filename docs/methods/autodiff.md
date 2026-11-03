@@ -5,7 +5,7 @@ rules drifft uses to compute them. The derivation proceeds from the first
 variation of a transition to adjoints of matrix powers, their Krylov
 approximations, and implicit derivatives of occupation equations.
 Notation follows the [shared conventions](../guide/notation.md); practical
-usage and validation are covered in the [user guide](../guide/numerics.md#differentiating-biological-parameters).
+usage and validation are covered in the [accuracy guide](../guide/numerics.md#differentiating-biological-parameters).
 
 ## Problem and assumptions
 

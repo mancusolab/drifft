@@ -64,7 +64,9 @@ class Demography(eqx.Module):
     Sizes run from oldest to newest. Each interval holds the source size for
     `generations[i] - 1` generations, then changes size on the final generation.
     Repeated sizes are valid; a single size with no durations is an identity
-    history. No equilibrium initialization is implied.
+    history. No equilibrium initialization is implied. The final output is taken
+    immediately after the last size-changing step, without extra resampling or
+    evolution at the final size.
     """
 
     ne: tuple[int, ...] = eqx.field(converter=_integer_schedule)
@@ -261,9 +263,11 @@ class DemographicTransition(eqx.Module):
 
         - `demography`: Population history, oldest to newest.
         - `backend_factory`: Factory receiving a gene-copy count for constant-size geometry.
+          Use `functools.partial(drifft.NUFFT, accuracy=1e-11)`, for example,
+          to supply numerical settings.
         - `frequency_map`: Process shared by every generation.
-        - `boundary_backend_factory`: Factory for rectangular transitions; defaults to the
-          hold geometry for all backends.
+        - `boundary_backend_factory`: Factory receiving a gene-copy count for
+          rectangular transitions; defaults to the hold factory for all backends.
         - `method`: Geometry-free epoch algorithm; defaults to `Sequential()`.
           Holds call its `advance` method, including custom overrides.
 
@@ -353,7 +357,8 @@ class DemographicTransition(eqx.Module):
         **Arguments:**
 
         - `distribution`: Real mass of length `2 * initial_ne + 1`, or
-          `2 * initial_ne - 1` when segregating. Converted to float64.
+          `2 * initial_ne - 1` when segregating. Converted to float64; signed
+          entries are supported.
         - `segregating`: Discard endpoint mass after each generation.
         - `singleton_mutation_rate`: Finite nonnegative scalar per-copy rate,
           allowed only when segregating; defaults to zero. Adds

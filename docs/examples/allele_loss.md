@@ -53,20 +53,10 @@ plt.show()
 
 ## Interpretation
 
-The first entry of the distribution is the probability of loss; the last is
-fixation. These endpoints are absorbing here, so both probabilities accumulate
-over time. Their sum can be less than one because some trajectories are still
-segregating at generation 80.
+The curves show finite-time loss and fixation probabilities for fitnesses
+$(1,1-s/2,1-s)$. The full distribution retains absorbed mass; trajectories still
+segregating at generation 80 account for the remaining probability. The panels
+use different vertical scales to show the smaller fixation probabilities.
 
-The curves show increased loss and reduced fixation as the fitness penalty
-grows. The neutral allele can also be lost: disappearance from a single initial
-copy does not require selection. The two panels use different vertical scales
-so the much smaller fixation probabilities remain visible.
-
-`AdditiveSelection(s)` gives fitnesses $(1,1-s/2,1-s)$.
-These are finite-time probabilities, not estimates of eventual fixation.
-The code propagates the full distribution; it does not simulate individual
-trajectories or discard endpoint mass.
-
-See [selection and mutation](../guide/frequency_maps.md) for other fitness models
-and [computing transitions](../guide/transitions.md) for endpoint semantics.
+See [selection and mutation](../api/frequency_maps.md) for other fitness models
+and [computing transitions](../api/transitions.md) for endpoint semantics.

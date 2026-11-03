@@ -126,6 +126,36 @@ class AbstractEpochMethod(eqx.Module):
         sensitivity failures also raise independently of `throw`. Sequential
         supports higher derivatives; higher-order Krylov operator sensitivities
         are unsupported.
+
+        !!! example "Evolve with immigration"
+
+            ```python
+            import jax
+            import jax.numpy as jnp
+            import drifft
+
+            jax.config.update("jax_enable_x64", True)
+            backend = drifft.Jacobi(128)
+            initial = jnp.zeros(127).at[0].set(1.0)
+            source = jnp.zeros_like(initial).at[0].set(128 * 1e-8)
+            result = drifft.RationalKrylov(dimension=40).advance(
+                backend, initial, frequency_map=drifft.Neutral(),
+                generations=250, segregating=True, immigration=source,
+            )
+            final = result.distribution
+            ```
+
+            The source adds singleton mass after every generation, including
+            the last. For automatic per-copy mutation-rate scaling across
+            changing sizes, see [new mutations through time](../examples/mutation_input.md).
+
+        !!! note "Generation timing"
+
+            This call uses the supplied backend for all 250 generations.
+            `Demography([64, 64], [250])` instead uses 249 hold generations and
+            one boundary generation, even with equal sizes. Different numerical
+            representations of these steps can produce different approximations
+            to the same biological recurrence.
         """
         problem = prepare_epoch(
             self,
@@ -188,8 +218,21 @@ def prepare_epoch(
 class Sequential(AbstractEpochMethod):
     r"""Repeat one-generation transitions without an additional power approximation.
 
+    For the backend's represented transition $\widetilde P$ and initial mass
+    column vector $v_0$, apply one transition per generation:
+
+    $$v_{t+1}=\widetilde P^T v_t,\qquad
+    v_g=\underbrace{\widetilde P^T\cdots\widetilde P^T}_{g\text{ applications}}v_0
+       =(\widetilde P^T)^g v_0.$$
+
+    Rows of $\widetilde P$ index source counts and columns index destination
+    counts, so forward propagation uses its transpose. With immigration $b$,
+    each step instead computes $v_{t+1}=\widetilde P^T v_t+b$; segregating
+    evolution uses the interior restriction $\widetilde Q$.
+
     Construct as `Sequential()`. Geometry is supplied separately to `advance` or
-    through `DemographicTransition`. The reported power-action error is zero.
+    through `DemographicTransition`. The reported power-action error is zero;
+    backend approximation and floating-point errors remain.
     """
 
     allows_reduced_representation: ClassVar[bool] = False

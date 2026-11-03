@@ -2,6 +2,9 @@
 
 Numerical backends evaluate binomial expectations and their transposes. They
 provide the numerical representation used by transitions and evolution methods.
+All implement the shared [`expect`](#drifft.AbstractTransitionBackend.expect)
+contract below; concrete classes document their configuration and numerical
+limitations.
 
 ??? abstract "AbstractTransitionBackend"
 
@@ -25,10 +28,10 @@ provide the numerical representation used by transitions and evolution methods.
 
 ::: drifft.Jacobi
     options:
-        members: [__init__, expect]
+        members: [__init__]
 
 ---
 
 ::: drifft.Dense
     options:
-        members: [__init__, expect]
+        members: [__init__]
