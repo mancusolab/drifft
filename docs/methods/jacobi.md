@@ -8,47 +8,51 @@ Configuration: [API reference](../api/backends.md#drifft.Jacobi).
 
 ## Problem and representation
 
-Jacobi separates the endpoint values from an interior polynomial expansion.
-This provides a small state that Krylov methods can evolve across many generations.
+Jacobi separates endpoint values from an interior polynomial expansion.
+This supplies both a one-generation expectation approximation and a reduced
+state for evolution across a constant-size interval.
 
 Let $M$ be the gene-copy count and $r$ the retained interior polynomial count.
-For count-space values $f_j$, separate the linear interpolant between $f_0$
-and $f_M$. Approximate the remaining binomial expectation in
-
-$$
-(1-\xi^2)\phi_k(\xi),\qquad k=0,\ldots,r-1,\qquad \xi=2q-1,
-$$
-
-where $\phi_k$ are normalized Jacobi polynomials with parameters $(1,1)$,
-orthonormal for weight $3(1-\xi^2)/4$ on $[-1,1]$. The envelope makes interior
-basis functions vanish at the count endpoints. The full representation
-has $r+2$ coordinates; the segregating representation has $r$.
-
-Write the one-generation expectation approximation as $\widetilde P=DE$, with
-$E$ mapping values to coefficients and $D$ evaluating at the offspring
-probabilities after the full frequency map. One-generation operations apply
-these external maps directly. For Krylov evolution, $H_{\mathrm J}=ED$ is a reduced square
-matrix. In exact coefficient arithmetic,
-
-$$
-\widetilde P^{\,g}=DH_{\mathrm J}^{g-1}E,\qquad g\ge1.
-$$
-
-The [analysis note](https://github.com/mancusolab/drifft/blob/main/notes/wf_jacobi_bounds.md)
-defines the ideal projection and distinguishes it from sampled coefficients
-and padded matrix assembly.
+The full count-space vector has $M+1$ entries; the reduced representation
+has $r+2$ coordinates, or $r$ when retaining only segregating states.
 
 ## Computation
 
-The backend constructs external transforms for entering and leaving coefficient
-space, plus a reduced operator for evolution within it. Reduced assembly avoids
-forming a population-sized matrix.
+Repeated count-space evolution processes a population-sized vector at every
+step. A dense transition costs $O(M^2)$ per application; FFT and NUFFT reduce
+that cost but still operate on population-sized states. Jacobi instead
+factors the transition through polynomial coordinates, allowing Krylov to
+work with a reduced matrix whose products cost $O(r^2)$. When $r\ll M$,
+long intervals can amortize the cost of encoding and decoding the state.
+This saving applies to reduced Krylov evolution; Sequential repeats the
+count-space transforms each generation.
 
-!!! note "Advanced: reduced operator assembly"
+For destination values $f_j$, separate the endpoint interpolant and expand
+the remaining binomial expectation as
 
-    The construction below uses orthogonal-polynomial quadrature and rational
-    functions of a tridiagonal coordinate matrix. The linked analysis note
-    develops the padding and truncation bounds.
+$$
+B_M[f](q)\approx(1-q)f_0+qf_M
++(1-\xi^2)\sum_{k=0}^{r-1}c_k\phi_k(\xi),\qquad \xi=2q-1.
+$$
+
+Here $\phi_k$ are Jacobi polynomials with parameters $(1,1)$, orthonormal for
+weight $3(1-\xi^2)/4$ on $[-1,1]$. The envelope makes the interior basis vanish
+at both endpoints, preserving $f_0$ and $f_M$ explicitly.
+
+Write the expectation approximation as $\widetilde P=DE$, where $E$ maps
+values to coefficients and $D$ evaluates at offspring probabilities after
+the full frequency map. Adjacent encoding and evaluation maps combine into
+the reduced matrix $H_{\mathrm J}=ED$, so in exact coefficient arithmetic,
+
+$$
+\widetilde P^{\,g}=D(ED)^{g-1}E=DH_{\mathrm J}^{g-1}E,\qquad g\ge1.
+$$
+
+Only the outer maps act on count-space vectors; the intervening power stays
+in reduced coordinates. Forward mass propagation uses the transpose of this
+factorization: encode once, evolve the reduced state, and decode once.
+See [Krylov methods](jacobi_krylov.md) for the power approximation and
+immigration recurrence.
 
 Gauss–Jacobi quadrature with $n_{\mathrm{quad}}=r+32$ nodes and truncated,
 normalized binomial stencils constructs the coefficient transform. For
@@ -57,10 +61,11 @@ matrix construct the reduced operator. A padded
 $r_{\mathrm{pad}}\times r_{\mathrm{pad}}$ block, banded solves, and polynomial
 recurrences produce the retained matrix and endpoint coupling.
 
-Krylov encodes source mass once, evolves the reduced state, and decodes once.
-Sequential instead repeats the full count-space transition, including the
-external transforms at each generation. See [Krylov methods](jacobi_krylov.md)
-for the power approximation and immigration recurrence.
+!!! note "Projection and assembly theory"
+
+    The [analysis note](https://github.com/mancusolab/drifft/blob/main/notes/wf_jacobi_bounds.md)
+    distinguishes ideal projection from sampled coefficients and padded
+    matrix assembly, and develops their truncation bounds.
 
 ## Cost and reuse
 

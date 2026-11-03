@@ -495,27 +495,35 @@ class _JacobiGeometry(eqx.Module):
 
 @final
 class Jacobi(AbstractTransitionBackend):
-    r"""Jacobi geometry for binomial expectations and reduced Krylov evolution.
+    r"""Approximate binomial expectations with an endpoint interpolant and Jacobi expansion:
 
-    Represents expectations in `rank` interior polynomial coordinates plus two
-    endpoint coordinates. Krylov methods evolve this reduced state; Sequential
-    applies the count-space transition each generation. See the
-    [Jacobi method](../methods/jacobi.md) for the basis and factorization.
+    $$
+    B_M[f](q)\approx(1-q)f_0+qf_M
+    +(1-\xi^2)\sum_{k=0}^{r-1}c_k\phi_k(\xi),\qquad\xi=2q-1.
+    $$
 
-    `Transition` and `Sequential` accept arbitrary valid offspring probabilities
-    through the common expectation interface. Reduced Krylov assembly supports
-    neutral and diploid selection, standalone mutation, and one mutation
-    composed with one supported selection rule in either order. Custom maps and
-    longer compositions are not supported by reduced assembly.
-    Recurrent mutation couples the endpoint states to the interior; full-state
-    evolution retains this coupling, while segregating evolution discards
-    endpoint mass each generation. Construct outside JIT with JAX x64 enabled;
-    the prepared geometry is independent of the dynamic process parameters.
-    Reduced epoch domains are checked at runtime, including for zero generations:
-    selection must stay within the configured bound, and mutation rates must be
-    finite and in [0, 1]. In `DemographicTransition`, size-changing steps use the
-    same backend by default; an explicit FFT or NUFFT `boundary_backend_factory` can be
-    supplied instead.
+    Here $M$ is the destination gene-copy count, $r$ is `rank`, and $\phi_k$
+    are Jacobi polynomials with parameters $(1,1)$, orthonormal for weight
+    $3(1-\xi^2)/4$ on $[-1,1]$. The coefficients $c_k$ represent the interior
+    contribution. Its basis vanishes at both endpoints, preserving $f_0$ and
+    $f_M$ explicitly. The full representation has $r+2$ coordinates;
+    the segregating representation has $r$. Krylov methods evolve this reduced
+    state; Sequential applies the count-space transition each generation.
+
+    !!! note "Theory"
+
+        See [Jacobi reduction](../methods/jacobi.md) for coefficient
+        construction, reduced evolution, and approximation errors.
+
+    !!! warning "Reduced Krylov limitations"
+
+        Reduced assembly supports neutral and diploid selection, standalone
+        mutation, and one mutation composed with one supported selection rule
+        in either order. Custom maps and longer compositions are unsupported.
+        Selection must stay within `max_strength`; mutation rates must be
+        finite and in [0, 1]. These domains are checked even for zero generations.
+        One-generation operations and Sequential accept arbitrary valid
+        frequency maps through the common expectation interface.
     """
 
     gene_copies: int = eqx.field(static=True)

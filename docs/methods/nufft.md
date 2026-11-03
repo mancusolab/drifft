@@ -18,7 +18,16 @@ is set by population size and accuracy controls, rather than by the input vector
 
 ## Computation
 
-Both encodings sample binomial expectations and transform the samples into
+Direct evaluation of a degree-$L$ polynomial at $n_{\mathrm{eval}}$ offspring
+probabilities costs $O(n_{\mathrm{eval}}L)$. Expressing the Chebyshev polynomial
+as a cosine series turns this into a Fourier evaluation problem. The evaluation
+angles are generally nonuniform, so an ordinary FFT cannot evaluate them
+directly. A type-2 NUFFT evaluates them together in approximately
+$O(L\log L+n_{\mathrm{eval}})$ work at fixed tolerance, avoiding a separate
+sum over all modes at every probability.
+
+This saving applies to evaluation; sampling binomial expectations and forming
+coefficients have separate costs. Both encodings transform those samples into
 Chebyshev coefficients. They differ in whether the polynomial interpolates
 the samples or filters its highest modes.
 

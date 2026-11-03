@@ -19,28 +19,24 @@ from ._spectral import _evaluate, sample_bernstein
 
 @final
 class NUFFT(AbstractTransitionBackend):
-    r"""Binomial expectations through Chebyshev approximation and NUFFT evaluation.
+    r"""Approximate binomial expectations by a Chebyshev series evaluated with a NUFFT:
 
-    For destination values $f_j$ and gene-copy count $M$, approximate
-    $B_M[f](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}f_j$ by
+    $$
+    B_M[f](q)\approx\sum_{k=0}^L c_kT_k(1-2q)
+    =\sum_{k=0}^L c_k\cos(k\vartheta),\qquad\vartheta=\arccos(1-2q).
+    $$
 
-    $$B_M[f](q)\approx\sum_{k=0}^L c_kT_k(1-2q)
-      =\sum_{k=0}^L c_k\cos(k\vartheta),\qquad\vartheta=\arccos(1-2q).$$
+    Here $M$ is the destination gene-copy count, $T_k$ is a Chebyshev polynomial,
+    and $L$ is the prepared approximation degree. Binomial sampling at fixed
+    Chebyshev–Lobatto nodes followed by a DCT-I supplies the coefficients $c_k$.
+    A type-2 NUFFT evaluates the cosine series at offspring probabilities $q$.
+    Polynomial truncation, truncated binomial sampling, and NUFFT evaluation
+    contribute separate approximation errors.
 
-    Here $T_k$ is the degree-$k$ Chebyshev polynomial and $L$ is the prepared
-    approximation degree. The coefficients $c_k$ come from binomial sampling
-    at fixed Chebyshev–Lobatto nodes followed by a DCT-I. A type-2 NUFFT
-    evaluates the cosine series at arbitrary offspring probabilities.
-    `encoding="lobatto"` interpolates the samples. `encoding="filtered"`
-    tapers the modes and adds a linear endpoint correction before evaluation.
-    Endpoint expectations are set directly to $f_0$ and $f_M$ to suppress
-    evaluation roundoff. `degree` always means the output polynomial degree;
-    compressed filtered encoding uses `degree + 2` sampling nodes.
+    !!! note "Theory"
 
-    For offspring probabilities $q_i$, `Transition` uses
-    $(Pf)_i=B_M[f](q_i)$ for expectations and the transpose $P^Tv$ for forward
-    mass. Polynomial truncation, truncated binomial sampling, and NUFFT
-    evaluation each contribute approximation error.
+        See [Chebyshev and NUFFT transforms](../methods/nufft.md) for the
+        encodings, endpoint corrections, and accuracy controls.
     """
 
     nodes: jax.Array

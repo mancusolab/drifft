@@ -12,24 +12,26 @@ from ._base import AbstractTransitionBackend
 
 @final
 class Dense(AbstractTransitionBackend):
-    r"""Form binomial transition rows for an independent numerical reference.
+    r"""Construct binomial transition rows directly as an independent numerical reference:
 
-    For destination gene-copy count $M$ and source probabilities $q_i$, construct
+    $$
+    P_{ij}=\binom{M}{j}q_i^j(1-q_i)^{M-j},\qquad j=0,\ldots,M.
+    $$
 
-    $$P_{ij}=\binom{M}{j}q_i^j(1-q_i)^{M-j},\qquad j=0,\ldots,M.$$
+    Here $M$ is the destination gene-copy count and $q_i$ is the offspring
+    probability for source row $i$. Repeated Bernoulli convolution builds
+    each row, avoiding factorials, logarithms, and divisions by endpoint
+    probabilities. The calculation is polynomial throughout, so ordinary
+    JAX differentiation gives finite endpoint derivatives. It shares no
+    numerical kernels with FFT, NUFFT, or Jacobi. There is no truncation or
+    interpolation, but floating-point roundoff remains.
+    With $N$ source rows, matrix construction uses $O(NM)$ storage and
+    $O(NM^2)$ arithmetic; use this backend for small-population checks.
 
-    Each row is built by repeated Bernoulli convolution, starting at count zero.
-    This avoids factorials, logarithms, and divisions by endpoint probabilities.
-    The calculation is polynomial throughout, so ordinary JAX differentiation
-    gives finite endpoint derivatives without custom rules. It shares no
-    numerical kernels with FFT, NUFFT, or Jacobi.
+    !!! note "Theory"
 
-    `expect` explicitly forms the matrix before multiplying by destination
-    values. With $N$ source rows, this uses $O(NM)$ matrix storage and $O(NM^2)$
-    arithmetic. Reverse-mode differentiation can retain intermediate rows.
-    Use this backend for small-population checks of transitions, demographic
-    evolution, and gradients; it is not intended for large populations. There
-    is no truncation or interpolation, but floating-point roundoff remains.
+        See the [Wright–Fisher model](../guide/model.md#one-generation) for
+        the binomial transition law.
     """
 
     gene_copies: int = eqx.field(static=True)

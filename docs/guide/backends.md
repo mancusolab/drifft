@@ -36,10 +36,12 @@ Replace `drifft.FFT` with `drifft.NUFFT` to change the representation without
 changing the selection model or state layout. Backend arguments use gene-copy
 counts; `Demography` uses diploid sizes.
 
-All backends support arbitrary valid frequency maps for one-generation
-operations and Sequential evolution. Jacobi's reduced Krylov assembly supports
-a restricted family of selection and mutation maps within configured parameter
-bounds; check the [Jacobi API](../api/backends.md#drifft.Jacobi) before using it.
+!!! warning "Jacobi reduced Krylov restrictions"
+
+    All backends support arbitrary valid frequency maps for one-generation
+    operations and Sequential evolution. Jacobi's reduced Krylov assembly supports
+    a restricted family of selection and mutation maps within configured parameter
+    bounds; check the [Jacobi API](../api/backends.md#drifft.Jacobi) before using it.
 
 ## Evolution methods
 

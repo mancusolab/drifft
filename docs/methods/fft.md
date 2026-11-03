@@ -22,24 +22,25 @@ $$
 
 ## Computation
 
-Nearby offspring probabilities can share a convolution on a local log-odds grid.
-Interpolation then transfers those results to the probabilities requested by the model.
+Directly multiplying an $n$-by-$n$ binomial block by a vector costs $O(n^2)$:
+each output requires a separate weighted sum. Factoring the kernel on a local
+log-odds grid exposes a Toeplitz matrix, whose entries depend only on the index
+difference. Its matrix–vector product is a convolution, which FFTs evaluate in
+$O(n\log n)$ time. Diagonal scalings before and after the convolution cost only
+$O(n)$, so they preserve this saving.
 
-!!! note "Advanced: convolution factorization"
-
-    The formula below expresses the binomial kernel as diagonal scalings around
-    a Toeplitz matrix, whose entries depend only on the index difference.
-
-Within a retained local grid, the binomial kernel has a diagonal–Toeplitz–diagonal
-factorization. The action takes the form
+Within a retained local grid, this diagonal–Toeplitz–diagonal factorization gives
 
 $$
 y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jf_j.
 $$
 
 Here $j_0$ is a reference count, $\Delta_{\mathrm{logit}}$ is the log-odds spacing, and $a_r,b_j$
-are scaling weights. The sum is a convolution: zero-padded FFTs evaluate it
-without constructing a dense block. Local polynomial interpolation evaluates
+are scaling weights. After scaling $f_j$ by $b_j$, the kernel depends only on
+$r-(j-j_0)$. FFTs turn this convolution into pointwise multiplication in Fourier
+space; an inverse FFT and scaling by $a_r$ recover the result. Zero-padding
+prevents circular wraparound, and no dense block is constructed.
+Local polynomial interpolation evaluates
 the result at the required offspring probabilities. Near the endpoints,
 direct binomial sums replace the log-odds interpolation.
 

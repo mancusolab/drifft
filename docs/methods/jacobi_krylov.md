@@ -49,6 +49,11 @@ backends use unpreconditioned GMRES through their operator interface. Both paths
 approximate the same kind of power action, but their setup and inner-iteration
 costs differ.
 
+GMRES uses `rtol=1e-11`, `atol=1e-13`, a restart size of 50 (capped by
+working-state size), and at most 100 restart cycles per solve. A recomputed
+residual checks the result. These internal tolerances are independent of
+the outer power tolerances.
+
 For constant immigration $b$ with Jacobi, initialize $z_0=D^Tv_0$ and use
 
 $$

@@ -423,23 +423,32 @@ class _AbstractKrylovMethod(AbstractEpochMethod):
 
 @final
 class RationalKrylov(_AbstractKrylovMethod):
-    r"""Approximate a prepared power action using a resolvent Krylov basis.
+    r"""Approximate a prepared power action in a Krylov space built by shifted solves:
 
-    Each basis vector solves $[I+\tau(I-A)]y=z$, with $\tau=k/8$ for
-    working exponent $k$. Jacobi uses a reusable dense LU factorization;
-    other transition backends use unpreconditioned Lineax GMRES. Solver choice is
-    internal. Inner failures are reported as `linear_solve_failed`.
+    $$
+    R=[I+\tau(I-A)]^{-1},\qquad\tau=k/8,\qquad
+    \mathcal K_m(R,z)=\operatorname{span}\{z,Rz,\ldots,R^{m-1}z\}.
+    $$
 
-    GMRES uses rtol=1e-11, atol=1e-13, restart=50 (capped by state size), and
-    at most 100 restart cycles per solve, with a recomputed residual check.
-    These inner tolerances are independent of the outer power tolerances.
-    FFT/NUFFT speedups depend on how many operator applications GMRES needs.
+    Here $A$ is the prepared forward operator, $z$ is the initial working state,
+    and $k$ is the working exponent. An orthonormal basis $V_m$ for this space
+    gives $A^kz\approx V_mH_m^kV_m^Tz$, where $H_m=V_m^TAV_m$.
+    The shifted inverse builds the basis; the projected original operator
+    supplies the power. Compared with polynomial Krylov, this space can capture
+    slow, near-stationary dynamics with fewer basis vectors, reducing the cost
+    of long intervals when the savings outweigh the shifted-solve cost.
+    Jacobi uses a reusable dense LU factorization for shifted solves;
+    other backends use unpreconditioned Lineax GMRES.
+    Inner failures are reported as `linear_solve_failed`, independently of
+    the outer power tolerances.
 
-    First-order derivatives approximate the mathematical power sensitivity with
-    a coupled Krylov action and a two-sided operator pullback. Arnoldi bases are
-    not differentiated. Sensitivity or pullback nonconvergence raises even with
-    `throw=False`. Higher-order operator sensitivities are not implemented.
-    The input-dependent primal approximation has no matched expectation transpose.
+    !!! note "Theory"
+
+        See [Krylov computation](../methods/jacobi_krylov.md#computation) for
+        shifted solves and the projected power,
+        [accuracy and controls](../methods/jacobi_krylov.md#accuracy-and-controls)
+        for convergence, and [differentiation and adjoints](../methods/jacobi_krylov.md#differentiation-and-adjoints)
+        for sensitivity calculations and the lack of a matched expectation transpose.
     """
 
     _polynomial: ClassVar[bool] = False
@@ -447,24 +456,27 @@ class RationalKrylov(_AbstractKrylovMethod):
 
 @final
 class PolynomialKrylov(_AbstractKrylovMethod):
-    r"""Approximate repeated evolution with matrix-free polynomial Arnoldi.
+    r"""Approximate a prepared power action in a polynomial Krylov space:
 
-    For a prepared operator $A$, initial working state $z$, and exponent $k$,
-    build an orthonormal basis $V_m$ for
-    $\mathcal K_m(A,z)=\mathrm{span}(z,Az,\ldots,A^{m-1}z)$.
-    With $H_m=V_m^TAV_m$, approximate $A^k z\approx V_mH_m^kV_m^Tz$. Only operator
-    applications are needed; there are no shifted solves. All transition backends
-    are supported, including Dense for small reference calculations.
+    $$
+    \mathcal K_m(A,z)=\operatorname{span}\{z,Az,\ldots,A^{m-1}z\},
+    \qquad A^kz\approx V_mH_m^kV_m^Tz.
+    $$
 
-    The basis uses O(d m) storage for working-state size d and dimension m.
-    Its size is also capped by the prepared number of steps plus one.
-    Larger dimensions can be necessary for long intervals; no restart or
-    automatic Sequential fallback is performed. Convergence checks exclude
-    backend approximation error. First-order derivatives use a coupled Krylov
-    sensitivity action and a two-sided operator pullback, without basis AD.
-    Sensitivity or pullback nonconvergence raises even with `throw=False`.
-    Higher-order operator sensitivities are not implemented. This method does
-    not provide a matched expectation transpose of its primal approximation.
+    Here $A$ is the prepared forward operator, $z$ is the initial working state,
+    and $k$ is the working exponent. Arnoldi constructs an orthonormal basis
+    $V_m$ for this space; $H_m=V_m^TAV_m$ is the projected operator. Building
+    the basis needs only operator applications, with no shifted solves.
+    All transition backends are supported, including Dense for small references.
+    Basis storage is $O(dm)$ for working-state size $d$; the basis size is
+    capped by `dimension`, $d$, and $k+1$.
+
+    !!! note "Theory"
+
+        See [Krylov computation](../methods/jacobi_krylov.md#computation) for
+        the projected power, [accuracy and controls](../methods/jacobi_krylov.md#accuracy-and-controls)
+        for convergence, and [differentiation and adjoints](../methods/jacobi_krylov.md#differentiation-and-adjoints)
+        for sensitivity calculations and the lack of a matched expectation transpose.
     """
 
     _polynomial: ClassVar[bool] = True

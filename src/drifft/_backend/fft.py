@@ -128,25 +128,25 @@ class _FFTBucket(eqx.Module):
 
 @final
 class FFT(AbstractTransitionBackend):
-    r"""Binomial expectations through local FFT convolutions.
+    r"""Evaluate binomial expectations by factoring local kernels into convolutions:
 
-    For destination values $f_j$ and gene-copy count $M$, approximate
-    $B_M[f](q)=\sum_{j=0}^M\binom{M}{j}q^j(1-q)^{M-j}f_j$.
-    On each local log-odds grid, the retained binomial kernel factors as
+    $$
+    y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jf_j.
+    $$
 
-    $$y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jf_j.$$
+    Here $f_j$ are destination values, $j_0$ is a reference allele count,
+    $\Delta_{\mathrm{logit}}$ is the local log-odds spacing, and $a_r,b_j$ are
+    diagonal scaling weights. Zero-padded FFTs evaluate the convolution;
+    polynomial interpolation supplies expectations at arbitrary offspring
+    probabilities. Near zero and one, direct binomial sums replace interpolation.
+    The Gaussian-shaped kernel is a factorization of the binomial kernel,
+    not a normal approximation. Errors arise from tail truncation,
+    interpolation, and floating-point arithmetic.
 
-    Here $j_0$ is the reference allele count, $\Delta_{\mathrm{logit}}$ is the
-    log-odds spacing, and $a_r,b_j$ are diagonal scaling weights. The sum is a convolution,
-    evaluated by zero-padded FFTs; local polynomial interpolation supplies
-    expectations at arbitrary $q$. Near zero and one, direct binomial sums
-    replace log-odds interpolation.
+    !!! note "Theory"
 
-    For offspring probabilities $q_i$, `Transition` uses
-    $(Pf)_i=B_M[f](q_i)$ for expectations and the transpose $P^Tv$ for forward
-    mass. The approximation comes from tail truncation and interpolation;
-    the Gaussian-shaped convolution above is a factorization of the binomial
-    kernel, not a normal approximation to it.
+        See [local FFT convolution](../methods/fft.md) for the factorization,
+        computational cost, and accuracy controls.
     """
 
     buckets: tuple[_FFTBucket, ...]
