@@ -177,11 +177,11 @@ def test_backend_linearization_batched_tangents_and_mixed_pullbacks(name):
         """Batch directions while the primal inputs remain unmapped."""
         return jax.jvp(backend.expect, (probabilities, values), (dq, dv))
 
-    primals, tangents = jax.jit(jax.vmap(tangent))(
+    primals, tangents = jax.jit(jax.vmap(tangent, out_axes=(None, 0)))(
         jnp.stack((dprobabilities, -2 * dprobabilities)),
         jnp.stack((dvalues, 3 * dvalues)),
     )
-    np.testing.assert_allclose(primals, jnp.stack((primal, primal)), atol=3e-12, rtol=0)
+    np.testing.assert_allclose(primals, primal, atol=3e-12, rtol=0)
     np.testing.assert_allclose(tangents[0], expected_tangent, atol=3e-11, rtol=0)
     np.testing.assert_allclose(
         tangents[1],

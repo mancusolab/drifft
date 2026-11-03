@@ -106,7 +106,12 @@ class _BernsteinSampling(hijax.HiPrim):
         dnodes, dvalues = tangents
         if not isinstance(dnodes, hijax.Zero):
             raise ValueError("Bernstein sampling requires fixed, nontrainable nodes")
-        return self(nodes, values), self(nodes, hijax.instantiate_zeros(dvalues))
+        tangent = (
+            hijax.Zero(self.out_aval.to_tangent_aval())
+            if isinstance(dvalues, hijax.Zero)
+            else self(nodes, dvalues)
+        )
+        return self(nodes, values), tangent
 
     lin, linearized = hijax.linearize_from_jvp
     vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
@@ -117,6 +122,8 @@ class _BernsteinSampling(hijax.HiPrim):
         nodes, values = maybe_accums
         if isinstance(nodes, hijax.GradAccum):
             raise ValueError("Bernstein sampling requires fixed, nontrainable nodes")
+        if isinstance(mass, hijax.Zero):
+            return
         if isinstance(values, hijax.GradAccum):
             values.accum(
                 _sample(
@@ -128,7 +135,7 @@ class _BernsteinSampling(hijax.HiPrim):
 
     def batch_dim_rule(self, axis_data, dims):
         """Place the mapped axis first; Hijax supplies the mapped expansion."""
-        return 0
+        return 0 if any(dim is not None for dim in dims) else None
 
 
 def _sample(nodes, values, **config):
@@ -204,26 +211,33 @@ class _CosineTranspose(hijax.HiPrim):
     def jvp(self, primals, tangents):
         """Differentiate mass and probabilities using coefficient recurrences."""
         probabilities, mass = primals
-        dprobabilities, dmass = map(hijax.instantiate_zeros, tangents)
+        dprobabilities, dmass = tangents
         count, tolerance = (
             cast(int, self.params["count"]),
             cast(float, self.params["tolerance"]),
         )
         primal = self(probabilities, mass)
-        dcoefficients, dendpoints = self(probabilities, dmass)
-        if count > 1:
+        if isinstance(dmass, hijax.Zero):
+            dcoefficients, dendpoints = (
+                hijax.Zero(aval.to_tangent_aval()) for aval in self.out_aval
+            )
+        else:
+            dcoefficients, dendpoints = self(probabilities, dmass)
+        if count > 1 and not isinstance(dprobabilities, hijax.Zero):
             # For evaluation C(q) and coefficient derivative D, the probability
             # tangent of C(q).T mass is D.T C_derivative(q).T (mass*dq).
             # Using the polynomial transpose preserves finite endpoint slopes.
             derivative_mass = _transpose_cosine(
                 probabilities, mass * dprobabilities, count - 1, tolerance
             )
+            contribution = jax.linear_transpose(
+                differentiate_cosine_coefficients,
+                jnp.zeros(count, dtype=mass.dtype),
+            )(derivative_mass)[0]
             dcoefficients = (
-                dcoefficients
-                + jax.linear_transpose(
-                    differentiate_cosine_coefficients,
-                    jnp.zeros(count, dtype=mass.dtype),
-                )(derivative_mass)[0]
+                contribution
+                if isinstance(dcoefficients, hijax.Zero)
+                else dcoefficients + contribution
             )
         return primal, (dcoefficients, dendpoints)
 
@@ -236,6 +250,8 @@ class _CosineTranspose(hijax.HiPrim):
         probabilities, mass = maybe_accums
         if isinstance(probabilities, hijax.GradAccum):
             raise ValueError("Cosine adjoint is linear only in mass")
+        if all(isinstance(ct, hijax.Zero) for ct in cotangents):
+            return
         if isinstance(mass, hijax.GradAccum):
             coefficients, endpoints = map(hijax.instantiate_zeros, cotangents)
             mass.accum(
@@ -249,7 +265,8 @@ class _CosineTranspose(hijax.HiPrim):
 
     def batch_dim_rule(self, axis_data, dims):
         """Place the mapped axis first in both cotangent outputs."""
-        return (0, 0)
+        dim = 0 if any(dim is not None for dim in dims) else None
+        return (dim, dim)
 
 
 def _transpose_evaluate(probabilities, mass, count, tolerance):
@@ -294,17 +311,27 @@ class _CosineEvaluation(hijax.HiPrim):
     def jvp(self, primals, tangents):
         """Use polynomial derivatives instead of differentiating singular angles."""
         coefficients, probabilities, endpoints = primals
-        dcoefficients, dprobabilities, dendpoints = map(
-            hijax.instantiate_zeros, tangents
-        )
+        dcoefficients, dprobabilities, dendpoints = tangents
         primal = self(coefficients, probabilities, endpoints)
+        tangent = hijax.Zero(self.out_aval.to_tangent_aval())
+        if not (
+            isinstance(dcoefficients, hijax.Zero) and isinstance(dendpoints, hijax.Zero)
+        ):
+            tangent = self(
+                hijax.instantiate_zeros(dcoefficients),
+                probabilities,
+                hijax.instantiate_zeros(dendpoints),
+            )
+        if isinstance(dprobabilities, hijax.Zero):
+            return primal, tangent
         derivative = evaluate_cosine(
             differentiate_cosine_coefficients(coefficients),
             probabilities,
             cast(float, self.params["tolerance"]),
         )
+        contribution = dprobabilities * derivative
         tangent = (
-            self(dcoefficients, probabilities, dendpoints) + dprobabilities * derivative
+            contribution if isinstance(tangent, hijax.Zero) else tangent + contribution
         )
         return primal, tangent
 
@@ -319,6 +346,8 @@ class _CosineEvaluation(hijax.HiPrim):
             raise ValueError(
                 "Cosine evaluation is linear only in coefficients/endpoints"
             )
+        if isinstance(mass, hijax.Zero):
+            return
         da, de = _transpose_evaluate(
             probabilities,
             hijax.instantiate_zeros(mass),
@@ -332,7 +361,7 @@ class _CosineEvaluation(hijax.HiPrim):
 
     def batch_dim_rule(self, axis_data, dims):
         """Place the mapped axis first; Hijax handles the mapped expansion."""
-        return 0
+        return 0 if any(dim is not None for dim in dims) else None
 
 
 def _evaluate(coefficients, probabilities, tolerance, endpoints):

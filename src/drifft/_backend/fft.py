@@ -496,28 +496,31 @@ class _BinomialWeights(hijax.HiPrim):
         """Apply the lower-degree binomial identity, including at endpoints."""
         counts, logchoose, probabilities = primals
         _, dlogchoose, dprobabilities = tangents
-        dlogchoose, dprobabilities = map(
-            hijax.instantiate_zeros, (dlogchoose, dprobabilities)
-        )
         size = cast(int, self.params["size"])
         weights = self(counts, logchoose, probabilities)
-        if size == 0:
-            derivative = jnp.zeros_like(weights)
-        else:
-            # d B[n,j]/dp = n*(B[n-1,j-1] - B[n-1,j]). Reusing this
-            # rule recursively also gives finite, matched higher derivatives.
-            # size is static, so math.log supplies a trace-time constant.
-            left_logchoose = (
-                logchoose + jnp.log(jnp.maximum(counts, 1)) - math.log(size)
-            )
-            right_logchoose = (
-                logchoose + jnp.log(jnp.maximum(size - counts, 1)) - math.log(size)
-            )
-            derivative = size * (
-                _binomial_weights(size - 1, counts - 1, left_logchoose, probabilities)
-                - _binomial_weights(size - 1, counts, right_logchoose, probabilities)
-            )
-        return weights, weights * dlogchoose + derivative * dprobabilities[:, None]
+        tangent = (
+            hijax.Zero(self.out_aval.to_tangent_aval())
+            if isinstance(dlogchoose, hijax.Zero)
+            else weights * dlogchoose
+        )
+        if isinstance(dprobabilities, hijax.Zero) or size == 0:
+            return weights, tangent
+        # d B[n,j]/dp = n*(B[n-1,j-1] - B[n-1,j]). Reusing this
+        # rule recursively also gives finite, matched higher derivatives.
+        # size is static, so math.log supplies a trace-time constant.
+        left_logchoose = logchoose + jnp.log(jnp.maximum(counts, 1)) - math.log(size)
+        right_logchoose = (
+            logchoose + jnp.log(jnp.maximum(size - counts, 1)) - math.log(size)
+        )
+        derivative = size * (
+            _binomial_weights(size - 1, counts - 1, left_logchoose, probabilities)
+            - _binomial_weights(size - 1, counts, right_logchoose, probabilities)
+        )
+        contribution = derivative * dprobabilities[:, None]
+        tangent = (
+            contribution if isinstance(tangent, hijax.Zero) else tangent + contribution
+        )
+        return weights, tangent
 
     lin, linearized = hijax.linearize_from_jvp
     vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp

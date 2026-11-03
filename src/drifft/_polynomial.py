@@ -106,17 +106,26 @@ class _GegenbauerMoments(hijax.HiPrim):
     def jvp(self, primals, tangents):
         """Differentiate points and values using polynomial derivative recurrences."""
         points, values = primals
-        dpoints, dvalues = map(hijax.instantiate_zeros, tangents)
+        dpoints, dvalues = tangents
         primal = self(points, values)
-        tangent = self(points, dvalues)
+        tangent = (
+            hijax.Zero(self.out_aval.to_tangent_aval())
+            if isinstance(dvalues, hijax.Zero)
+            else self(points, dvalues)
+        )
+        if isinstance(dpoints, hijax.Zero):
+            return primal, tangent
         config = self.params | {"order": cast(int, self.params["order"]) + 1}
         # Evaluation differentiates pointwise; moments first weight each input
         # mass by its point tangent. Both paths reuse the next derivative-order
         # recurrence, so nested AD never stores a point-by-degree basis matrix.
         if self.params["transposed"]:
-            tangent = tangent + dpoints * gegenbauer_moments(points, values, **config)
+            contribution = dpoints * gegenbauer_moments(points, values, **config)
         else:
-            tangent = tangent + gegenbauer_moments(points, values * dpoints, **config)
+            contribution = gegenbauer_moments(points, values * dpoints, **config)
+        tangent = (
+            contribution if isinstance(tangent, hijax.Zero) else tangent + contribution
+        )
         return primal, tangent
 
     lin, linearized = hijax.linearize_from_jvp
@@ -127,6 +136,8 @@ class _GegenbauerMoments(hijax.HiPrim):
         points, values = maybe_accums
         if isinstance(points, hijax.GradAccum):
             raise ValueError("Gegenbauer moments are linear only in values")
+        if isinstance(out_ct, hijax.Zero):
+            return
         if isinstance(values, hijax.GradAccum):
             values.accum(
                 gegenbauer_moments(
