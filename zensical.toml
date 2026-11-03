@@ -22,6 +22,7 @@ nav = [
     { "API reference" = [
         "api/frequency_maps.md",
         "api/transitions.md",
+        "api/sampling.md",
         "api/demography.md",
         "api/backends.md",
         "api/methods.md",
@@ -38,6 +39,7 @@ nav = [
             { "NUFFT" = "methods/nufft.md" },
             { "Jacobi" = "methods/jacobi.md" },
             { "Krylov methods" = "methods/jacobi_krylov.md" },
+            { "Sampling" = "methods/hypergeometric.md" },
         ] },
         { "Differentiation" = "methods/autodiff.md" },
         { "Notation" = "guide/notation.md" },
