@@ -38,8 +38,15 @@ condition and both mutation rates are part of the likelihood.
 ## Calculation
 
 The calculation uses Jacobi and RationalKrylov within intervals and FFT at
-size changes. The complete code, including numerical checks and plotting, is
-shown below and available as a [Python script](schiffels_durbin.py).
+size changes. A prepared [HypergeometricSampling](../api/sampling.md) operator
+then projects the final population distribution to 100 sampled gene copies.
+The complete code, including plotting, is shown below
+and available as a [Python script](schiffels_durbin.py).
+
+Sampling geometry depends only on population size, sample size, and accuracy
+settings; reuse it across parameter evaluations. The projection and likelihood
+arithmetic stay in JAX. Sample-segregating conditioning is applied after sampling,
+so its denominator is the probability of a segregating sample.
 
 After [installation](../index.md#installation), run from the repository root:
 
@@ -49,7 +56,8 @@ uv run --with matplotlib python docs/examples/schiffels_durbin.py
 
 To run a standalone copy, save the code as `schiffels_durbin.py` beside a
 `data/` directory containing the [demographic table](data/schiffels_durbin.tsv).
-The recorded full run used about 5.1 GB of memory.
+An earlier full run using SciPy sampling used about 5.1 GB of memory; see the
+[measurement details](../benchmarks.md#schiffelsdurbin-likelihood-calculation).
 
 ```python
 """Compute and plot sample likelihoods for the bundled demographic history."""
@@ -60,7 +68,6 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import hypergeom
 
 import drifft
 
@@ -98,39 +105,28 @@ model = drifft.DemographicTransition(
 # Explicit ancestral condition: the derived allele is absent at the oldest boundary.
 initial = jnp.zeros(2 * history.initial_ne + 1).at[0].set(1.0)
 result = model.advance(initial, throw=False)
-if not bool(result.converged):
-    raise RuntimeError(f"demographic evolution failed: {result.status}")
-population_probabilities = np.asarray(result.distribution)
-if not np.all(np.isfinite(population_probabilities)):
-    raise RuntimeError("nonfinite population probabilities")
-if not np.isclose(population_probabilities.sum(), 1.0, atol=1e-8, rtol=0):
-    raise RuntimeError("population mass check failed")
+# In practice, check result.converged and that population mass is finite and sums to one.
+population_probabilities = result.distribution
 
 # Sample 100 gene copies without replacement from the endpoint population.
 sample_size = 100
 observed_count = 5  # Illustrative observation, not an empirical dataset.
 M = 2 * history.final_ne
-if not 1 <= observed_count < sample_size <= M:
-    raise ValueError("require 1 <= observed_count < sample_size <= M")
-population_counts = np.arange(M + 1)
-sample_probabilities = np.empty(sample_size + 1)
-for count in range(sample_size + 1):
-    weights = hypergeom.pmf(count, M, population_counts, sample_size)
-    sample_probabilities[count] = weights @ population_probabilities
-if not np.all(np.isfinite(sample_probabilities)):
-    raise RuntimeError("nonfinite sample probabilities")
-if not np.isclose(sample_probabilities.sum(), 1.0, atol=1e-8, rtol=0):
-    raise RuntimeError("sample mass check failed")
+sampling = drifft.HypergeometricSampling(
+    population_gene_copies=M,
+    sample_gene_copies=sample_size,
+    accuracy=1e-10,
+)
+sample_probabilities = sampling.advance(population_probabilities)
+# In practice, check sample mass and positivity before conditioning or taking logs.
 
 # Condition only if the observation scheme selects sample-segregating sites.
 segregating = sample_probabilities[1:-1]
-if np.any(segregating <= 0):
-    raise RuntimeError("nonpositive sample bins; validate numerical accuracy")
 conditional_probabilities = segregating / segregating.sum()
 likelihood = sample_probabilities[observed_count]
 conditional_likelihood = conditional_probabilities[observed_count - 1]
 print(f"P(K={observed_count}) = {likelihood:.6g}")
-print(f"Log likelihood = {np.log(likelihood):.6g}")
+print(f"Log likelihood = {jnp.log(likelihood):.6g}")
 print(f"P(K={observed_count} | sample segregating) = {conditional_likelihood:.6g}")
 
 counts = np.arange(1, sample_size)
@@ -177,7 +173,19 @@ separate treatment of linkage and ascertainment.
 ## Numerical checks
 
 Validate the sample probabilities under larger Krylov dimensions and tighter
-backend settings using the [accuracy guide](../guide/numerics.md).
+backend settings using the [accuracy guide](../guide/numerics.md). Tighten
+sampling `accuracy` separately; its row-error budget does not bound relative
+errors in rare sample bins or conditional likelihoods. See the
+[sampling method](../methods/hypergeometric.md) for the approximation contract.
+
+For this default history, sampling at `accuracy=1e-10` agreed with a SciPy
+hypergeometric reference to a maximum relative difference of $4.2\times10^{-11}$
+across both unconditional and sample-segregating probabilities. Both
+log-likelihood differences were below $4.0\times10^{-11}$. Tightening sampling
+to `1e-12` reduced the maximum relative difference below $1.2\times10^{-14}$.
+These comparisons use the same evolved population distribution and validate
+the sampling step, not demographic evolution or parameter gradients.
+
 [Recorded comparisons and timings](../benchmarks.md#schiffelsdurbin-likelihood-calculation)
 include an FFT comparison for this history.
 
