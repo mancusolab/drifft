@@ -498,15 +498,17 @@ class Jacobi(AbstractTransitionBackend):
     r"""Approximate binomial expectations with an endpoint interpolant and Jacobi expansion:
 
     $$
-    B_M[f](q)\approx(1-q)f_0+qf_M
-    +(1-\xi^2)\sum_{k=0}^{r-1}c_k\phi_k(\xi),\qquad\xi=2q-1.
+    (Pv)_i\approx(1-q_i)v_0+q_iv_M
+    +(1-\xi_i^2)\sum_{k=0}^{r-1}c_k\phi_k(\xi_i),\qquad\xi_i=2q_i-1.
     $$
 
-    Here $M$ is the destination gene-copy count, $r$ is `rank`, and $\phi_k$
-    are Jacobi polynomials with parameters $(1,1)$, orthonormal for weight
+    Here $v_j$ are destination values at counts $j=0,\ldots,M$, with $M=2N$
+    for diploid destination population size $N$ (`pop_size`), and $q_i$ is
+    the offspring allele probability for source row $i$. The rank $r$ is
+    `rank`, and $\phi_k$ are Jacobi polynomials with parameters $(1,1)$, orthonormal for weight
     $3(1-\xi^2)/4$ on $[-1,1]$. The coefficients $c_k$ represent the interior
-    contribution. Its basis vanishes at both endpoints, preserving $f_0$ and
-    $f_M$ explicitly. The full representation has $r+2$ coordinates;
+    contribution of $v$. Its basis vanishes at both endpoints, preserving $v_0$
+    and $v_M$ explicitly. The full representation has $r+2$ coordinates;
     the segregating representation has $r$. Krylov methods evolve this reduced
     state; Sequential applies the count-space transition each generation.
 
@@ -526,7 +528,7 @@ class Jacobi(AbstractTransitionBackend):
         frequency maps through the common expectation interface.
     """
 
-    diploid_size: int = eqx.field(static=True)
+    pop_size: int = eqx.field(static=True)
     rank: int = eqx.field(static=True)
     padded_rank: int = eqx.field(static=True)
     max_strength: float = eqx.field(static=True)
@@ -535,7 +537,7 @@ class Jacobi(AbstractTransitionBackend):
 
     def __init__(
         self,
-        diploid_size: int,
+        pop_size: int,
         *,
         rank: int | None = None,
         max_strength: float = 0.1,
@@ -543,10 +545,13 @@ class Jacobi(AbstractTransitionBackend):
     ) -> None:
         r"""Prepare process-independent geometry outside JIT.
 
+        Runtime geometry consists of JAX arrays; SciPy is used only to
+        prepare Gauss–Jacobi nodes, for which JAX has no equivalent routine.
+
         **Arguments:**
 
-        - `diploid_size`: Diploid effective population size, a Python integer at least two.
-        - `rank`: Interior polynomial count, between one and `2 * diploid_size - 1`.
+        - `pop_size`: Diploid effective population size, a Python integer at least two.
+        - `rank`: Interior polynomial count, between one and `2 * pop_size - 1`.
           If omitted, use an ideal one-step polynomial tail bound.
         - `max_strength`: Static bound in `[0, 1)` on the absolute values of
           both diploid fitness reductions, used for reduced Krylov padding.
@@ -555,24 +560,15 @@ class Jacobi(AbstractTransitionBackend):
         - `one_step_tolerance`: Planning tolerance in `(0, 1)` for polynomial
           truncation and Jacobi padding separately; not a total error guarantee.
 
-        **Returns:**
-
-        `None`. Runtime geometry consists of JAX arrays; SciPy is used only to
-        prepare Gauss–Jacobi nodes, for which JAX has no equivalent routine.
-
         **Raises:**
 
         `ValueError` for invalid counts or tolerances. Enable JAX x64 before
         constructing this backend. Dense reduced storage costs O(rank²).
         With RationalKrylov, dense LU factorization costs O(rank³) per power action.
         """
-        if (
-            isinstance(diploid_size, bool)
-            or not isinstance(diploid_size, int)
-            or diploid_size < 2
-        ):
-            raise ValueError("diploid_size must be a Python integer >= 2")
-        gene_copies = 2 * diploid_size
+        if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 2:
+            raise ValueError("pop_size must be a Python integer >= 2")
+        gene_copies = 2 * pop_size
         # Validate host planning limits with math; the actual model strength is
         # a dynamic JAX value checked separately when assembling the operator.
         if not math.isfinite(max_strength) or not 0 <= max_strength < 1:
@@ -586,12 +582,10 @@ class Jacobi(AbstractTransitionBackend):
             or not isinstance(rank, int)
             or not 1 <= rank < gene_copies
         ):
-            raise ValueError(
-                "rank must be a Python integer in [1, 2 * diploid_size - 1]"
-            )
+            raise ValueError("rank must be a Python integer in [1, 2 * pop_size - 1]")
         if not jax.config.x64_enabled:
             raise ValueError("Jacobi requires jax_enable_x64=True")
-        self.diploid_size, self.rank = diploid_size, rank
+        self.pop_size, self.rank = pop_size, rank
         self.padded_rank = _padded_rank(
             gene_copies, rank, max_strength, one_step_tolerance
         )
@@ -607,7 +601,7 @@ class Jacobi(AbstractTransitionBackend):
         **Arguments:**
 
         - `probabilities`: Float64 probability vector, including endpoints.
-        - `values`: Finite real destination values of length `2 * diploid_size + 1`.
+        - `values`: Finite real destination values of length `2 * pop_size + 1`.
 
         **Returns:**
 
@@ -625,7 +619,7 @@ class Jacobi(AbstractTransitionBackend):
         values = jnp.asarray(values, dtype=jnp.float64)
         if probabilities.ndim != 1 or values.shape != (self._gene_copies + 1,):
             raise ValueError(
-                "expect requires a probability vector and 2 * diploid_size + 1 destination values"
+                "expect requires a probability vector and 2 * pop_size + 1 destination values"
             )
 
         # Transpose the existing decoder to obtain E v. The linear endpoint

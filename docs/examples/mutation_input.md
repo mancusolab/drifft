@@ -18,14 +18,14 @@ import jax.numpy as jnp
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-history = drifft.Demography(ne=[64, 16, 64], generations=[20, 20])
+history = drifft.Demography(pop_sizes=[64, 16, 64], generations=[20, 20])
 model = drifft.DemographicTransition(
     history,
     frequency_map=drifft.Neutral(),
     backend_factory=drifft.FFT,
     method=drifft.Sequential(),
 )
-initial = jnp.zeros(2 * history.initial_ne - 1)
+initial = jnp.zeros(2 * history.initial_pop_size - 1)
 mutation_rate = 1e-8
 result = model.advance(
     initial,
@@ -37,14 +37,14 @@ print(f"Expected segregating mass per site: {expected_counts.sum():.6g}")
 print(f"Expected singleton mass per site: {expected_counts[0]:.6g}")
 ```
 
-The vector contains only counts 1 through `2 * history.final_ne - 1`.
+The vector contains only counts 1 through `2 * history.final_pop_size - 1`.
 Its entries are expected mass, not probabilities summing to one. This is a
 population count spectrum; a sample spectrum additionally requires a sampling
 projection, as illustrated in the [sample-likelihood example](schiffels_durbin.md).
 
 ## Source timing
 
-After each generation, the model adds `2 * destination_ne * mutation_rate`
+After each generation, the model adds `2 * dest_pop_size * mutation_rate`
 at count one, including after the last generation. At size-changing steps,
 the **destination** size sets this scaling. Thus mutations injected on the
 last step remain singletons in the output. The
@@ -62,7 +62,7 @@ For terminal values `f`, the expected reward is
 mutations introduced after the initial state:
 
 ```python
-values = jnp.ones(2 * history.final_ne - 1)
+values = jnp.ones(2 * history.final_pop_size - 1)
 expectation = model.expect(
     values,
     segregating=True,

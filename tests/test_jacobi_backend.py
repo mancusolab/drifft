@@ -95,7 +95,7 @@ def test_jacobi_sequential_history_matches_its_actual_transition_transpose():
         for _ in range(duration - 1):
             expected = hold.advance(expected)
         expected = drifft.Transition(
-            backend(destination // 2), rule, source_diploid_size=source // 2
+            backend(destination // 2), rule, source_pop_size=source // 2
         ).advance(expected)
     actual = model.advance(initial).distribution
     assert jnp.allclose(actual, expected, atol=2e-12)
@@ -127,7 +127,7 @@ def test_transition_rejects_unsupported_backend_at_construction():
     """Runtime validation must match the annotated backend contract."""
 
     class InvalidBackend:
-        diploid_size = 8
+        pop_size = 8
 
     with pytest.raises(TypeError, match="AbstractTransitionBackend"):
         drifft.Transition(InvalidBackend(), drifft.Neutral())  # ty: ignore[invalid-argument-type]
@@ -138,7 +138,7 @@ def test_jacobi_segregating_rectangular_operations():
     source, destination = 20, 16
     rule = drifft.Mutation(0.02, 0.03)
     transition = drifft.Transition(
-        drifft.Jacobi(destination // 2), rule, source_diploid_size=source // 2
+        drifft.Jacobi(destination // 2), rule, source_pop_size=source // 2
     )
     probabilities = np.asarray(rule(jnp.arange(source + 1) / source))
     matrix = jnp.asarray(

@@ -98,11 +98,33 @@ class AbstractEpochMethod(eqx.Module):
     ) -> EpochResult:
         r"""Bind geometry and evolve a constant-size interval.
 
+        !!! example "Example: Evolve with immigration"
+
+            ```python
+            import jax
+            import jax.numpy as jnp
+            import drifft
+
+            jax.config.update("jax_enable_x64", True)
+            backend = drifft.Jacobi(pop_size=64)
+            initial = jnp.zeros(127).at[0].set(1.0)
+            source = jnp.zeros_like(initial).at[0].set(128 * 1e-8)
+            result = drifft.RationalKrylov(dimension=40).advance(
+                backend, initial, frequency_map=drifft.Neutral(),
+                generations=250, segregating=True, immigration=source,
+            )
+            final = result.distribution
+            ```
+
+            The source adds singleton mass after every generation, including
+            the last. For automatic per-copy mutation-rate scaling across
+            changing sizes, see [new mutations through time](../examples/mutation_input.md).
+
         **Arguments:**
 
         - `backend`: Prepared geometry compatible with this method.
         - `distribution`: Real mass, converted to float64. Length is
-          `2 * backend.diploid_size + 1`, or `2 * backend.diploid_size - 1` if segregating.
+          `2 * backend.pop_size + 1`, or `2 * backend.pop_size - 1` if segregating.
           Signed entries are supported; no normalization is applied.
         - `frequency_map`: Process shared by every generation.
         - `generations`: Nonnegative Python integer, static under JIT.
@@ -126,28 +148,6 @@ class AbstractEpochMethod(eqx.Module):
         sensitivity failures also raise independently of `throw`. Sequential
         supports higher derivatives; higher-order Krylov operator sensitivities
         are unsupported.
-
-        !!! example "Example: Evolve with immigration"
-
-            ```python
-            import jax
-            import jax.numpy as jnp
-            import drifft
-
-            jax.config.update("jax_enable_x64", True)
-            backend = drifft.Jacobi(diploid_size=64)
-            initial = jnp.zeros(127).at[0].set(1.0)
-            source = jnp.zeros_like(initial).at[0].set(128 * 1e-8)
-            result = drifft.RationalKrylov(dimension=40).advance(
-                backend, initial, frequency_map=drifft.Neutral(),
-                generations=250, segregating=True, immigration=source,
-            )
-            final = result.distribution
-            ```
-
-            The source adds singleton mass after every generation, including
-            the last. For automatic per-copy mutation-rate scaling across
-            changing sizes, see [new mutations through time](../examples/mutation_input.md).
 
         !!! note "Generation timing"
 
@@ -304,10 +304,6 @@ Sequential.__init__.__doc__ = r"""Configure repeated one-generation evolution.
 **Arguments:**
 
 No arguments. Supply geometry separately to `advance` or `DemographicTransition`.
-
-**Returns:**
-
-`None`.
 """
 
 
@@ -484,16 +480,14 @@ class PolynomialKrylov(_AbstractKrylovMethod):
 
 _krylov_init_doc = r"""Configure Krylov powering independently of geometry.
 
+Supply transition geometry separately.
+
 **Arguments:**
 
 - `dimension`: Maximum Krylov basis size, a Python integer at least two;
   capped by the prepared working-state dimension.
 - `rtol`, `atol`: Finite nonnegative relative and absolute tolerances for the
   power-action error estimate; these do not control backend approximation.
-
-**Returns:**
-
-`None`. Supply transition geometry separately.
 
 **Raises:**
 

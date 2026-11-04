@@ -59,11 +59,11 @@ def test_dense_endpoint_derivatives_include_orders_above_degree():
         np.testing.assert_allclose(actual, expected, atol=2e-14, rtol=0)
 
 
-@pytest.mark.parametrize("diploid_size", [0, -2, True, 4.5])
-def test_dense_invalid_diploid_sizes(diploid_size):
+@pytest.mark.parametrize("pop_size", [0, -2, True, 4.5])
+def test_dense_invalid_pop_sizes(pop_size):
     """Reject invalid static dimensions before tracing."""
-    with pytest.raises(ValueError, match="diploid_size"):
-        drifft.Dense(diploid_size)
+    with pytest.raises(ValueError, match="pop_size"):
+        drifft.Dense(pop_size)
 
 
 def test_dense_shape_validation_and_empty_probability_rows():

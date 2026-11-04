@@ -31,7 +31,7 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 
 # 32 diploid individuals carry 64 gene copies.
-backend = drifft.FFT(diploid_size=32)
+backend = drifft.FFT(pop_size=32)
 selection = drifft.AdditiveSelection(s=0.02)
 transition = drifft.Transition(backend, frequency_map=selection)
 
@@ -50,10 +50,9 @@ Put the same calculation in a function of the selection coefficient and apply
 
 ```python
 def loss_probability(s):
-    selected = drifft.Transition(
-        backend, drifft.AdditiveSelection(s=s)
-    )
+    selected = drifft.Transition(backend, drifft.AdditiveSelection(s=s))
     return selected.advance(initial)[0]
+
 
 sensitivity = jax.grad(loss_probability)(jnp.asarray(0.02))
 print(f"Sensitivity to s: {sensitivity:.4f}")

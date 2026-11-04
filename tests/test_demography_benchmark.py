@@ -35,7 +35,7 @@ def test_demography_benchmark_runs_isolated_cold_and_warm_passes(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     report = json.loads(output.read_text())
-    assert report["history"]["ne"] == [12, 10, 14]
+    assert report["history"]["pop_sizes"] == [12, 10, 14]
     assert report["history"]["generations"] == [3, 3]
     assert report["initialization"]["converged"]
     assert report["relative_l1_difference"] < 1e-7

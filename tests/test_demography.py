@@ -74,7 +74,7 @@ def test_demographic_evaluation_matches_dense_boundary_history(
     backend, sizes, durations
 ):
     """Hold the source size and change only on the final interval generation."""
-    history = drifft.Demography(ne=sizes, generations=durations)
+    history = drifft.Demography(pop_sizes=sizes, generations=durations)
     model = drifft.DemographicTransition(
         history, backend_factory=backend, frequency_map=drifft.Underdominance(0.07)
     )
@@ -151,10 +151,10 @@ def test_demographic_selection_gradient_and_batching(backend):
 def test_demography_normalizes_array_schedule():
     """Copy concrete integer arrays into immutable host metadata."""
     history = drifft.Demography(jnp.array([8, 5, 11]), jnp.array([3, 2]))
-    assert history.ne == (8, 5, 11)
+    assert history.pop_sizes == (8, 5, 11)
     assert history.generations == (3, 2)
-    assert history.initial_ne == 8
-    assert history.final_ne == 11
+    assert history.initial_pop_size == 8
+    assert history.final_pop_size == 11
     assert history.total_generations == 5
 
 

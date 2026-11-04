@@ -116,6 +116,11 @@ small.doc-label.doc-label-class-attribute {
     display: none;
 }
 
+/* Constructors use h6 to stay out of the TOC, but match method text sizes. */
+.md-typeset h6.doc-heading {
+    font-size: 0.9rem;
+}
+
 h5.doc-heading,
 h6.doc-heading {
     background-color: var(--doc-heading-color-alt);

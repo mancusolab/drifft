@@ -6,4 +6,4 @@ of any transition backend.
 
 ::: drifft.HypergeometricSampling
     options:
-        members: [__init__, advance, expect]
+        members: [__init__, source_size, dest_size, advance, expect]

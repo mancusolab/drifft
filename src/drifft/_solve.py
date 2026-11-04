@@ -68,7 +68,7 @@ ExpectedVisitsResult.__new__.__doc__ = r"""Construct the result container withou
 
 **Arguments:**
 
-- `visits`: Candidate float64 expected visits of length `2 * diploid_size-1`,
+- `visits`: Candidate float64 expected visits of length `2 * pop_size-1`,
   including generation zero. Index zero represents one mutant copy.
 - `status`: Complete calculation outcome, an `ExpectedVisitsStatus`.
 - `solver_status`: Unmodified Lineax result code.
@@ -90,7 +90,6 @@ An immutable result with the supplied fields.
 
 def _solve_expected_visits(
     operator: lx.FunctionLinearOperator,
-    gene_copies: int,
     *,
     solver: Literal["gmres", "bicgstab"] = "gmres",
     rtol: float = 1e-9,
@@ -104,7 +103,6 @@ def _solve_expected_visits(
     **Arguments:**
 
     - `operator`: Square segregating-state expectation operator.
-    - `gene_copies`: Population size in haploid copies, fixed during the solve.
     - `solver`: `"gmres"` or `"bicgstab"`; no symmetric-matrix solver is valid.
     - `rtol`, `atol`: Finite nonnegative solver tolerances, at least one positive.
       These are separate from the backend's approximation tolerance.
@@ -114,8 +112,8 @@ def _solve_expected_visits(
 
     **Returns:**
 
-    `ExpectedVisitsResult` with candidate `visits` of shape `(gene_copies-1,)`. Index zero is
-    state one. `converged` includes an explicit residual check against
+    `ExpectedVisitsResult` with one candidate visit count per operator state.
+    Index zero is state one. `converged` includes an explicit residual check against
     `atol + rtol`, since the right-hand side has infinity norm one.
 
     **Raises:**
@@ -145,12 +143,13 @@ def _solve_expected_visits(
         raise ValueError(
             "Require nonnegative tolerances, positive total tolerance and iteration limits"
         )
+    size = operator.in_size()
     if solver == "gmres":
         algorithm = lx.GMRES(
             rtol=rtol,
             atol=atol,
             max_steps=max_steps,
-            restart=min(restart, gene_copies - 1),
+            restart=min(restart, size),
         )
     elif solver == "bicgstab":
         algorithm = lx.BiCGStab(rtol=rtol, atol=atol, max_steps=max_steps)
@@ -159,9 +158,9 @@ def _solve_expected_visits(
     transpose = operator.T
     # Summing visits gives u = e_1 + Q.T u. Q acts on observables, so its
     # transpose is required here; using Q would solve a different occupation law.
-    spec = jax.ShapeDtypeStruct((gene_copies - 1,), jnp.float64)
+    spec = jax.ShapeDtypeStruct((size,), jnp.float64)
     system = lx.FunctionLinearOperator(lambda v: v - transpose.mv(v), spec)
-    rhs = jnp.zeros(gene_copies - 1, dtype=jnp.float64).at[0].set(1.0)
+    rhs = jnp.zeros(size, dtype=jnp.float64).at[0].set(1.0)
     solution = lx.linear_solve(system, rhs, algorithm, throw=False)
     # Recompute the residual rather than trusting the solver's termination code.
     residual = jnp.max(jnp.abs(system.mv(solution.value) - rhs))

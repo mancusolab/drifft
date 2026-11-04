@@ -218,14 +218,14 @@ def _interpolate(knots, barycentric, values, **config):
 class HypergeometricSampling(eqx.Module):
     r"""Project population counts to a sample drawn without replacement.
 
-    For population gene-copy count $M$, sample size $n$, and population count $j$,
+    For diploid population size $N$ and diploid sample size $m$, let $M=2N$
+    and $n=2m$ be the corresponding allele-copy counts. For population count $j$,
 
     $$S_{jk}=\frac{\binom{j}{k}\binom{M-j}{n-k}}{\binom{M}{n}}.$$
 
     Local polynomial interpolation between representative rows and sparse tail
-    truncation approximate $S$. `expect` applies this approximation to sample
-    values; `advance` applies its matched transpose to population mass. Both
-    are linear, including for signed inputs, and support JIT, AD, and vmap.
+    truncation approximate $S$. Operations are linear, including for signed
+    inputs, and support JIT, AD, and vmap.
     No input-dependent grouping or output renormalization is performed.
 
     Interpolation preserves the conditional sampling mean before truncation.
@@ -239,8 +239,8 @@ class HypergeometricSampling(eqx.Module):
         compression scheme, accuracy controls, and usage.
     """
 
-    population_gene_copies: int = eqx.field(static=True)
-    sample_gene_copies: int = eqx.field(static=True)
+    pop_size: int = eqx.field(static=True)
+    sample_size: int = eqx.field(static=True)
     accuracy: float = eqx.field(static=True)
     interp_order: int = eqx.field(static=True)
     tail_tol: float = eqx.field(static=True)
@@ -256,8 +256,8 @@ class HypergeometricSampling(eqx.Module):
 
     def __init__(
         self,
-        population_gene_copies: int,
-        sample_gene_copies: int,
+        pop_size: int,
+        sample_size: int,
         *,
         accuracy: float = 1e-8,
         interp_order: int = 8,
@@ -266,28 +266,28 @@ class HypergeometricSampling(eqx.Module):
     ) -> None:
         """Prepare fixed interpolation and sparse rows outside JIT.
 
-        **Arguments:**
-
-        - `population_gene_copies`: Positive Python integer $M$.
-        - `sample_gene_copies`: Python integer $n$ between zero and $M$.
-        - `accuracy`: Nominal maximum row half-L1 error, in `[0, 1)`.
-          Split between polynomial interpolation and tail truncation; excludes
-          floating-point error. Zero uses all rows and their full supports.
-        - `interp_order`: Even stencil size from 2 through 16 (degree one less).
-          Capped at `sample_gene_copies + 1`, the exact polynomial dimension.
-        - `tail_tol`: Optional stricter discarded mass per representative row,
-          in `[0, 1)`. Zero disables tail truncation. The default accounts for
-          amplification by interpolation weights.
-        - `batch_size`: Positive integer controlling interpolation workspace.
-
-        **Returns:**
-
-        `None`. Host preparation selects integer nodes from a finite-difference
+        Host preparation selects integer nodes from a finite-difference
         error bound and builds hypergeometric rows by mode-relative recurrence.
         JAX application stores $O(R W+R p)$ geometry for $R$ representatives,
         row width $W$, and stencil size $p$; interpolation uses bounded batches.
         `interpolation_bound + tail_bound` is the exact-arithmetic error budget.
         Zero accuracy can require $O(Mn)$ storage.
+
+        **Arguments:**
+
+        - `pop_size`: Diploid population size, a positive Python integer.
+          The population contains `2 * pop_size` allele-bearing copies.
+        - `sample_size`: Diploid sample size, a Python integer in `[0, pop_size]`.
+          Draws `2 * sample_size` allele-bearing copies without replacement.
+        - `accuracy`: Nominal maximum row half-L1 error, in `[0, 1)`.
+          Split between polynomial interpolation and tail truncation; excludes
+          floating-point error. Zero uses all rows and their full supports.
+        - `interp_order`: Even stencil size from 2 through 16 (degree one less).
+          Capped at `2 * sample_size + 1`, the exact polynomial dimension.
+        - `tail_tol`: Optional stricter discarded mass per representative row,
+          in `[0, 1)`. Zero disables tail truncation. The default accounts for
+          amplification by interpolation weights.
+        - `batch_size`: Positive integer controlling interpolation workspace.
 
         **Raises:**
 
@@ -295,11 +295,15 @@ class HypergeometricSampling(eqx.Module):
         `RuntimeError` if row preparation produces invalid probabilities.
         Sizes and geometry are fixed, not differentiable parameters.
         """
-        M, n = population_gene_copies, sample_gene_copies
-        if isinstance(M, bool) or not isinstance(M, int) or M < 1:
-            raise ValueError("population_gene_copies must be a positive Python integer")
-        if isinstance(n, bool) or not isinstance(n, int) or not 0 <= n <= M:
-            raise ValueError("sample_gene_copies must be an integer in [0, M]")
+        if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 1:
+            raise ValueError("pop_size must be a positive Python integer")
+        if (
+            isinstance(sample_size, bool)
+            or not isinstance(sample_size, int)
+            or not 0 <= sample_size <= pop_size
+        ):
+            raise ValueError("sample_size must be an integer in [0, pop_size]")
+        M, n = 2 * pop_size, 2 * sample_size
         if not math.isfinite(accuracy) or not 0 <= accuracy < 1:
             raise ValueError("accuracy must be finite and in [0, 1)")
         if (
@@ -320,7 +324,7 @@ class HypergeometricSampling(eqx.Module):
             raise ValueError("batch_size must be a positive Python integer")
         if not jax.config.x64_enabled:
             raise ValueError("HypergeometricSampling requires jax_enable_x64=True")
-        self.population_gene_copies, self.sample_gene_copies = M, n
+        self.pop_size, self.sample_size = pop_size, sample_size
         self.accuracy = float(accuracy)
         self.interp_order = min(interp_order, n + 1)
         self.batch_size = min(batch_size, M + 1)
@@ -373,19 +377,88 @@ class HypergeometricSampling(eqx.Module):
         self._count = jnp.asarray(np.concatenate(counts))
         self._weight = jnp.asarray(np.concatenate(weights), dtype=jnp.float64)
 
+    @property
+    def _population_copies(self) -> int:
+        """Number of allele-bearing copies in the population."""
+        return 2 * self.pop_size
+
+    @property
+    def _sample_copies(self) -> int:
+        """Number of allele-bearing copies drawn without replacement."""
+        return 2 * self.sample_size
+
+    def source_size(self) -> int:
+        r"""Number of population states (rows of the sampling matrix $S$).
+
+        For diploid population size $N$, allele counts range from zero to $2N$,
+        giving $2N+1$ states.
+
+        **Arguments:**
+
+        None.
+
+        **Returns:**
+
+        The Python integer `2 * pop_size + 1`.
+        """
+        return self._population_copies + 1
+
+    def dest_size(self) -> int:
+        r"""Number of sample states (columns of the sampling matrix $S$).
+
+        For diploid sample size $m$, allele counts range from zero to $2m$,
+        giving $2m+1$ states. An empty sample has one state: zero copies.
+
+        **Arguments:**
+
+        None.
+
+        **Returns:**
+
+        The Python integer `2 * sample_size + 1`.
+        """
+        return self._sample_copies + 1
+
     @eqx.filter_jit
     def expect(self, values: jax.Array) -> jax.Array:
-        """Return conditional expectations indexed by population count.
+        r"""Compute expected sample quantities for each population allele count.
 
-        `values` is a real vector of length `sample_gene_copies + 1`, converted
-        to float64. The output has length `population_gene_copies + 1`.
-        Nonfinite inputs propagate; use vmap for batches.
+        For sample-count values $v_k$, evaluate
+
+        $$ (Sv)_j = \sum_k S_{jk}v_k = \mathbb{E}[v_K \mid J=j], $$
+
+        where $J$ is the population allele count and $K$ is the count in a
+        sample drawn without replacement. Evaluation uses the prepared
+        approximation to $S$.
+
+        !!! example "Example: Expected sample allele count"
+
+            ```python
+            # For each population count, find the expected number of copies in the sample.
+            counts = jnp.arange(sampling.dest_size())
+            expected_counts = sampling.expect(counts)
+            ```
+
+        **Arguments:**
+
+        - `values`: Real vector of length `dest_size()`, converted
+          to float64. Signed entries are supported; nonfinite inputs propagate.
+          Use vmap for batches.
+
+        **Returns:**
+
+        A float64 vector of length `source_size()`, with one
+        conditional expectation per population count, including both endpoints.
+
+        **Raises:**
+
+        `ValueError` for an incompatible vector shape or complex-valued input.
         """
-        values = _values(values, self.sample_gene_copies + 1)
-        if self.sample_gene_copies == self.population_gene_copies:
+        values = _values(values, self._sample_copies + 1)
+        if self._sample_copies == self._population_copies:
             return values
-        if self.sample_gene_copies == 0:
-            return jnp.full(self.population_gene_copies + 1, values[0])
+        if self._sample_copies == 0:
+            return jnp.full(self._population_copies + 1, values[0])
         row_values = (
             jnp.zeros(self.representative_counts.size)
             .at[self._row]
@@ -395,35 +468,62 @@ class HypergeometricSampling(eqx.Module):
             self.representative_counts,
             self._barycentric,
             row_values,
-            population=self.population_gene_copies,
+            population=self._population_copies,
             batch_size=self.batch_size,
             transposed=False,
         )
 
     @eqx.filter_jit
     def advance(self, distribution: jax.Array) -> jax.Array:
-        """Return sample-count mass using the transpose of `expect`.
+        r"""Project population allele-count mass to a sample drawn without replacement.
 
-        `distribution` is a real vector of length `population_gene_copies + 1`,
-        converted to float64. The output has length `sample_gene_copies + 1`.
-        Signed and unnormalized mass are supported; nonfinite inputs propagate.
-        Endpoint bins are retained. Use vmap for batches.
+        For population mass $p_j$, evaluate
+
+        $$ (S^T p)_k = \sum_j S_{jk}p_j. $$
+
+        For a probability distribution $p$, entry $k$ is the probability of
+        observing $k$ copies in the sample, averaging over uncertainty in the
+        population count. Evaluation uses the transpose of the prepared
+        approximation to $S$.
+
+        !!! example "Example: Sampling a singleton"
+
+            ```python
+            # With one copy in the population, find the probability of each sample count.
+            population = jnp.zeros(sampling.source_size()).at[1].set(1)
+            sample_distribution = sampling.advance(population)
+            ```
+
+        **Arguments:**
+
+        - `distribution`: Real vector of length `source_size()`,
+          converted to float64. Signed and unnormalized mass are supported;
+          nonfinite inputs propagate. Use vmap for batches.
+
+        **Returns:**
+
+        A float64 vector of length `dest_size()`, including samples
+        with zero copies or all copies of the allele. No renormalization occurs.
+
+        **Raises:**
+
+        `ValueError` for an incompatible vector shape or complex-valued input.
         """
-        distribution = _values(distribution, self.population_gene_copies + 1)
-        if self.sample_gene_copies == self.population_gene_copies:
+        distribution = _values(distribution, self._population_copies + 1)
+        if self._sample_copies == self._population_copies:
             return distribution
-        if self.sample_gene_copies == 0:
+        if self._sample_copies == 0:
             return jnp.sum(distribution, keepdims=True)
         mass = _interpolate(
             self.representative_counts,
             self._barycentric,
             distribution,
-            population=self.population_gene_copies,
+            population=self._population_copies,
             batch_size=self.batch_size,
             transposed=True,
         )
         return (
-            jnp.zeros(self.sample_gene_copies + 1)
+            jnp.zeros(self._sample_copies + 1)
             .at[self._count]
             .add(self._weight * mass[self._row])
         )

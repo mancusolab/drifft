@@ -13,9 +13,40 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 
 
+@pytest.mark.parametrize("segregating", [False, True])
+def test_transition_dispatches_to_backend_advance(segregating):
+    """Use specialized forward kernels and restrict rectangular interior states."""
+
+    class ForwardBackend(drifft.AbstractTransitionBackend):
+        """Test backend that forbids deriving its forward kernel from expect."""
+
+        pop_size: int
+        matrix: jax.Array
+
+        def expect(self, probabilities, values):
+            """Fail if Transition bypasses the specialized forward operation."""
+            raise AssertionError("use the backend's advance implementation")
+
+        def advance(self, probabilities, distribution):
+            """Apply the prepared forward matrix directly."""
+            return self.matrix.T @ distribution
+
+    probabilities = jnp.array([0.0, 0.4, 1.0])
+    matrix = binom.pmf(np.arange(5)[None, :], 4, np.asarray(probabilities)[:, None])
+    backend = ForwardBackend(pop_size=2, matrix=jnp.asarray(matrix))
+    transition = drifft.Transition(backend, probabilities=probabilities)
+    mass = jnp.array([0.2, 0.5, 0.3])
+    if segregating:
+        mass = mass[1:-1]
+        matrix = matrix[1:-1, 1:-1]
+    np.testing.assert_allclose(
+        transition.advance(mass, segregating=segregating), matrix.T @ mass, atol=1e-12
+    )
+
+
 def test_selection_model_and_both_transition_directions():
     """Match underdominance expectations and propagation to dense references."""
-    backend = drifft.NUFFT(diploid_size=8)
+    backend = drifft.NUFFT(pop_size=8)
     transition = drifft.Transition(
         backend, frequency_map=drifft.Underdominance(strength=0.1)
     )
@@ -70,7 +101,7 @@ def test_custom_selection_and_rectangular_source_size():
     transition = drifft.Transition(
         backend,
         frequency_map=drifft.FrequencyMap(lambda x: x**2),
-        source_diploid_size=2,
+        source_pop_size=2,
     )
     np.testing.assert_allclose(transition.probabilities, (np.arange(5) / 4) ** 2)
     np.testing.assert_allclose(
@@ -142,7 +173,7 @@ def test_transition_rejects_ambiguous_or_invalid_configuration():
     with pytest.raises(ValueError):
         drifft.Transition(backend, probabilities=jnp.array([]))
     with pytest.raises(ValueError):
-        drifft.Transition(backend, drifft.Underdominance(0.1), source_diploid_size=0)
+        drifft.Transition(backend, drifft.Underdominance(0.1), source_pop_size=0)
     with pytest.raises(ValueError):
         drifft.Underdominance(jnp.array([0.1, 0.2]))
 
@@ -191,20 +222,20 @@ def test_transition_shape_errors_are_explicit():
 
 
 @pytest.mark.parametrize("size", [0, -1, True, 2.5])
-def test_invalid_source_diploid_size(size):
+def test_invalid_source_pop_size(size):
     """Reject invalid source units before building a frequency grid."""
-    with pytest.raises(ValueError, match="source_diploid_size"):
-        drifft.Transition(drifft.Dense(3), drifft.Neutral(), source_diploid_size=size)
+    with pytest.raises(ValueError, match="source_pop_size"):
+        drifft.Transition(drifft.Dense(3), drifft.Neutral(), source_pop_size=size)
 
 
-def test_explicit_rows_infer_diploid_size_only_for_complete_grid_lengths():
+def test_explicit_rows_infer_pop_size_only_for_complete_grid_lengths():
     """Sampled rows retain arbitrary lengths without inventing fractional sizes."""
-    backend = drifft.Dense(diploid_size=3)
+    backend = drifft.Dense(pop_size=3)
     for length in (1, 2, 4):
         transition = drifft.Transition(
             backend, probabilities=jnp.linspace(0, 1, length)
         )
-        assert transition.source_diploid_size is None
+        assert transition.source_pop_size is None
         assert transition.dest_size() == 7
         assert transition.source_size() == length
         assert transition.dest_size() == transition.as_lineax().in_size()
@@ -214,8 +245,8 @@ def test_explicit_rows_infer_diploid_size_only_for_complete_grid_lengths():
         with pytest.raises(ValueError, match="interior"):
             transition.expect(jnp.ones(5), segregating=True)
     transition = drifft.Transition(backend, probabilities=jnp.linspace(0, 1, 5))
-    assert transition.source_diploid_size == 2
+    assert transition.source_pop_size == 2
     with pytest.raises(ValueError, match="match the probability vector"):
         drifft.Transition(
-            backend, probabilities=jnp.linspace(0, 1, 5), source_diploid_size=3
+            backend, probabilities=jnp.linspace(0, 1, 5), source_pop_size=3
         )

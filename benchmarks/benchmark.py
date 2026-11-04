@@ -88,7 +88,7 @@ def run(args: argparse.Namespace) -> None:
             transition = drifft.Transition(
                 backend,
                 drifft.Underdominance(strength),
-                source_diploid_size=source // 2,
+                source_pop_size=source // 2,
             )
             actual, expect_times = measure_kernel(
                 drifft.Transition.expect, (transition, values), args.repeats
@@ -103,7 +103,7 @@ def run(args: argparse.Namespace) -> None:
                     lambda t: drifft.Transition(
                         backend,
                         drifft.Underdominance(t),
-                        source_diploid_size=source // 2,
+                        source_pop_size=source // 2,
                     ).expect(x),
                     (s,),
                     (jnp.ones_like(s),),

@@ -20,14 +20,14 @@ def test_subnormal_positive_tail_tolerance_has_finite_radius():
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"diploid_size": 0},
-        {"diploid_size": 8.5},
-        {"diploid_size": True},
-        {"diploid_size": 8, "tail_tol": 0},
-        {"diploid_size": 8, "tail_tol": float("nan")},
-        {"diploid_size": 8, "accuracy": 0},
-        {"diploid_size": 8, "batch_size": 0},
-        {"diploid_size": 8, "nufft_tol": 0},
+        {"pop_size": 0},
+        {"pop_size": 8.5},
+        {"pop_size": True},
+        {"pop_size": 8, "tail_tol": 0},
+        {"pop_size": 8, "tail_tol": float("nan")},
+        {"pop_size": 8, "accuracy": 0},
+        {"pop_size": 8, "batch_size": 0},
+        {"pop_size": 8, "nufft_tol": 0},
     ],
 )
 def test_invalid_backend(kwargs):

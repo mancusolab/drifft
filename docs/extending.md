@@ -16,8 +16,9 @@ import jax.numpy as jnp
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-backend = drifft.FFT(diploid_size=64)
+backend = drifft.FFT(pop_size=64)
 initial = jnp.zeros(127).at[0].set(1.0)
+
 
 @final
 class RepeatedTransition(drifft.AbstractEpochMethod):
@@ -33,15 +34,20 @@ class RepeatedTransition(drifft.AbstractEpochMethod):
     def solve(self, problem: drifft.EpochProblem, *, throw=True):
         """Apply the prepared power and reconstruct checked population mass."""
         state = jax.lax.fori_loop(
-            0, problem.steps,
+            0,
+            problem.steps,
             lambda _, x: problem.operator.mv(x),
             problem.initial,
         )
         return problem.result(state, throw=throw)
 
+
 method = RepeatedTransition()
 result = method.advance(
-    backend, initial, frequency_map=drifft.Neutral(), generations=10,
+    backend,
+    initial,
+    frequency_map=drifft.Neutral(),
+    generations=10,
     segregating=True,
 )
 ```

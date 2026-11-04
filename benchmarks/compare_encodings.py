@@ -45,7 +45,7 @@ def diagnostics(backend, strength):
 
     import drifft
 
-    size = 2 * backend.diploid_size
+    size = 2 * backend.pop_size
     low = np.r_[0, 1e-15, 1e-10, 0.1 / size, 1 / size, 2 / size, 0.01, 0.1, 0.5]
     probabilities = np.unique(
         np.r_[low, 1 - low, np.random.default_rng(19).uniform(size=8)]

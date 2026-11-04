@@ -31,7 +31,7 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
     jax.config.update("jax_enable_x64", True)
     jax.config.update("jax_platform_name", "cpu")
     jax.config.update("jax_enable_compilation_cache", False)
-    sizes = config["history"]["ne"]
+    sizes = config["history"]["pop_sizes"]
     durations = config["history"]["generations"]
     settings = config["settings"]
     mutation_rate = settings["mutation_rate"]
@@ -109,7 +109,7 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
             hold_seconds = time.perf_counter() - tick
             tick = time.perf_counter()
             transition = drifft.Transition(
-                fft[destination], frequency_map, source_diploid_size=source
+                fft[destination], frequency_map, source_pop_size=source
             )
             distribution = transition.advance(result.distribution, segregating=True)
             distribution = distribution.at[0].add(2 * destination * mutation_rate)
@@ -119,8 +119,8 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
                 raise RuntimeError("nonfinite demographic output")
             intervals.append(
                 dict(
-                    source_ne=source,
-                    destination_ne=destination,
+                    source_pop_size=source,
+                    dest_pop_size=destination,
                     generations=duration,
                     hold_seconds=hold_seconds,
                     boundary_seconds=boundary_seconds,
@@ -161,14 +161,14 @@ def run_comparison(args: argparse.Namespace) -> dict[str, Any]:
                 raise ValueError(
                     f"row {line}: Ne and T_gen must both contain integers"
                 ) from error
-    if any(ne < 1 or generation < 0 for ne, generation in rows):
+    if any(pop_size < 1 or generation < 0 for pop_size, generation in rows):
         raise ValueError("Ne must be positive and T_gen nonnegative")
     if any(a[1] <= b[1] for a, b in zip(rows[:-1], rows[1:], strict=True)):
         raise ValueError("T_gen must be strictly decreasing (oldest first)")
     rows = [row for row in rows if row[1] >= args.cutoff]
     if len(rows) < 2:
         raise ValueError("cutoff must retain at least two demographic boundaries")
-    if args.rank is not None and any(args.rank >= 2 * ne for ne, _ in rows):
+    if args.rank is not None and any(args.rank >= 2 * pop_size for pop_size, _ in rows):
         raise ValueError("rank must be smaller than every retained gene-copy count")
     root = Path(__file__).resolve().parents[1]
     revision = subprocess.run(
@@ -180,9 +180,9 @@ def run_comparison(args: argparse.Namespace) -> dict[str, Any]:
         if key not in {"demography", "output", "worker", "directory"}
     }
     report: dict[str, Any] = dict(
-        schema_version=1,
+        schema_version=2,
         history=dict(
-            ne=[row[0] for row in rows],
+            pop_sizes=[row[0] for row in rows],
             generations=[a[1] - b[1] for a, b in zip(rows[:-1], rows[1:], strict=True)],
             boundaries=[row[1] for row in rows],
         ),

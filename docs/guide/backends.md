@@ -26,7 +26,7 @@ import drifft
 
 jax.config.update("jax_enable_x64", True)
 selection = drifft.AdditiveSelection(s=0.02)
-backend = drifft.FFT(diploid_size=64)
+backend = drifft.FFT(pop_size=64)
 transition = drifft.Transition(backend, frequency_map=selection)
 initial = jnp.zeros(transition.source_size()).at[1].set(1.0)
 after_one_generation = transition.advance(initial)
@@ -36,14 +36,22 @@ Replace `drifft.FFT` with `drifft.NUFFT` to change the representation without
 changing the selection model or state layout. Backends and `Demography` both
 accept diploid population sizes. A size of $N$ gives $2N+1$ allele-count states.
 
-When migrating older code, replace `gene_copies=M` with `diploid_size=M // 2`
-and `source_gene_copies=M_s` with `source_diploid_size=M_s // 2`; both old
-counts must be even. Positional size arguments also now count diploid individuals.
-For example, the former `FFT(128)` becomes `FFT(64)`. Custom demographic backend
-factories now receive $N$, rather than $2N$, and custom backends expose
-`diploid_size`. `Demography(ne=...)` values are unchanged. Hypergeometric sampling
-continues to accept population and sample copy counts, since it also supports
-samples with an odd number of copies.
+When migrating from the previous diploid-size API, rename `diploid_size` to
+`pop_size`, `source_diploid_size` to `source_pop_size`, and `Demography(ne=...)`
+to `Demography(pop_sizes=...)`; their numeric values stay the same. The initial
+and final demographic sizes are `initial_pop_size` and `final_pop_size`, and
+interval diagnostics use `source_pop_size` and `dest_pop_size`.
+
+For older copy-count constructors, divide counts by two: `gene_copies=M`
+becomes `pop_size=M // 2`, and `source_gene_copies=M_s` becomes
+`source_pop_size=M_s // 2`. Both old counts must be even, and this conversion
+also applies to positional arguments. Custom demographic backend factories receive
+diploid sizes, and custom backends expose `pop_size`.
+
+Sampling now takes diploid sizes too: replace `population_gene_copies=M` and
+`sample_gene_copies=n` with `pop_size=M // 2` and `sample_size=n // 2`.
+This applies to positional arguments as well. Both old counts must be even;
+odd counts cannot be represented by the diploid-size API.
 
 !!! warning "Jacobi reduced Krylov restrictions"
 
@@ -67,7 +75,7 @@ For a population history, pass a backend **factory** and a method instance.
 Continuing the example above:
 
 ```python
-history = drifft.Demography(ne=[64, 32, 64], generations=[100, 100])
+history = drifft.Demography(pop_sizes=[64, 32, 64], generations=[100, 100])
 model = drifft.DemographicTransition(
     history,
     frequency_map=selection,

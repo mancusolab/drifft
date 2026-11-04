@@ -18,15 +18,17 @@ class Dense(AbstractTransitionBackend):
     P_{ij}=\binom{M}{j}q_i^j(1-q_i)^{M-j},\qquad j=0,\ldots,M.
     $$
 
-    Here $M$ is the destination gene-copy count and $q_i$ is the offspring
-    probability for source row $i$. Repeated Bernoulli convolution builds
+    Here $M=2N$ for diploid destination population size $N$ (`pop_size`),
+    and $q_i$ is the offspring allele probability for source row $i$.
+    Multiplying these rows by destination values $v_j$ gives the expectations
+    $(Pv)_i=\sum_{j=0}^{M}P_{ij}v_j$. Repeated Bernoulli convolution builds
     each row, avoiding factorials, logarithms, and divisions by endpoint
     probabilities. The calculation is polynomial throughout, so ordinary
     JAX differentiation gives finite endpoint derivatives. It shares no
     numerical kernels with FFT, NUFFT, or Jacobi. There is no truncation or
     interpolation, but floating-point roundoff remains.
-    With $N$ source rows, matrix construction uses $O(NM)$ storage and
-    $O(NM^2)$ arithmetic; use this backend for small-population checks.
+    With $S$ source rows, matrix construction uses $O(SM)$ storage and
+    $O(SM^2)$ arithmetic; use this backend for small-population checks.
 
     !!! note "Theory"
 
@@ -34,32 +36,26 @@ class Dense(AbstractTransitionBackend):
         the binomial transition law.
     """
 
-    diploid_size: int = eqx.field(static=True)
+    pop_size: int = eqx.field(static=True)
 
-    def __init__(self, diploid_size: int) -> None:
+    def __init__(self, pop_size: int) -> None:
         r"""Configure the destination count grid outside JIT.
+
+        Only the static count is stored; matrices are formed on application.
 
         **Arguments:**
 
-        - `diploid_size`: Diploid effective population size, a Python integer at least one.
-
-        **Returns:**
-
-        `None`. Only the static count is stored; matrices are formed on application.
+        - `pop_size`: Diploid effective population size, a Python integer at least one.
 
         **Raises:**
 
         `ValueError` for invalid counts or if JAX x64 is disabled.
         """
-        if (
-            isinstance(diploid_size, bool)
-            or not isinstance(diploid_size, int)
-            or diploid_size < 1
-        ):
-            raise ValueError("diploid_size must be a Python integer >= 1")
+        if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 1:
+            raise ValueError("pop_size must be a Python integer >= 1")
         if not jax.config.x64_enabled:
             raise ValueError("Dense requires jax_enable_x64=True")
-        self.diploid_size = diploid_size
+        self.pop_size = pop_size
 
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
         r"""Form binomial rows and multiply by destination values.
@@ -67,7 +63,7 @@ class Dense(AbstractTransitionBackend):
         **Arguments:**
 
         - `probabilities`: Vector of finite source probabilities in `[0, 1]`.
-        - `values`: Finite real destination vector of length `2 * diploid_size + 1`.
+        - `values`: Finite real destination vector of length `2 * pop_size + 1`.
           Both inputs are converted to float64.
 
         **Returns:**
@@ -84,7 +80,7 @@ class Dense(AbstractTransitionBackend):
         values = jnp.asarray(values, dtype=jnp.float64)
         if probabilities.ndim != 1 or values.shape != (self._gene_copies + 1,):
             raise ValueError(
-                "expect requires a probability vector and 2 * diploid_size + 1 destination values"
+                "expect requires a probability vector and 2 * pop_size + 1 destination values"
             )
         probability = probabilities[:, None]
         rows = jnp.zeros(

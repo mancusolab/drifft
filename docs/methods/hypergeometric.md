@@ -5,6 +5,10 @@ without replacement. It does not advance a generation or apply selection.
 
 Configuration: [API reference](../api/sampling.md).
 
+`pop_size` and `sample_size` count diploid individuals. The sampling law below
+draws $n=2\,\mathtt{sample\_size}$ allele-bearing copies from
+$M=2\,\mathtt{pop\_size}$ population copies without replacement.
+
 ## Problem and representation
 
 For $M$ population gene copies and $n$ sampled copies, the observation matrix is
@@ -140,12 +144,14 @@ import drifft
 
 jax.config.update("jax_enable_x64", True)
 sampling = drifft.HypergeometricSampling(
-    population_gene_copies=128, sample_gene_copies=20, accuracy=1e-8,
+    pop_size=64,
+    sample_size=10,
+    accuracy=1e-8,
 )
-population = jnp.zeros(129).at[32].set(1.0)
+population = jnp.zeros(sampling.source_size()).at[32].set(1.0)
 sample = sampling.advance(population)
 
-values = jnp.arange(21) / 20
+values = jnp.arange(sampling.dest_size()) / (2 * sampling.sample_size)
 expected_frequency = population @ sampling.expect(values)
 assert jnp.isclose(expected_frequency, 0.25, rtol=0, atol=1e-10)
 ```

@@ -133,16 +133,17 @@ purpose. Ruff checks missing docstrings; comments explain numerical identities,
 JAX transform boundaries, and memory choices rather than restating operations.
 
 Use raw docstrings (`r"""..."""`) for public numerical APIs. Class docstrings
-explain the model and its defining mathematics. Put constructor arguments,
-returns, and checked errors on `__init__`, never on the class. Document generated
+explain the model and its defining mathematics. Put constructor arguments
+and checked errors on `__init__`, never on the class. Omit `**Returns:**`
+from `__init__` docstrings. Document generated
 Equinox constructors by assigning their `__doc__`, preserving initialization
 behavior. Named-tuple constructors use `__new__` instead.
 Child methods stay concise: a purpose sentence, `**Arguments:**`, and
 `**Returns:**`. Add `**Raises:**` for checked errors. Use `!!! warning`,
 `!!! note`, or `!!! tip` admonitions for limitations and practical guidance;
 do not repeat the same caveats on every method.
-Leave a blank line after each heading and between sections. Constructor methods
-return `None`; properties can use a short description of the returned value.
+Leave a blank line after each heading and between sections. Properties can use
+a short description of the returned value.
 Private helpers and internal validation hooks may use concise purpose-only
 docstrings.
 
@@ -259,7 +260,9 @@ Keep the main argument and required instructions in ordinary prose. Use
 admonitions for a short point a reader should notice beside that argument:
 
 - `!!! example "Example: Specific task"` gives a short runnable API recipe beside its
-  method contract. Keep complete biological analyses on example pages.
+  method contract. Place it after the descriptive preamble and before
+  `**Arguments:**`, so readers see a concrete call before the detailed contract.
+  Keep complete biological analyses on example pages.
 - `!!! note "Specific title"` explains interpretation or a modeling convention.
 - `!!! tip "Specific title"` gives an optional practical recommendation.
 - `!!! warning "Specific title"` identifies a condition that can invalidate a

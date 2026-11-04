@@ -57,6 +57,40 @@ def test_backend_expect_rejects_malformed_array_like_inputs(
 
 
 @pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi", "Dense"])
+@pytest.mark.parametrize("input_kind", ["list", "numpy", "jax"])
+def test_backend_advance_normalizes_inputs(name, input_kind):
+    """Propagate rectangular signed mass against an independent binomial matrix."""
+    backend = getattr(drifft, name)(4)
+    probabilities = [0.0, 0.25, 0.75, 1.0]
+    distribution = [0.125, -0.25, 0.5, 0.625]
+    matrix = binom.pmf(np.arange(9)[None, :], 8, np.array(probabilities)[:, None])
+    expected = matrix.T @ distribution
+    if input_kind != "list":
+        convert = np.asarray if input_kind == "numpy" else jnp.asarray
+        probabilities = convert(probabilities, dtype=np.float32)
+        distribution = convert(distribution, dtype=np.float32)
+    actual = eqx.filter_jit(backend.advance)(probabilities, distribution)
+    assert actual.dtype == jnp.float64
+    np.testing.assert_allclose(actual, expected, atol=1e-12)
+
+
+@pytest.mark.parametrize("compiled", [False, True])
+@pytest.mark.parametrize(
+    "probabilities,distribution",
+    [(0.5, [1.0]), ([[0.5]], [[1.0]]), ([0.25, 0.75], [1.0]), ([0.5], 1.0)],
+)
+def test_backend_advance_rejects_malformed_shapes(
+    compiled, probabilities, distribution
+):
+    """Reject malformed vectors before transposing, including during tracing."""
+    advance = drifft.Dense(4).advance
+    if compiled:
+        advance = eqx.filter_jit(advance)
+    with pytest.raises(ValueError, match="same shape"):
+        advance(probabilities, distribution)
+
+
+@pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi", "Dense"])
 def test_backend_dense_adjoint_and_selection_derivatives(name):
     """Check all backend contracts against dense transitions and finite differences."""
     backend = getattr(drifft, name)(16)
@@ -69,7 +103,7 @@ def test_backend_dense_adjoint_and_selection_derivatives(name):
     def make_transition(strength):
         """Bind the tested scalar strength to rectangular transition geometry."""
         return drifft.Transition(
-            backend, drifft.Underdominance(strength), source_diploid_size=12
+            backend, drifft.Underdominance(strength), source_pop_size=12
         )
 
     transition = make_transition(strength)
@@ -77,6 +111,9 @@ def test_backend_dense_adjoint_and_selection_derivatives(name):
     matrix = binom.pmf(np.arange(33)[None, :], 32, q[:, None])
     np.testing.assert_allclose(transition.expect(values), matrix @ values, atol=1e-11)
     np.testing.assert_allclose(transition.advance(mass), matrix.T @ mass, atol=1e-11)
+    np.testing.assert_allclose(
+        eqx.filter_jit(backend.advance)(q, mass), matrix.T @ mass, atol=1e-11
+    )
     np.testing.assert_allclose(
         values @ transition.advance(mass), mass @ transition.expect(values), atol=1e-12
     )
@@ -113,6 +150,9 @@ def test_large_backend_and_repeated_selection_gradient(name):
         binom.pmf(np.arange(1025)[None, :], 1024, np.asarray(rows)[:, None]) @ values
     )
     np.testing.assert_allclose(actual, reference, atol=2e-9, rtol=0)
+    mass = jnp.arange(1.0, 8.0) / 28
+    advanced = eqx.filter_jit(backend.advance)(rows, mass)
+    np.testing.assert_allclose(advanced @ values, mass @ actual, atol=1e-12)
 
     backend = getattr(drifft, name)(16)
     mass = jnp.ones(33) / 33
@@ -205,12 +245,12 @@ def test_backend_linearization_batched_tangents_and_mixed_pullbacks(name):
 @pytest.mark.parametrize(
     "backend_type", [drifft.Dense, drifft.FFT, drifft.NUFFT, drifft.Jacobi]
 )
-def test_diploid_size_sets_binomial_count_and_state_space(backend_type):
+def test_pop_size_sets_binomial_count_and_state_space(backend_type):
     """Three diploid individuals give six trials and seven allele-count states."""
-    backend = backend_type(diploid_size=3)
-    assert backend.diploid_size == 3
-    transition = drifft.Transition(backend, drifft.Neutral(), source_diploid_size=2)
-    assert transition.source_diploid_size == 2
+    backend = backend_type(pop_size=3)
+    assert backend.pop_size == 3
+    transition = drifft.Transition(backend, drifft.Neutral(), source_pop_size=2)
+    assert transition.source_pop_size == 2
     assert transition.dest_size() == 7
     assert transition.source_size() == 5
     assert transition.dest_size() == transition.as_lineax().in_size()
@@ -234,7 +274,7 @@ def test_diploid_size_sets_binomial_count_and_state_space(backend_type):
     "backend_type", [drifft.Dense, drifft.FFT, drifft.NUFFT, drifft.Jacobi]
 )
 @pytest.mark.parametrize("size", [0, -1, True, 2.5])
-def test_backend_rejects_invalid_diploid_size(backend_type, size):
+def test_backend_rejects_invalid_pop_size(backend_type, size):
     """Population sizes are positive integer counts, never booleans or fractions."""
-    with pytest.raises(ValueError, match="diploid_size"):
-        backend_type(diploid_size=size)
+    with pytest.raises(ValueError, match="pop_size"):
+        backend_type(pop_size=size)

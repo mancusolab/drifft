@@ -59,7 +59,7 @@ def run_worker(args: argparse.Namespace) -> dict[str, Any]:
         transition = drifft.Transition(
             backend,
             frequency_map=drifft.Underdominance(strength),
-            source_diploid_size=source // 2,
+            source_pop_size=source // 2,
         )
         mass = jnp.full(source + 1, 1 / (source + 1), dtype=jnp.float64)
         if args.initial == "singleton":

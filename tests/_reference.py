@@ -6,16 +6,16 @@ import jax.numpy as jnp
 from jax.scipy.special import gammaln, xlog1py, xlogy
 
 
-def dense_transition(source_ne, destination_ne, strength):
+def dense_transition(source_pop_size, dest_pop_size, strength):
     """Build a binomial reference independently of production backends and maps."""
-    frequency = jnp.arange(2 * source_ne + 1) / (2 * source_ne)
+    frequency = jnp.arange(2 * source_pop_size + 1) / (2 * source_pop_size)
     # Absorbing rows are exact and independent of selection; differentiate only
     # interior probabilities to avoid log derivatives at zero and one.
     x = frequency[1:-1]
     probability = ((x - strength * x * (1 - x)) / (1 - 2 * strength * x * (1 - x)))[
         :, None
     ]
-    copies = 2 * destination_ne
+    copies = 2 * dest_pop_size
     count = jnp.arange(copies + 1, dtype=jnp.float64)[None, :]
     interior = jnp.exp(
         gammaln(copies + 1)

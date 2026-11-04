@@ -22,14 +22,16 @@ class NUFFT(AbstractTransitionBackend):
     r"""Approximate binomial expectations by a Chebyshev series evaluated with a NUFFT:
 
     $$
-    B_M[f](q)\approx\sum_{k=0}^L c_kT_k(1-2q)
-    =\sum_{k=0}^L c_k\cos(k\vartheta),\qquad\vartheta=\arccos(1-2q).
+    (Pv)_i\approx\sum_{k=0}^L c_kT_k(1-2q_i)
+    =\sum_{k=0}^L c_k\cos(k\vartheta_i),\qquad\vartheta_i=\arccos(1-2q_i).
     $$
 
-    Here $M$ is the destination gene-copy count, $T_k$ is a Chebyshev polynomial,
-    and $L$ is the prepared approximation degree. Binomial sampling at fixed
-    Chebyshev–Lobatto nodes followed by a DCT-I supplies the coefficients $c_k$.
-    A type-2 NUFFT evaluates the cosine series at offspring probabilities $q$.
+    Here $v_j$ are destination values at counts $j=0,\ldots,M$, with $M=2N$
+    for diploid destination population size $N$ (`pop_size`). The offspring
+    allele probability for source row $i$ is $q_i$, $T_k$ is a Chebyshev
+    polynomial, and $L$ is the prepared approximation degree. Binomial sampling
+    of $v$ at fixed Chebyshev–Lobatto nodes followed by a DCT-I supplies the
+    coefficients $c_k$. A type-2 NUFFT evaluates the cosine series at $q_i$.
     Polynomial truncation, truncated binomial sampling, and NUFFT evaluation
     contribute separate approximation errors.
 
@@ -40,7 +42,7 @@ class NUFFT(AbstractTransitionBackend):
     """
 
     nodes: jax.Array
-    diploid_size: int = eqx.field(static=True)
+    pop_size: int = eqx.field(static=True)
     degree: int = eqx.field(static=True)
     encoding: Literal["lobatto", "filtered"] = eqx.field(static=True)
     taper_width: int = eqx.field(static=True)
@@ -57,7 +59,7 @@ class NUFFT(AbstractTransitionBackend):
 
     def __init__(
         self,
-        diploid_size: int,
+        pop_size: int,
         *,
         accuracy: float = 1e-10,
         encoding: Literal["lobatto", "filtered"] = "lobatto",
@@ -68,9 +70,14 @@ class NUFFT(AbstractTransitionBackend):
     ) -> None:
         r"""Prepare a fixed-degree Bernstein/Chebyshev/NUFFT transition.
 
+        Initializes selection-independent geometry. The value budget is
+        split equally between spectral error, sampling error, requested NUFFT
+        tolerance and roundoff.
+        Roundoff and actual NUFFT error must still be measured independently.
+
         **Arguments:**
 
-        - `diploid_size`: Diploid effective population size, a Python integer at least one.
+        - `pop_size`: Diploid effective population size, a Python integer at least one.
         - `accuracy`: Nominal value-error budget, in `[1e-13, 0.1)`.
         - `encoding`: `"lobatto"` (default) interpolates the samples;
           `"filtered"` tapers them and corrects endpoints as a polynomial.
@@ -82,26 +89,15 @@ class NUFFT(AbstractTransitionBackend):
         - `derivative_accuracy`: Increase the fixed degree by 50 percent (capped at
           the exact degree). This is a conservative heuristic, not a derivative bound.
 
-        **Returns:**
-
-        `None`. Initializes selection-independent geometry. The value budget is
-        split equally between spectral error, sampling error, requested NUFFT
-        tolerance and roundoff.
-        Roundoff and actual NUFFT error must still be measured independently.
-
         **Raises:**
 
         `ValueError` for invalid configuration or disabled x64. Only float64 is
         supported; enable JAX x64 before construction.
         FFT-specific settings belong to the FFT backend.
         """
-        if (
-            isinstance(diploid_size, bool)
-            or not isinstance(diploid_size, int)
-            or diploid_size < 1
-        ):
-            raise ValueError("diploid_size must be a Python integer >= 1")
-        gene_copies = 2 * diploid_size
+        if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 1:
+            raise ValueError("pop_size must be a Python integer >= 1")
+        gene_copies = 2 * pop_size
         if (
             isinstance(batch_size, bool)
             or not isinstance(batch_size, int)
@@ -179,7 +175,7 @@ class NUFFT(AbstractTransitionBackend):
         )
         nodes = jnp.where(index <= sample_degree / 2, low, 1 - low)
         self.nodes = nodes
-        self.diploid_size = diploid_size
+        self.pop_size = pop_size
         self.degree = degree
         self.encoding = encoding
         self.taper_width = taper_width
@@ -197,7 +193,7 @@ class NUFFT(AbstractTransitionBackend):
     def __check_init__(self) -> None:
         """Reject inconsistent dimensions without inspecting array values."""
         if self._gene_copies < 2 or not 1 <= self.degree <= self._gene_copies:
-            raise ValueError("degree must be between 1 and 2 * diploid_size")
+            raise ValueError("degree must be between 1 and 2 * pop_size")
         if self.encoding not in ("lobatto", "filtered"):
             raise ValueError('encoding must be "lobatto" or "filtered"')
         if self.taper_width and (
@@ -221,7 +217,7 @@ class NUFFT(AbstractTransitionBackend):
         **Arguments:**
 
         - `probabilities`: Vector of finite source probabilities in `[0, 1]`.
-        - `values`: Finite real destination vector of length `2 * diploid_size + 1`.
+        - `values`: Finite real destination vector of length `2 * pop_size + 1`.
 
         Both inputs accept Python lists, NumPy arrays, or JAX arrays and are
         converted to float64 before shape validation.

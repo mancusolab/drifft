@@ -69,29 +69,29 @@ class Demography(eqx.Module):
     evolution at the final size.
     """
 
-    ne: tuple[int, ...] = eqx.field(converter=_integer_schedule)
+    pop_sizes: tuple[int, ...] = eqx.field(converter=_integer_schedule)
     generations: tuple[int, ...] = eqx.field(converter=_integer_schedule)
 
     def __check_init__(self) -> None:
         """Validate chronological schedule dimensions and positive counts."""
-        if not self.ne or len(self.ne) != len(self.generations) + 1:
+        if not self.pop_sizes or len(self.pop_sizes) != len(self.generations) + 1:
             raise ValueError(
-                "ne must be nonempty and have len(generations) + 1 entries"
+                "pop_sizes must be nonempty and have len(generations) + 1 entries"
             )
-        if any(size < 1 for size in self.ne):
-            raise ValueError("ne entries must be positive integers")
+        if any(size < 1 for size in self.pop_sizes):
+            raise ValueError("pop_sizes entries must be positive integers")
         if any(duration < 1 for duration in self.generations):
             raise ValueError("generations entries must be positive integers")
 
     @property
-    def initial_ne(self) -> int:
-        r"""Initial diploid effective population size, `ne[0]`, as a Python integer."""
-        return self.ne[0]
+    def initial_pop_size(self) -> int:
+        r"""Initial diploid effective population size, `pop_sizes[0]`, as a Python integer."""
+        return self.pop_sizes[0]
 
     @property
-    def final_ne(self) -> int:
-        r"""Final diploid effective population size, `ne[-1]`, as a Python integer."""
-        return self.ne[-1]
+    def final_pop_size(self) -> int:
+        r"""Final diploid effective population size, `pop_sizes[-1]`, as a Python integer."""
+        return self.pop_sizes[-1]
 
     @property
     def total_generations(self) -> int:
@@ -104,17 +104,14 @@ Demography.__init__.__doc__ = r"""Initialize Demography.
 
 **Arguments:**
 
-- `ne`: Nonempty sequence of positive integer diploid effective population
-  sizes, ordered oldest to newest. Each size represents `2 * ne` gene copies.
+- `pop_sizes`: Nonempty sequence of positive integer diploid effective population
+  sizes, ordered oldest to newest. Size `pop_sizes[i]` represents
+  `2 * pop_sizes[i]` allele-bearing copies.
 - `generations`: Positive integer durations between successive sizes, with
-  exactly one fewer entry than `ne`.
+  exactly one fewer entry than `pop_sizes`.
 
 Lists and concrete one-dimensional integer arrays are converted to host
 tuples. Construct outside JIT.
-
-**Returns:**
-
-`None`.
 
 **Raises:**
 
@@ -126,22 +123,22 @@ Population sizes and durations are structural, not differentiable parameters.
 class IntervalDiagnostics(NamedTuple):
     r"""Numerical outcome for one complete demographic interval.
 
-    `source_ne` and `destination_ne` are diploid population sizes; `generations`
+    `source_pop_size` and `dest_pop_size` are diploid population sizes; `generations`
     includes both the hold and final boundary generation. `error_estimate`
     covers only the hold power approximation, while `converged` and `status`
     also account for nonfinite boundary output.
 
     **Fields:**
 
-    - `source_ne`, `destination_ne`: Python integers giving diploid sizes.
+    - `source_pop_size`, `dest_pop_size`: Python integers giving diploid sizes.
     - `generations`: Interval duration, including its final boundary generation.
     - `error_estimate`: Scalar absolute L1 hold-power estimate, zero without a hold.
     - `converged`: Scalar boolean for the complete interval.
     - `status`: First hold or boundary failure, or successful `EvolutionStatus`.
     """
 
-    source_ne: int
-    destination_ne: int
+    source_pop_size: int
+    dest_pop_size: int
     generations: int
     error_estimate: jax.Array
     converged: jax.Array
@@ -171,8 +168,8 @@ class DemographicResult(NamedTuple):
 
     **Fields:**
 
-    - `distribution`: Float64 mass of length `2 * final_ne + 1`, or
-      `2 * final_ne - 1` for segregating evolution; not normalized.
+    - `distribution`: Float64 mass of length `2 * final_pop_size + 1`, or
+      `2 * final_pop_size - 1` for segregating evolution; not normalized.
     - `converged`: Scalar boolean, true when the entire history succeeded.
     - `status`: First numerical failure in chronological order, or success.
     - `diagnostics`: Tuple of `IntervalDiagnostics`, one per interval in order.
@@ -259,6 +256,9 @@ class DemographicTransition(eqx.Module):
     ) -> None:
         r"""Prepare reusable geometry outside JIT.
 
+        Prepares one geometry per distinct size, sharing hold and boundary
+        geometry when the same factory is used.
+
         **Arguments:**
 
         - `demography`: Population history, oldest to newest.
@@ -270,11 +270,6 @@ class DemographicTransition(eqx.Module):
           rectangular transitions; defaults to the hold factory for all backends.
         - `method`: Geometry-free epoch algorithm; defaults to `Sequential()`.
           Holds call its `advance` method, including custom overrides.
-
-        **Returns:**
-
-        `None`. Prepares one geometry per distinct size, sharing hold and boundary
-        geometry when the same factory is used.
 
         **Raises:**
 
@@ -302,14 +297,14 @@ class DemographicTransition(eqx.Module):
         if not isinstance(self.method, AbstractEpochMethod):
             raise TypeError("method must be an AbstractEpochMethod")
         self._backends = {
-            size: backend_factory(size) for size in dict.fromkeys(demography.ne)
+            size: backend_factory(size) for size in dict.fromkeys(demography.pop_sizes)
         }
         for size, geometry in self._backends.items():
             if not isinstance(geometry, AbstractTransitionBackend):
                 raise TypeError(
                     "backend_factory must return an AbstractTransitionBackend"
                 )
-            if geometry.diploid_size != size:
+            if geometry.pop_size != size:
                 raise ValueError(
                     "backend_factory must preserve the requested diploid size"
                 )
@@ -331,16 +326,16 @@ class DemographicTransition(eqx.Module):
                 raise TypeError(
                     "boundary_backend_factory must return an AbstractTransitionBackend"
                 )
-            if backend.diploid_size != size:
+            if backend.pop_size != size:
                 raise ValueError(
                     "boundary_backend_factory must preserve the requested diploid size"
                 )
 
-    def _transition(self, source_ne: int, destination_ne: int) -> Transition:
+    def _transition(self, source_pop_size: int, dest_pop_size: int) -> Transition:
         return Transition(
-            self._boundary_backends[destination_ne],
+            self._boundary_backends[dest_pop_size],
             self.frequency_map,
-            source_diploid_size=source_ne,
+            source_pop_size=source_pop_size,
         )
 
     @eqx.filter_jit
@@ -356,20 +351,20 @@ class DemographicTransition(eqx.Module):
 
         **Arguments:**
 
-        - `distribution`: Real mass of length `2 * initial_ne + 1`, or
-          `2 * initial_ne - 1` when segregating. Converted to float64; signed
+        - `distribution`: Real mass of length `2 * initial_pop_size + 1`, or
+          `2 * initial_pop_size - 1` when segregating. Converted to float64; signed
           entries are supported.
         - `segregating`: Discard endpoint mass after each generation.
         - `singleton_mutation_rate`: Finite nonnegative scalar per-copy rate,
           allowed only when segregating; defaults to zero. Adds
-          `2 * destination_ne * singleton_mutation_rate` at count one after
+          `2 * dest_pop_size * singleton_mutation_rate` at count one after
           every generation. Recurrent mutation belongs in the frequency map.
         - `throw`: Raise on numerical failure; under vmap may fail the whole batch.
 
         **Returns:**
 
         `DemographicResult` containing final mass and each interval's outcome.
-        Output length is `2 * final_ne + 1`, or `2 * final_ne - 1` when segregating.
+        Output length is `2 * final_pop_size + 1`, or `2 * final_pop_size - 1` when segregating.
         No mass normalization occurs.
 
         **Raises:**
@@ -387,7 +382,7 @@ class DemographicTransition(eqx.Module):
 
     def _advance(self, distribution, *, segregating, singleton_rate, throw):
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
-        size = 2 * self.demography.initial_ne + (-1 if segregating else 1)
+        size = 2 * self.demography.initial_pop_size + (-1 if segregating else 1)
         if distribution.shape != (size,):
             raise ValueError(f"distribution must have {size} entries")
         # Validate every prepared domain even for identity/boundary-only histories.
@@ -402,8 +397,8 @@ class DemographicTransition(eqx.Module):
         status = initial_result.status
         diagnostics = []
         for source, destination, duration in zip(
-            self.demography.ne[:-1],
-            self.demography.ne[1:],
+            self.demography.pop_sizes[:-1],
+            self.demography.pop_sizes[1:],
             self.demography.generations,
             strict=True,
         ):
@@ -477,8 +472,8 @@ class DemographicTransition(eqx.Module):
 
         **Arguments:**
 
-        - `values`: Real vector of length `2 * final_ne + 1`, or
-          `2 * final_ne - 1` when segregating, converted to float64.
+        - `values`: Real vector of length `2 * final_pop_size + 1`, or
+          `2 * final_pop_size - 1` when segregating, converted to float64.
         - `segregating`: Discard endpoint mass after each generation.
         - `singleton_mutation_rate`: Finite nonnegative scalar per-copy source
           rate, as in `advance`. Requires segregating states.
@@ -487,7 +482,7 @@ class DemographicTransition(eqx.Module):
         **Returns:**
 
         A `DemographicExpectation` with float64 `values` of length
-        `2 * initial_ne + 1`, or `2 * initial_ne - 1` when segregating, and a
+        `2 * initial_pop_size + 1`, or `2 * initial_pop_size - 1` when segregating, and a
         scalar `offset`. The reward `initial @ result.values + result.offset`
         equals the terminal reward from `advance` with the same layout and rate.
         The offset is zero without a source or for an identity history.
@@ -506,7 +501,7 @@ class DemographicTransition(eqx.Module):
                 "expect requires Sequential; adaptive epoch actions have no matched transpose"
             )
         values, rate = _singleton_inputs(values, segregating, singleton_mutation_rate)
-        size = 2 * self.demography.final_ne + (-1 if segregating else 1)
+        size = 2 * self.demography.final_pop_size + (-1 if segregating else 1)
         if values.shape != (size,):
             raise ValueError(f"values must have {size} entries")
         offset = jnp.asarray(0.0)
@@ -515,8 +510,8 @@ class DemographicTransition(eqx.Module):
         for source, destination, duration in reversed(
             tuple(
                 zip(
-                    self.demography.ne[:-1],
-                    self.demography.ne[1:],
+                    self.demography.pop_sizes[:-1],
+                    self.demography.pop_sizes[1:],
                     self.demography.generations,
                     strict=True,
                 )

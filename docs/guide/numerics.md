@@ -24,22 +24,23 @@ import jax.numpy as jnp
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-diploid_size = 128
-M = 2 * diploid_size  # Number of copies in the exact binomial reference.
-coarse = drifft.NUFFT(diploid_size=diploid_size, accuracy=1e-6)
-fine = drifft.NUFFT(diploid_size=diploid_size, accuracy=1e-10, derivative_accuracy=True)
+pop_size = 128
+M = 2 * pop_size  # Number of copies in the exact binomial reference.
+coarse = drifft.NUFFT(pop_size=pop_size, accuracy=1e-6)
+fine = drifft.NUFFT(pop_size=pop_size, accuracy=1e-10, derivative_accuracy=True)
+
 
 # The allele starts with four copies.
 def loss_probability(backend, s):
-    transition = drifft.Transition(
-        backend, drifft.AdditiveSelection(s=s)
-    )
+    transition = drifft.Transition(backend, drifft.AdditiveSelection(s=s))
     loss_indicator = jnp.zeros(transition.dest_size()).at[0].set(1.0)
     return transition.expect(loss_indicator)[4]
+
 
 def exact_loss(s):
     q = drifft.AdditiveSelection(s=s)(jnp.asarray(4 / M))
     return (1 - q) ** M
+
 
 strength = jnp.asarray(0.02)
 exact_value = exact_loss(strength)
@@ -47,8 +48,10 @@ exact_gradient = jax.grad(exact_loss)(strength)
 for label, backend in [("coarse", coarse), ("fine", fine)]:
     value = loss_probability(backend, strength)
     gradient = jax.grad(lambda s: loss_probability(backend, s))(strength)
-    print(f"{label}: value error={abs(value - exact_value):.3e}, "
-          f"gradient error={abs(gradient - exact_gradient):.3e}")
+    print(
+        f"{label}: value error={abs(value - exact_value):.3e}, "
+        f"gradient error={abs(gradient - exact_gradient):.3e}"
+    )
 ```
 
 This reference checks binomial reproduction with the same selection map.

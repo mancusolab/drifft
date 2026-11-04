@@ -131,14 +131,17 @@ class FFT(AbstractTransitionBackend):
     r"""Evaluate binomial expectations by factoring local kernels into convolutions:
 
     $$
-    y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jf_j.
+    y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jv_j.
     $$
 
-    Here $f_j$ are destination values, $j_0$ is a reference allele count,
+    Here $v_j$ are destination values at counts $j=0,\ldots,M$, with $M=2N$
+    for diploid destination population size $N$ (`pop_size`). The intermediate
+    values $y_r$ are expectations on a local grid, $j_0$ is a reference allele count,
     $\Delta_{\mathrm{logit}}$ is the local log-odds spacing, and $a_r,b_j$ are
     diagonal scaling weights. Zero-padded FFTs evaluate the convolution;
-    polynomial interpolation supplies expectations at arbitrary offspring
-    probabilities. Near zero and one, direct binomial sums replace interpolation.
+    polynomial interpolation approximates $(Pv)_i$ at the supplied offspring
+    allele probabilities $q_i$ for source rows $i$. Near zero and one, direct
+    binomial sums replace interpolation.
     The Gaussian-shaped kernel is a factorization of the binomial kernel,
     not a normal approximation. Errors arise from tail truncation,
     interpolation, and floating-point arithmetic.
@@ -157,7 +160,7 @@ class FFT(AbstractTransitionBackend):
     offsets: jax.Array
     boundary_logchoose: jax.Array
     max_tail_mass: jax.Array
-    diploid_size: int = eqx.field(static=True)
+    pop_size: int = eqx.field(static=True)
     tail_tol: float = eqx.field(static=True)
     interp_order: int = eqx.field(static=True)
     min_mode_count: int = eqx.field(static=True)
@@ -168,7 +171,7 @@ class FFT(AbstractTransitionBackend):
 
     def __init__(
         self,
-        diploid_size: int,
+        pop_size: int,
         *,
         tail_tol: float = 1e-12,
         interp_order: int = 12,
@@ -178,21 +181,19 @@ class FFT(AbstractTransitionBackend):
     ) -> None:
         r"""Plan local binomial FFTs over all success probabilities, independent of selection.
 
+        Initializes host-computed quantile windows and cached kernel FFTs.
+        Construction is not JIT-compatible. Core intervals partition log-odds;
+        halos support interpolation. For `pop_size <= min_mode_count` all rows use the
+        direct fallback. Tail tolerance does not bound interpolation or roundoff.
+
         **Arguments:**
 
-        - `diploid_size`: Diploid effective population size, a Python integer at least one.
+        - `pop_size`: Diploid effective population size, a Python integer at least one.
         - `tail_tol`: Discarded mass budget in `[1e-15, .1)`, default `1e-12`.
         - `interp_order`: Even polynomial stencil size from 2 through 16, default 12.
         - `min_mode_count`: Boundary cutoff in expected copies, at least 8, default 128.
         - `block_spacing`: Center separation in local standard deviations, `(0, 4]`.
         - `balance`: Whether to recenter the diagonal multipliers, default true.
-
-        **Returns:**
-
-        `None`. Initializes host-computed quantile windows and cached kernel FFTs.
-        Construction is not JIT-compatible. Core intervals partition log-odds;
-        halos support interpolation. For `diploid_size <= min_mode_count` all rows use the
-        direct fallback. Tail tolerance does not bound interpolation or roundoff.
 
         **Raises:**
 
@@ -200,13 +201,9 @@ class FFT(AbstractTransitionBackend):
         `TypeError` if `balance` is not boolean. Results are deterministic for a
         fixed environment but need not be bitwise identical across platforms.
         """
-        if (
-            isinstance(diploid_size, bool)
-            or not isinstance(diploid_size, int)
-            or diploid_size < 1
-        ):
-            raise ValueError("diploid_size must be a Python integer >= 1")
-        gene_copies = 2 * diploid_size
+        if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 1:
+            raise ValueError("pop_size must be a Python integer >= 1")
+        gene_copies = 2 * pop_size
         # These are host configuration checks, not operations on traced values.
         if not (np.isfinite(tail_tol) and 1e-15 <= tail_tol < 0.1):
             raise ValueError("tail_tol must be finite and in [1e-15, 0.1)")
@@ -329,7 +326,7 @@ class FFT(AbstractTransitionBackend):
         self.offsets = jnp.asarray(offsets, dtype=jnp.int32)
         self.boundary_logchoose = jnp.asarray(logchoose)
         self.max_tail_mass = jnp.asarray(max_tail)
-        self.diploid_size = diploid_size
+        self.pop_size = pop_size
         self.tail_tol = tail_tol
         self.interp_order = interp_order
         self.min_mode_count = min_mode_count
@@ -363,7 +360,7 @@ class FFT(AbstractTransitionBackend):
         **Arguments:**
 
         - `probabilities`: Vector of finite source probabilities in `[0, 1]`.
-        - `values`: Finite real destination vector of length `2 * diploid_size + 1`.
+        - `values`: Finite real destination vector of length `2 * pop_size + 1`.
 
         Both inputs accept Python lists, NumPy arrays, or JAX arrays and are
         converted to float64 before shape validation.

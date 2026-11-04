@@ -186,8 +186,8 @@ def test_krylov_reports_and_throws_on_underresolved_power(generations):
 @pytest.mark.parametrize(
     "options",
     [
-        {"diploid_size": 1},
-        {"diploid_size": True},
+        {"pop_size": 1},
+        {"pop_size": True},
         {"rank": 0},
         {"rank": 16},
         {"dimension": 1},
@@ -204,7 +204,7 @@ def test_krylov_rejects_invalid_configuration(options):
         if any(key in options for key in ("dimension", "rtol", "atol")):
             drifft.RationalKrylov(**options)
         else:
-            drifft.Jacobi(**({"diploid_size": 8} | options))
+            drifft.Jacobi(**({"pop_size": 8} | options))
 
 
 @pytest.mark.parametrize("generations", [-1, 1.5, True])

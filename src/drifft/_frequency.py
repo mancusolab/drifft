@@ -107,10 +107,6 @@ FrequencyMap.__init__.__doc__ = r"""Initialize FrequencyMap.
   Equinox callable can carry dynamic parameters. For closures, construct the
   function inside the differentiated calculation to retain parameter links.
 
-**Returns:**
-
-`None`.
-
 **Raises:**
 
 `TypeError` for non-callable functions. Output shape and probability ranges
@@ -236,10 +232,6 @@ Both parameters become dynamic float64 scalar leaves. Enable JAX x64 before
 construction. The strict homozygote bound keeps mean fitness positive at
 fixation; a lethal derived homozygote is outside this map's domain.
 
-**Returns:**
-
-`None`.
-
 **Raises:**
 
 `ValueError` for nonscalar coefficients.
@@ -281,11 +273,6 @@ Neutral.__init__.__doc__ = r"""Initialize Neutral.
 **Arguments:**
 
 None.
-
-**Returns:**
-
-`None`.
-
 """
 
 
@@ -334,10 +321,6 @@ Mutation.__init__.__doc__ = r"""Initialize Mutation.
 
 Both rates default to zero and become dynamic float64 scalar leaves.
 Each rate lies in `[0, 1]`; their sum need not be less than one.
-
-**Returns:**
-
-`None`.
 
 **Raises:**
 
@@ -388,10 +371,6 @@ class Composition(AbstractFrequencyMap):
         **Arguments:**
 
         - `*maps`: One or more `AbstractFrequencyMap` instances, applied left to right.
-
-        **Returns:**
-
-        `None`.
 
         **Raises:**
 
@@ -468,10 +447,6 @@ Underdominance.__init__.__doc__ = r"""Initialize Underdominance.
 - `strength`: Heterozygote fitness reduction in `[0, 1]`, converted to a
   float64 JAX leaf. Changing its value does not change model structure.
 
-**Returns:**
-
-`None`.
-
 **Raises:**
 
 `ValueError` for nonscalar strength.
@@ -529,10 +504,6 @@ and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
 checks that both derived selection coefficients have absolute value at most
 its configured `max_strength`.
 
-**Returns:**
-
-`None`.
-
 **Raises:**
 
 `ValueError` for nonscalar parameters.
@@ -584,10 +555,6 @@ and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
 checks that both derived selection coefficients have absolute value at most
 its configured `max_strength`.
 
-**Returns:**
-
-`None`.
-
 **Raises:**
 
 `ValueError` for nonscalar parameters.
@@ -635,10 +602,6 @@ construction. Value constraints are caller preconditions, including under JIT
 and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
 checks that both derived selection coefficients have absolute value at most
 its configured `max_strength`.
-
-**Returns:**
-
-`None`.
 
 **Raises:**
 
@@ -688,10 +651,6 @@ and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
 checks that both derived selection coefficients have absolute value at most
 its configured `max_strength`.
 
-**Returns:**
-
-`None`.
-
 **Raises:**
 
 `ValueError` for nonscalar parameters.
@@ -739,10 +698,6 @@ construction. Value constraints are caller preconditions, including under JIT
 and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
 checks that both derived selection coefficients have absolute value at most
 its configured `max_strength`.
-
-**Returns:**
-
-`None`.
 
 **Raises:**
 
@@ -843,10 +798,6 @@ construction. Value constraints are caller preconditions, including under JIT
 and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
 checks that both derived selection coefficients have absolute value at most
 its configured `max_strength`.
-
-**Returns:**
-
-`None`.
 
 **Raises:**
 

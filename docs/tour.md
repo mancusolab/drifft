@@ -49,7 +49,7 @@ A **backend** represents the one-generation binomial transition. `Transition`
 binds it to the frequency map:
 
 ```python
-backend = drifft.FFT(diploid_size=64)
+backend = drifft.FFT(pop_size=64)
 transition = drifft.Transition(backend, frequency_map=frequency_map)
 after_one_generation = transition.advance(initial)
 ```
@@ -59,7 +59,7 @@ the sizes in the history; an **evolution method** applies them across each
 interval. Start with FFT and Sequential:
 
 ```python
-history = drifft.Demography(ne=[64, 32], generations=[40])
+history = drifft.Demography(pop_sizes=[64, 32], generations=[40])
 model = drifft.DemographicTransition(
     history,
     frequency_map=frequency_map,
@@ -92,7 +92,7 @@ hit zero at any earlier time.
 To evaluate an observable for every possible initial count, use `expect()`:
 
 ```python
-absent_indicator = jnp.zeros(2 * history.final_ne + 1).at[0].set(1.0)
+absent_indicator = jnp.zeros(2 * history.final_pop_size + 1).at[0].set(1.0)
 expectation = model.expect(absent_indicator)
 assert jnp.allclose(
     initial @ expectation.values, absent_probability, rtol=0, atol=1e-10
@@ -114,6 +114,7 @@ geometry. Here `maps[0]` is the selection component:
 def probability_absent(s):
     updated = eqx.tree_at(lambda m: m.frequency_map.maps[0].s, model, s)
     return updated.advance(initial).distribution[0]
+
 
 probability, sensitivity = jax.value_and_grad(probability_absent)(jnp.asarray(0.02))
 print(f"Probability: {probability:.6f}; derivative: {sensitivity:.6f}")

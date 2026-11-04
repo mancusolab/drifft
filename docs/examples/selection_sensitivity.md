@@ -22,16 +22,18 @@ import drifft
 
 jax.config.update("jax_enable_x64", True)
 model = drifft.DemographicTransition(
-    drifft.Demography(ne=[32, 32], generations=[20]),
+    drifft.Demography(pop_sizes=[32, 32], generations=[20]),
     backend_factory=drifft.FFT,
     method=drifft.Sequential(),
     frequency_map=drifft.AdditiveSelection(s=0.02),
 )
 initial = jnp.zeros(65).at[1].set(1.0)
 
+
 def loss_probability(s):
     updated = eqx.tree_at(lambda m: m.frequency_map.s, model, s)
     return updated.advance(initial).distribution[0]
+
 
 value_and_gradient = jax.jit(jax.value_and_grad(loss_probability))
 strengths = jnp.linspace(0.0, 0.08, 9)
@@ -56,7 +58,10 @@ fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
 axes[0].plot(strengths, values, marker="o")
 axes[0].set(xlabel="Derived-homozygote fitness reduction", ylabel="Loss probability")
 axes[1].plot(strengths, gradients, marker="o")
-axes[1].set(xlabel="Derived-homozygote fitness reduction", ylabel="Derivative of loss probability")
+axes[1].set(
+    xlabel="Derived-homozygote fitness reduction",
+    ylabel="Derivative of loss probability",
+)
 fig.tight_layout()
 fig.savefig("selection_sensitivity.svg")
 plt.show()

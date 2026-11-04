@@ -33,7 +33,7 @@ def test_modular_selected_history_and_diagnostics():
     assert result.converged
     assert result.status == drifft.EvolutionStatus.successful
     assert len(result.diagnostics) == 2
-    assert result.diagnostics[0].source_ne == 8
+    assert result.diagnostics[0].source_pop_size == 8
     assert jnp.allclose(result.distribution, expected, atol=2e-10, rtol=0)
 
 

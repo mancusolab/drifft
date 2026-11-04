@@ -19,7 +19,7 @@ class Transition(eqx.Module):
     r"""A reusable backend combined with a frequency map or explicit probabilities.
 
     Given source-row probability $q_i$ and $M=2N$ for diploid destination size
-    $N$ (`backend.diploid_size`),
+    $N$ (`backend.pop_size`),
 
     $$P_{ij} = \binom{M}{j} q_i^j (1-q_i)^{M-j}.$$
 
@@ -33,7 +33,7 @@ class Transition(eqx.Module):
     backend: AbstractTransitionBackend
     frequency_map: AbstractFrequencyMap | None
     _probabilities: jax.Array | None
-    source_diploid_size: int | None = eqx.field(static=True)
+    source_pop_size: int | None = eqx.field(static=True)
     _source_gene_copies: int = eqx.field(static=True)
 
     def __init__(
@@ -41,30 +41,28 @@ class Transition(eqx.Module):
         backend: AbstractTransitionBackend,
         frequency_map: AbstractFrequencyMap | None = None,
         *,
-        source_diploid_size: int | None = None,
+        source_pop_size: int | None = None,
         probabilities: jax.Array | None = None,
     ) -> None:
         r"""Bind a frequency map or explicit probabilities to prepared geometry.
 
         For a frequency map $q$, source-row probabilities are $q_i=q(i/M_s)$,
-        where $M_s$ is `2 * source_diploid_size`. Explicit probabilities supply
+        where $M_s$ is `2 * source_pop_size`. Explicit probabilities supply
         the $q_i$ directly.
+
+        Reuses the backend without rebuilding geometry.
 
         **Arguments:**
 
         - `backend`: Prepared destination backend.
         - `frequency_map`: `AbstractFrequencyMap`; mutually exclusive with `probabilities`.
-        - `source_diploid_size`: Positive integer diploid source size. Defaults to
-          `backend.diploid_size` for a map. For explicit rows, inferred as
+        - `source_pop_size`: Positive integer diploid source size. Defaults to
+          `backend.pop_size` for a map. For explicit rows, inferred as
           `(len(probabilities) - 1) // 2` when the length is odd and at least three;
-          otherwise remains `None`. If supplied, requires `2 * source_diploid_size + 1` rows.
+          otherwise remains `None`. If supplied, requires `2 * source_pop_size + 1` rows.
         - `probabilities`: Optional nonempty vector of source probabilities in `[0, 1]`;
           converted to float64. Rows may be arbitrary sampled probabilities for
           full-state operations; segregating operations require ordered count grids.
-
-        **Returns:**
-
-        `None`. Reuses the backend without rebuilding geometry.
 
         **Raises:**
 
@@ -84,19 +82,17 @@ class Transition(eqx.Module):
             if probabilities is None
             else jnp.asarray(probabilities, dtype=jnp.float64)
         )
-        if source_diploid_size is not None and (
-            isinstance(source_diploid_size, bool)
-            or not isinstance(source_diploid_size, int)
-            or source_diploid_size < 1
+        if source_pop_size is not None and (
+            isinstance(source_pop_size, bool)
+            or not isinstance(source_pop_size, int)
+            or source_pop_size < 1
         ):
-            raise ValueError("source_diploid_size must be a Python integer >= 1")
+            raise ValueError("source_pop_size must be a Python integer >= 1")
         if self._probabilities is None:
-            self.source_diploid_size = (
-                backend.diploid_size
-                if source_diploid_size is None
-                else source_diploid_size
+            self.source_pop_size = (
+                backend.pop_size if source_pop_size is None else source_pop_size
             )
-            self._source_gene_copies = 2 * self.source_diploid_size
+            self._source_gene_copies = 2 * self.source_pop_size
         else:
             self._source_gene_copies = self._probabilities.size - 1
             inferred = (
@@ -104,16 +100,14 @@ class Transition(eqx.Module):
                 if self._source_gene_copies >= 2 and self._source_gene_copies % 2 == 0
                 else None
             )
-            self.source_diploid_size = (
-                inferred if source_diploid_size is None else source_diploid_size
+            self.source_pop_size = (
+                inferred if source_pop_size is None else source_pop_size
             )
             if (
-                source_diploid_size is not None
-                and 2 * source_diploid_size != self._source_gene_copies
+                source_pop_size is not None
+                and 2 * source_pop_size != self._source_gene_copies
             ):
-                raise ValueError(
-                    "source_diploid_size must match the probability vector"
-                )
+                raise ValueError("source_pop_size must match the probability vector")
 
     def __check_init__(self) -> None:
         """Validate static dimensions and mutually exclusive construction modes."""
@@ -141,7 +135,7 @@ class Transition(eqx.Module):
 
         **Returns:**
 
-        The Python integer `2 * backend.diploid_size + 1`.
+        The Python integer `2 * backend.pop_size + 1`.
         """
         return self.backend._gene_copies + 1
 
@@ -158,7 +152,7 @@ class Transition(eqx.Module):
 
         **Returns:**
 
-        The Python integer `2 * source_diploid_size + 1` for a frequency map,
+        The Python integer `2 * source_pop_size + 1` for a frequency map,
         or the number of supplied rows for explicit probabilities.
         """
         return self._source_gene_copies + 1
@@ -199,6 +193,14 @@ class Transition(eqx.Module):
         interior source and destination counts. Endpoint values are zero;
         expectations are not conditioned on survival.
 
+        !!! example "Example: Expected allele count"
+
+            ```python
+            # For each current count, find the expected allele count next generation.
+            counts = jnp.arange(transition.dest_size())
+            expected_counts = transition.expect(counts)
+            ```
+
         **Arguments:**
 
         - `values`: Finite real vector of length `dest_size()`,
@@ -211,14 +213,6 @@ class Transition(eqx.Module):
         A float64 vector of length `source_size()`, or `source_size() - 2` when
         segregating. No survival conditioning.
 
-        !!! example "Example: Expected allele count"
-
-            ```python
-            # For each current count, find the expected allele count next generation.
-            counts = jnp.arange(transition.dest_size())
-            expected_counts = transition.expect(counts)
-            ```
-
         **Raises:**
 
         `ValueError` for incompatible input/map-output shapes or a nonboolean flag.
@@ -227,7 +221,7 @@ class Transition(eqx.Module):
             raise ValueError("segregating must be a Python bool")
         values = jnp.asarray(values, dtype=jnp.float64)
         if segregating:
-            if self.source_diploid_size is None or values.shape != (
+            if self.source_pop_size is None or values.shape != (
                 self.backend._gene_copies - 1,
             ):
                 raise ValueError(
@@ -253,6 +247,14 @@ class Transition(eqx.Module):
         interior source and destination counts. Mass reaching an endpoint
         is discarded without renormalization.
 
+        !!! example "Example: Offspring from a singleton"
+
+            ```python
+            # Starting with one copy, find the probability of each count next generation.
+            initial = jnp.zeros(transition.source_size()).at[1].set(1)
+            next_distribution = transition.advance(initial)
+            ```
+
         **Arguments:**
 
         - `distribution`: Finite real vector of length `source_size()`,
@@ -265,14 +267,6 @@ class Transition(eqx.Module):
         A float64 vector of length `dest_size()`, or `dest_size() - 2` when
         segregating. No renormalization occurs.
 
-        !!! example "Example: Offspring from a singleton"
-
-            ```python
-            # Starting with one copy, find the probability of each count next generation.
-            initial = jnp.zeros(transition.source_size()).at[1].set(1)
-            next_distribution = transition.advance(initial)
-            ```
-
         **Raises:**
 
         `ValueError` for incompatible input/map-output shapes or a nonboolean flag.
@@ -281,19 +275,19 @@ class Transition(eqx.Module):
         if not isinstance(segregating, bool):
             raise ValueError("segregating must be a Python bool")
         offset = -1 if segregating else 1
-        if segregating and self.source_diploid_size is None:
+        if segregating and self.source_pop_size is None:
             raise ValueError("segregating distribution requires source interior states")
         if distribution.shape != (self._source_gene_copies + offset,):
             raise ValueError(
                 f"distribution must have {self._source_gene_copies + offset} entries "
                 f"for the {'interior' if segregating else 'full'} source grid"
             )
-        spec = jax.ShapeDtypeStruct((self.backend._gene_copies + offset,), jnp.float64)
-        # Transpose the actual approximate expectation map, rather than a
-        # separately implemented forward kernel, to preserve adjoint pairing.
-        return jax.linear_transpose(
-            partial(self.expect, segregating=segregating), spec
-        )(distribution)[0]
+        if segregating:
+            propagated = self.backend.advance(
+                self.probabilities, jnp.pad(distribution, (1, 1))
+            )
+            return propagated[1:-1]
+        return self.backend.advance(self.probabilities, distribution)
 
     def as_lineax(self, *, segregating: bool = False) -> lx.FunctionLinearOperator:
         r"""Expose the expectation operation as a Lineax operator.
@@ -350,6 +344,13 @@ class Transition(eqx.Module):
         includes the initial generation. Finite visits require eventual
         endpoint hitting; mutation does not restore discarded trajectories.
 
+        !!! example "Example: Visits from a singleton"
+
+            ```python
+            result = transition.expected_visits()
+            visits = result.visits
+            ```
+
         **Arguments:**
 
         - `solver`: `"gmres"` (default) or `"bicgstab"`.
@@ -367,13 +368,6 @@ class Transition(eqx.Module):
         An `ExpectedVisitsResult` with float64 `visits` of length
         `dest_size() - 2`, plus convergence diagnostics.
 
-        !!! example "Example: Visits from a singleton"
-
-            ```python
-            result = transition.expected_visits()
-            visits = result.visits
-            ```
-
         **Raises:**
 
         `ValueError` for a nonsquare transition, invalid solver controls, or map shape.
@@ -388,11 +382,10 @@ class Transition(eqx.Module):
             errors despite convergence; check [numerical accuracy](../guide/numerics.md).
             Global differentiability of solves is not certified.
         """
-        if self._source_gene_copies != self.backend._gene_copies:
+        if self.source_size() != self.dest_size():
             raise ValueError("expected_visits requires a square transition")
         return _solve_expected_visits(
             self.as_lineax(segregating=True),
-            self.backend._gene_copies,
             solver=solver,
             rtol=rtol,
             atol=atol,

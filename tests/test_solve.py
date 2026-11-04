@@ -89,7 +89,7 @@ def test_complete_occupation_status_checks_residual_and_finiteness(monkeypatch):
         operator = lx.FunctionLinearOperator(
             lambda v: (1 - scale) * v, jax.ShapeDtypeStruct((3,), jnp.float64)
         )
-        return _solve_expected_visits(operator, 4, throw=throw)
+        return _solve_expected_visits(operator, throw=throw)
 
     # The system is scale*I, and the fake candidate is scale*rhs. Only scale=1
     # is accepted in this batch; zero fails its residual, NaN/inf fail finiteness.

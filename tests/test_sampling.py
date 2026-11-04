@@ -41,14 +41,22 @@ def _matrix(population, sample):
 
 
 @pytest.mark.parametrize(
-    "population,sample", [(1, 0), (1, 1), (11, 1), (24, 7), (24, 23), (24, 24)]
+    "population,sample", [(2, 0), (2, 2), (12, 2), (24, 8), (24, 22), (24, 24)]
 )
 def test_exact_sampling(population, sample):
     """Uncompressed actions agree with exact sampling, including limiting cases."""
-    sampling = drifft.HypergeometricSampling(population, sample, accuracy=0)
+    sampling = drifft.HypergeometricSampling(
+        pop_size=population // 2, sample_size=sample // 2, accuracy=0
+    )
+    assert sampling.pop_size == population // 2
+    assert sampling.sample_size == sample // 2
     matrix = _matrix(population, sample)
-    mass = jnp.linspace(-0.3, 1.0, population + 1)
-    values = jnp.cos(jnp.arange(sample + 1))
+    assert sampling.source_size() == matrix.shape[0]
+    assert sampling.dest_size() == matrix.shape[1]
+    assert isinstance(sampling.source_size(), int)
+    assert isinstance(sampling.dest_size(), int)
+    mass = jnp.linspace(-0.3, 1.0, sampling.source_size())
+    values = jnp.cos(jnp.arange(sampling.dest_size()))
     np.testing.assert_allclose(
         sampling.advance(mass), matrix.T @ mass, atol=2e-14, rtol=0
     )
@@ -66,7 +74,9 @@ def test_compression_accuracy(sample):
     initials = jax.nn.one_hot(selected, population + 1, dtype=jnp.float64)
     errors = []
     for tolerance in [1e-3, 1e-7]:
-        sampling = drifft.HypergeometricSampling(population, sample, accuracy=tolerance)
+        sampling = drifft.HypergeometricSampling(
+            population // 2, sample // 2, accuracy=tolerance
+        )
         actual = jax.vmap(sampling.advance)(initials)
         errors.append(np.max(np.sum(np.abs(actual - matrix[selected]), axis=1) / 2))
         np.testing.assert_allclose(actual.sum(axis=1), 1, atol=2e-14, rtol=0)
@@ -84,7 +94,7 @@ def test_linearity_mean_and_adjoint():
     """Fixed interpolation preserves untruncated means and paired signed actions."""
     population, sample = 4000, 40
     sampling = drifft.HypergeometricSampling(
-        population, sample, accuracy=1e-6, tail_tol=0
+        population // 2, sample // 2, accuracy=1e-6, tail_tol=0
     )
     assert sampling.representative_counts.size < population // 10
     np.testing.assert_allclose(
@@ -128,7 +138,7 @@ def test_tail_truncation_budget():
     """With no grouping, the actual row TV error stays within the tail budget."""
     population, sample, eps = 400, 200, 0.01
     sampling = drifft.HypergeometricSampling(
-        population, sample, accuracy=2 * eps, interp_order=2, tail_tol=eps
+        population // 2, sample // 2, accuracy=2 * eps, interp_order=2, tail_tol=eps
     )
     actual = np.asarray(jax.vmap(sampling.advance)(jnp.eye(population + 1)))
     exact = _matrix(population, sample)
@@ -142,12 +152,12 @@ def test_tail_truncation_budget():
 def test_demographic_composition(backend):
     """Sampling composes with demographic expectations and source offsets."""
     model = drifft.DemographicTransition(
-        drifft.Demography(ne=[16, 12], generations=[3]),
+        drifft.Demography(pop_sizes=[16, 12], generations=[3]),
         backend_factory=backend,
         method=drifft.Sequential(),
         frequency_map=drifft.Neutral(),
     )
-    sampling = drifft.HypergeometricSampling(24, 8)
+    sampling = drifft.HypergeometricSampling(12, 4)
     initial = jnp.zeros(33).at[1].set(1)
     values = jnp.arange(9) ** 2
     result = model.advance(initial)
@@ -175,6 +185,8 @@ def test_demographic_composition(backend):
     "args,kwargs",
     [
         ((0, 0), {}),
+        ((-1, 0), {}),
+        ((1.5, 1), {}),
         ((True, 1), {}),
         ((8, True), {}),
         ((8, 9), {}),
@@ -196,21 +208,21 @@ def test_invalid_configuration(args, kwargs):
 
 def test_vector_contract_and_x64():
     """Reject wrong shapes, complex values, and construction without float64."""
-    sampling = drifft.HypergeometricSampling(10, 3)
-    for values in [jnp.ones(3), jnp.ones((2, 4)), jnp.ones(4, dtype=complex)]:
+    sampling = drifft.HypergeometricSampling(5, 2)
+    for values in [jnp.ones(3), jnp.ones((2, 4)), jnp.ones(5, dtype=complex)]:
         with pytest.raises(ValueError):
             sampling.expect(values)
     with pytest.raises(ValueError):
         sampling.advance(jnp.ones(10))
     with jax.enable_x64(False), pytest.raises(ValueError, match="x64"):
-        drifft.HypergeometricSampling(10, 3)
+        drifft.HypergeometricSampling(5, 2)
 
 
 def test_compressed_rows_match_integer_combinatorics():
     """Exercise actual grouping against exact arithmetic, including reflection."""
     population, sample = 5000, 12
     sampling = drifft.HypergeometricSampling(
-        population, sample, accuracy=1e-6, tail_tol=0
+        population // 2, sample // 2, accuracy=1e-6, tail_tol=0
     )
     selected = np.array([3, 71, 851, 2191])
     selected = np.concatenate((selected, population - selected))
@@ -253,11 +265,11 @@ def test_compressed_rows_match_integer_combinatorics():
     np.testing.assert_allclose(actual_variance, exact_variance, rtol=0, atol=2e-13)
 
 
-@pytest.mark.parametrize("sample", [0, 1, 5, 17])
+@pytest.mark.parametrize("sample", [0, 2, 6, 18])
 def test_expect_batching_and_reverse_derivative(sample):
     """Expectation batches and pullbacks match independent finite-population rows."""
-    population = 17
-    sampling = drifft.HypergeometricSampling(population, sample, accuracy=0)
+    population = 18
+    sampling = drifft.HypergeometricSampling(population // 2, sample // 2, accuracy=0)
     exact = _matrix(population, sample)
     values = jnp.stack(
         (jnp.sin(jnp.arange(sample + 1)), jnp.cos(jnp.arange(sample + 1)))
@@ -290,12 +302,12 @@ def test_hypergeometric_difference_identity(order):
 
 
 @pytest.mark.parametrize("order", [2, 4, 8, 12, 16])
-@pytest.mark.parametrize("population", [1000, 1001])
+@pytest.mark.parametrize("population", [1000, 1002])
 def test_planning_bounds_on_every_population_row(order, population):
     """The combined interpolation and tail budget covers all rows, not a few probes."""
     sample, accuracy = 18, 1e-4
     sampling = drifft.HypergeometricSampling(
-        population, sample, accuracy=accuracy, interp_order=order
+        population // 2, sample // 2, accuracy=accuracy, interp_order=order
     )
     actual = np.asarray(jax.vmap(sampling.expect)(jnp.eye(sample + 1))).T
     exact = _matrix(population, sample)
@@ -322,11 +334,11 @@ def test_planning_bounds_on_every_population_row(order, population):
         assert np.max(np.sum(np.abs(interpolation), axis=0)) <= sampling.lebesgue_bound
 
 
-@pytest.mark.parametrize("sample", [1, 2, 5])
+@pytest.mark.parametrize("sample", [2, 4, 6])
 def test_exact_polynomial_dimension(sample):
     """A sample-size degree polynomial recovers every row without heuristic grouping."""
     population = 1000
-    sampling = drifft.HypergeometricSampling(population, sample, tail_tol=0)
+    sampling = drifft.HypergeometricSampling(population // 2, sample // 2, tail_tol=0)
     assert sampling.representative_counts.size <= sample + 2
     assert sampling.interpolation_bound == 0
     actual = np.asarray(jax.vmap(sampling.expect)(jnp.eye(sample + 1))).T
@@ -336,8 +348,10 @@ def test_exact_polynomial_dimension(sample):
 def test_streaming_ad_and_batch_sizes():
     """Streaming transpose supports nonleading batching and second derivatives."""
     population, sample = 2000, 10
-    sampling = drifft.HypergeometricSampling(population, sample, batch_size=37)
-    other = drifft.HypergeometricSampling(population, sample, batch_size=256)
+    sampling = drifft.HypergeometricSampling(
+        population // 2, sample // 2, batch_size=37
+    )
+    other = drifft.HypergeometricSampling(population // 2, sample // 2, batch_size=256)
     a = jnp.sin(jnp.arange(population + 1)) / population
     np.testing.assert_allclose(
         sampling.advance(a), other.advance(a), rtol=0, atol=2e-15
@@ -367,8 +381,8 @@ def test_streaming_ad_and_batch_sizes():
 @pytest.mark.parametrize("action", ["advance", "expect"])
 def test_tangent_only_batching_preserves_shared_primal(action):
     """Batch nonleading tangent axes without broadcasting the fixed primal."""
-    population, sample = 60, 3
-    sampling = drifft.HypergeometricSampling(population, sample, tail_tol=0)
+    population, sample = 60, 4
+    sampling = drifft.HypergeometricSampling(population // 2, sample // 2, tail_tol=0)
     assert sampling.representative_counts.size < population + 1
     matrix = jnp.asarray(_matrix(population, sample))
     operator = matrix.T if action == "advance" else matrix
@@ -389,7 +403,7 @@ def test_tangent_only_batching_preserves_shared_primal(action):
 @pytest.mark.parametrize("transposed", [False, True])
 def test_interpolation_preserves_symbolic_zeros_and_geometry_guard(transposed):
     """Inactive derivatives avoid dense zeros but still reject trainable geometry."""
-    sampling = drifft.HypergeometricSampling(60, 3, tail_tol=0)
+    sampling = drifft.HypergeometricSampling(30, 2, tail_tol=0)
     knots, barycentric = sampling.representative_counts, sampling._barycentric
     values = jnp.ones(61 if transposed else knots.size)
     primals = (knots, barycentric, values)
@@ -418,7 +432,7 @@ def test_interpolation_preserves_symbolic_zeros_and_geometry_guard(transposed):
 @pytest.mark.parametrize("transposed", [False, True])
 def test_interpolation_pullback_retains_only_geometry(transposed):
     """A fixed linear interpolation pullback must not retain the input vector."""
-    sampling = drifft.HypergeometricSampling(60, 3, tail_tol=0)
+    sampling = drifft.HypergeometricSampling(30, 2, tail_tol=0)
     knots, barycentric = sampling.representative_counts, sampling._barycentric
     values = jnp.ones(61 if transposed else knots.size)
     primitive = _CountInterpolation(
@@ -438,8 +452,8 @@ def test_interpolation_pullback_retains_only_geometry(transposed):
 @pytest.mark.parametrize("action", ["advance", "expect"])
 def test_sampling_reverse_mode_compositions(action):
     """Check checkpointing, shared gradients and higher derivatives against exact rows."""
-    sampling = drifft.HypergeometricSampling(60, 3, tail_tol=0, batch_size=7)
-    matrix = jnp.asarray(_matrix(60, 3))
+    sampling = drifft.HypergeometricSampling(30, 2, tail_tol=0, batch_size=7)
+    matrix = jnp.asarray(_matrix(60, 4))
     operator = matrix.T if action == "advance" else matrix
     fn = getattr(sampling, action)
     values = jnp.sin(jnp.arange(operator.shape[1]))
