@@ -36,7 +36,7 @@ def test_frequency_map_interface_and_composition_order():
 @pytest.mark.parametrize("backend", [drifft.FFT, drifft.NUFFT])
 def test_mutation_reintroduces_alleles_from_both_endpoints(backend):
     """Forward mutation escapes loss and back mutation escapes fixation."""
-    transition = drifft.Transition(backend(16), frequency_map=drifft.Mutation(0.1, 0.2))
+    transition = drifft.Transition(backend(8), frequency_map=drifft.Mutation(0.1, 0.2))
     initial = jnp.eye(17)[jnp.array([0, 16])]
     actual = eqx.filter_vmap(transition.advance)(initial)
     assert jnp.allclose(actual.sum(axis=1), 1, atol=1e-11)
@@ -91,7 +91,7 @@ def test_frequency_map_configuration_validation():
         drifft.Composition()
     with pytest.raises(TypeError):
         drifft.Composition(lambda x: x)  # ty: ignore[invalid-argument-type] -- unwrapped function
-    backend = drifft.FFT(16)
+    backend = drifft.FFT(8)
     with pytest.raises(TypeError):
         drifft.Transition(backend, frequency_map=lambda x: x)  # ty: ignore[invalid-argument-type] -- unwrapped function
     with pytest.raises(TypeError):
@@ -279,7 +279,7 @@ def test_diploid_selection_transition_and_gradients(backend):
     from jax.scipy.stats import binom
 
     assert hasattr(drifft, "DiploidSelection")
-    model = drifft.Transition(backend(16), drifft.DiploidSelection(0.1, 0.3))
+    model = drifft.Transition(backend(8), drifft.DiploidSelection(0.1, 0.3))
     x = jnp.arange(17) / 16
     values = jnp.sin(jnp.arange(17))
     mutation = drifft.Mutation(0.01, 0.02)
@@ -333,7 +333,7 @@ def test_selection_rejects_nonscalar_parameters(name, parameters):
 
 def test_jacobi_general_selection_matches_named_symmetric_rule():
     """General diploid and specialized symmetric assembly agree on shared inputs."""
-    backend = drifft.Jacobi(8)
+    backend = drifft.Jacobi(4)
     method = drifft.RationalKrylov(dimension=12)
     initial = jnp.arange(1, 10, dtype=jnp.float64) / 45
     general = method.advance(

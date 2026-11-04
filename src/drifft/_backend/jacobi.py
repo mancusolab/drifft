@@ -526,7 +526,7 @@ class Jacobi(AbstractTransitionBackend):
         frequency maps through the common expectation interface.
     """
 
-    gene_copies: int = eqx.field(static=True)
+    diploid_size: int = eqx.field(static=True)
     rank: int = eqx.field(static=True)
     padded_rank: int = eqx.field(static=True)
     max_strength: float = eqx.field(static=True)
@@ -535,7 +535,7 @@ class Jacobi(AbstractTransitionBackend):
 
     def __init__(
         self,
-        gene_copies: int,
+        diploid_size: int,
         *,
         rank: int | None = None,
         max_strength: float = 0.1,
@@ -545,8 +545,8 @@ class Jacobi(AbstractTransitionBackend):
 
         **Arguments:**
 
-        - `gene_copies`: Python integer at least four (twice diploid Ne).
-        - `rank`: Interior polynomial count, between one and `gene_copies - 1`.
+        - `diploid_size`: Diploid effective population size, a Python integer at least two.
+        - `rank`: Interior polynomial count, between one and `2 * diploid_size - 1`.
           If omitted, use an ideal one-step polynomial tail bound.
         - `max_strength`: Static bound in `[0, 1)` on the absolute values of
           both diploid fitness reductions, used for reduced Krylov padding.
@@ -567,11 +567,12 @@ class Jacobi(AbstractTransitionBackend):
         With RationalKrylov, dense LU factorization costs O(rank³) per power action.
         """
         if (
-            isinstance(gene_copies, bool)
-            or not isinstance(gene_copies, int)
-            or gene_copies < 4
+            isinstance(diploid_size, bool)
+            or not isinstance(diploid_size, int)
+            or diploid_size < 2
         ):
-            raise ValueError("gene_copies must be a Python integer >= 4")
+            raise ValueError("diploid_size must be a Python integer >= 2")
+        gene_copies = 2 * diploid_size
         # Validate host planning limits with math; the actual model strength is
         # a dynamic JAX value checked separately when assembling the operator.
         if not math.isfinite(max_strength) or not 0 <= max_strength < 1:
@@ -585,10 +586,12 @@ class Jacobi(AbstractTransitionBackend):
             or not isinstance(rank, int)
             or not 1 <= rank < gene_copies
         ):
-            raise ValueError("rank must be a Python integer in [1, gene_copies - 1]")
+            raise ValueError(
+                "rank must be a Python integer in [1, 2 * diploid_size - 1]"
+            )
         if not jax.config.x64_enabled:
             raise ValueError("Jacobi requires jax_enable_x64=True")
-        self.gene_copies, self.rank = gene_copies, rank
+        self.diploid_size, self.rank = diploid_size, rank
         self.padded_rank = _padded_rank(
             gene_copies, rank, max_strength, one_step_tolerance
         )
@@ -604,7 +607,7 @@ class Jacobi(AbstractTransitionBackend):
         **Arguments:**
 
         - `probabilities`: Float64 probability vector, including endpoints.
-        - `values`: Finite real destination values of length `gene_copies + 1`.
+        - `values`: Finite real destination values of length `2 * diploid_size + 1`.
 
         **Returns:**
 
@@ -620,9 +623,9 @@ class Jacobi(AbstractTransitionBackend):
         """
         probabilities = jnp.asarray(probabilities, dtype=jnp.float64)
         values = jnp.asarray(values, dtype=jnp.float64)
-        if probabilities.ndim != 1 or values.shape != (self.gene_copies + 1,):
+        if probabilities.ndim != 1 or values.shape != (self._gene_copies + 1,):
             raise ValueError(
-                "expect requires a probability vector and gene_copies + 1 destination values"
+                "expect requires a probability vector and 2 * diploid_size + 1 destination values"
             )
 
         # Transpose the existing decoder to obtain E v. The linear endpoint
@@ -640,7 +643,7 @@ class Jacobi(AbstractTransitionBackend):
         return (
             (1 - probabilities) * values[0]
             + probabilities * values[-1]
-            + (1 - 1 / self.gene_copies)
+            + (1 - 1 / self._gene_copies)
             * 4
             * probabilities
             * (1 - probabilities)
@@ -683,7 +686,7 @@ class Jacobi(AbstractTransitionBackend):
                 else frequency_map.strength
             )
             matrix, forcing = _assemble(
-                strength, self.gene_copies, self.rank, self.padded_rank
+                strength, self._gene_copies, self.rank, self.padded_rank
             )
             if not segregating:
                 extended = jnp.zeros((self.rank + 2, self.rank + 2))
@@ -693,7 +696,7 @@ class Jacobi(AbstractTransitionBackend):
         else:
             matrix = _assemble_diploid(
                 frequency_map,
-                self.gene_copies,
+                self._gene_copies,
                 self.rank,
                 self._diploid_padded_rank,
             )

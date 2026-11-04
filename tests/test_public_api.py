@@ -26,7 +26,7 @@ def test_direct_methods_compile_once_for_dynamic_inputs(
         traces.append(1)
         return frequencies**2
 
-    transition = drifft.Transition(backend_type(32), drifft.FrequencyMap(selection))
+    transition = drifft.Transition(backend_type(16), drifft.FrequencyMap(selection))
     method = getattr(transition, method_name)
     size = 31 if segregating else 33
     vector = jnp.linspace(0.1, 0.9, size)
@@ -39,7 +39,7 @@ def test_direct_methods_compile_once_for_dynamic_inputs(
 @pytest.mark.parametrize("operation", ["expect", "advance", "as_lineax"])
 def test_transition_flags_reject_traced_booleans(operation):
     """Reject dynamic state-layout choices before Python shape branching."""
-    transition = drifft.Transition(drifft.Dense(8), drifft.Neutral())
+    transition = drifft.Transition(drifft.Dense(4), drifft.Neutral())
     vector = jnp.ones(7)
 
     @eqx.filter_jit

@@ -27,14 +27,23 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 selection = drifft.AdditiveSelection(s=0.02)
 initial = jnp.zeros(129).at[1].set(1.0)  # 128 gene copies, 64 diploid individuals.
-backend = drifft.FFT(gene_copies=128)
+backend = drifft.FFT(diploid_size=64)
 transition = drifft.Transition(backend, frequency_map=selection)
 after_one_generation = transition.advance(initial)
 ```
 
 Replace `drifft.FFT` with `drifft.NUFFT` to change the representation without
-changing the selection model or state layout. Backend arguments use gene-copy
-counts; `Demography` uses diploid sizes.
+changing the selection model or state layout. Backends and `Demography` both
+accept diploid population sizes. A size of $N$ gives $2N+1$ allele-count states.
+
+When migrating older code, replace `gene_copies=M` with `diploid_size=M // 2`
+and `source_gene_copies=M_s` with `source_diploid_size=M_s // 2`; both old
+counts must be even. Positional size arguments also now count diploid individuals.
+For example, the former `FFT(128)` becomes `FFT(64)`. Custom demographic backend
+factories now receive $N$, rather than $2N$, and custom backends expose
+`diploid_size`. `Demography(ne=...)` values are unchanged. Hypergeometric sampling
+continues to accept population and sample copy counts, since it also supports
+samples with an odd number of copies.
 
 !!! warning "Jacobi reduced Krylov restrictions"
 

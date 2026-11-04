@@ -34,14 +34,14 @@ class Dense(AbstractTransitionBackend):
         the binomial transition law.
     """
 
-    gene_copies: int = eqx.field(static=True)
+    diploid_size: int = eqx.field(static=True)
 
-    def __init__(self, gene_copies: int) -> None:
+    def __init__(self, diploid_size: int) -> None:
         r"""Configure the destination count grid outside JIT.
 
         **Arguments:**
 
-        - `gene_copies`: Python integer at least two, equal to twice diploid Ne.
+        - `diploid_size`: Diploid effective population size, a Python integer at least one.
 
         **Returns:**
 
@@ -52,14 +52,14 @@ class Dense(AbstractTransitionBackend):
         `ValueError` for invalid counts or if JAX x64 is disabled.
         """
         if (
-            isinstance(gene_copies, bool)
-            or not isinstance(gene_copies, int)
-            or gene_copies < 2
+            isinstance(diploid_size, bool)
+            or not isinstance(diploid_size, int)
+            or diploid_size < 1
         ):
-            raise ValueError("gene_copies must be a Python integer >= 2")
+            raise ValueError("diploid_size must be a Python integer >= 1")
         if not jax.config.x64_enabled:
             raise ValueError("Dense requires jax_enable_x64=True")
-        self.gene_copies = gene_copies
+        self.diploid_size = diploid_size
 
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
         r"""Form binomial rows and multiply by destination values.
@@ -67,7 +67,7 @@ class Dense(AbstractTransitionBackend):
         **Arguments:**
 
         - `probabilities`: Vector of finite source probabilities in `[0, 1]`.
-        - `values`: Finite real destination vector of length `gene_copies + 1`.
+        - `values`: Finite real destination vector of length `2 * diploid_size + 1`.
           Both inputs are converted to float64.
 
         **Returns:**
@@ -82,12 +82,14 @@ class Dense(AbstractTransitionBackend):
         """
         probabilities = jnp.asarray(probabilities, dtype=jnp.float64)
         values = jnp.asarray(values, dtype=jnp.float64)
-        if probabilities.ndim != 1 or values.shape != (self.gene_copies + 1,):
+        if probabilities.ndim != 1 or values.shape != (self._gene_copies + 1,):
             raise ValueError(
-                "expect requires a probability vector and gene_copies + 1 destination values"
+                "expect requires a probability vector and 2 * diploid_size + 1 destination values"
             )
         probability = probabilities[:, None]
-        rows = jnp.zeros((probabilities.size, self.gene_copies + 1), dtype=values.dtype)
+        rows = jnp.zeros(
+            (probabilities.size, self._gene_copies + 1), dtype=values.dtype
+        )
         rows = rows.at[:, 0].set(1)
 
         def convolve(_, current):
@@ -95,5 +97,5 @@ class Dense(AbstractTransitionBackend):
             shifted = jnp.pad(current[:, :-1], ((0, 0), (1, 0)))
             return (1 - probability) * current + probability * shifted
 
-        matrix = jax.lax.fori_loop(0, self.gene_copies, convolve, rows)
+        matrix = jax.lax.fori_loop(0, self._gene_copies, convolve, rows)
         return matrix @ values

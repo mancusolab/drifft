@@ -30,7 +30,7 @@ def test_abstract_backend_and_removed_api():
 @pytest.mark.parametrize("input_kind", ["list", "numpy", "jax"])
 def test_backend_expect_normalizes_inputs(name, input_kind):
     """Accept array-like inputs and compute expectations in float64."""
-    backend = getattr(drifft, name)(8)
+    backend = getattr(drifft, name)(4)
     probabilities = [0.0, 0.25, 0.75, 1.0]
     values = list(range(9))
     if input_kind != "list":
@@ -51,7 +51,7 @@ def test_backend_expect_rejects_malformed_array_like_inputs(
     name, probabilities, values
 ):
     """Validate converted shapes rather than requiring existing array attributes."""
-    backend = getattr(drifft, name)(8)
+    backend = getattr(drifft, name)(4)
     with pytest.raises(ValueError):
         backend.expect(probabilities, values)
 
@@ -59,7 +59,7 @@ def test_backend_expect_rejects_malformed_array_like_inputs(
 @pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi", "Dense"])
 def test_backend_dense_adjoint_and_selection_derivatives(name):
     """Check all backend contracts against dense transitions and finite differences."""
-    backend = getattr(drifft, name)(32)
+    backend = getattr(drifft, name)(16)
     assert isinstance(backend, drifft.AbstractTransitionBackend)
     mass = jnp.arange(1.0, 26.0)
     mass = mass / mass.sum()
@@ -69,7 +69,7 @@ def test_backend_dense_adjoint_and_selection_derivatives(name):
     def make_transition(strength):
         """Bind the tested scalar strength to rectangular transition geometry."""
         return drifft.Transition(
-            backend, drifft.Underdominance(strength), source_gene_copies=24
+            backend, drifft.Underdominance(strength), source_diploid_size=12
         )
 
     transition = make_transition(strength)
@@ -105,7 +105,7 @@ def test_backend_dense_adjoint_and_selection_derivatives(name):
 @pytest.mark.parametrize("name", ["FFT", "NUFFT", "Jacobi"])
 def test_large_backend_and_repeated_selection_gradient(name):
     """Exercise truncated geometry and differentiation through a short epoch."""
-    backend = getattr(drifft, name)(1024)
+    backend = getattr(drifft, name)(512)
     values = jnp.sin(jnp.arange(1025.0) / 17)
     rows = jnp.array([0.0, 0.001, 0.1, 0.499, 0.8, 0.999, 1.0])
     actual = eqx.filter_jit(backend.expect)(rows, values)
@@ -114,7 +114,7 @@ def test_large_backend_and_repeated_selection_gradient(name):
     )
     np.testing.assert_allclose(actual, reference, atol=2e-9, rtol=0)
 
-    backend = getattr(drifft, name)(32)
+    backend = getattr(drifft, name)(16)
     mass = jnp.ones(33) / 33
     reward = jnp.sin(jnp.arange(33.0) / 7)
 
@@ -143,7 +143,7 @@ def test_large_backend_and_repeated_selection_gradient(name):
 def test_backend_linearization_batched_tangents_and_mixed_pullbacks(name):
     """Share endpoint-safe linearization and mixed-adjoint contracts across backends."""
     size = 16
-    backend = getattr(drifft, name)(size)
+    backend = getattr(drifft, name)(size // 2)
     probabilities = jnp.array([0.0, 0.07, 0.5, 0.83, 1.0])
     values = jnp.sin(jnp.arange(size + 1) * 0.7)
     dvalues = jnp.cos(jnp.arange(size + 1) * 0.2)
@@ -200,3 +200,41 @@ def test_backend_linearization_batched_tangents_and_mixed_pullbacks(name):
     np.testing.assert_allclose(
         mixed, derivative.T @ (mass * dprobabilities), atol=3e-11, rtol=0
     )
+
+
+@pytest.mark.parametrize(
+    "backend_type", [drifft.Dense, drifft.FFT, drifft.NUFFT, drifft.Jacobi]
+)
+def test_diploid_size_sets_binomial_count_and_state_space(backend_type):
+    """Three diploid individuals give six trials and seven allele-count states."""
+    backend = backend_type(diploid_size=3)
+    assert backend.diploid_size == 3
+    transition = drifft.Transition(backend, drifft.Neutral(), source_diploid_size=2)
+    assert transition.source_diploid_size == 2
+    assert transition.dest_size() == 7
+    assert transition.source_size() == 5
+    assert transition.dest_size() == transition.as_lineax().in_size()
+    assert transition.source_size() == transition.as_lineax().out_size()
+    assert (
+        transition.dest_size() - 2 == transition.as_lineax(segregating=True).in_size()
+    )
+    assert (
+        transition.source_size() - 2
+        == transition.as_lineax(segregating=True).out_size()
+    )
+    initial = jnp.array([0.0, 1.0, 0.0, 0.0, 0.0])
+    expected = binom.pmf(np.arange(7), 6, 0.25)
+    np.testing.assert_allclose(transition.advance(initial), expected, atol=1e-12)
+    np.testing.assert_allclose(
+        transition.expect(jnp.arange(7.0)), 6 * np.arange(5) / 4, atol=1e-12
+    )
+
+
+@pytest.mark.parametrize(
+    "backend_type", [drifft.Dense, drifft.FFT, drifft.NUFFT, drifft.Jacobi]
+)
+@pytest.mark.parametrize("size", [0, -1, True, 2.5])
+def test_backend_rejects_invalid_diploid_size(backend_type, size):
+    """Population sizes are positive integer counts, never booleans or fractions."""
+    with pytest.raises(ValueError, match="diploid_size"):
+        backend_type(diploid_size=size)

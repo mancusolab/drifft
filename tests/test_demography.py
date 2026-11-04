@@ -53,7 +53,7 @@ def test_factories_reuse_geometry_for_repeated_sizes_and_shared_boundaries():
     calls = []
 
     def factory(copies):
-        """Observe preparation requests in gene-copy units."""
+        """Observe preparation requests in diploid units."""
         calls.append(copies)
         return drifft.Dense(copies)
 
@@ -63,7 +63,7 @@ def test_factories_reuse_geometry_for_repeated_sizes_and_shared_boundaries():
         boundary_backend_factory=factory,
         frequency_map=drifft.Neutral(),
     )
-    assert calls == [8, 6]
+    assert calls == [4, 3]
 
 
 @pytest.mark.parametrize("backend", [drifft.FFT, drifft.NUFFT])

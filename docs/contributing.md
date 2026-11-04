@@ -256,7 +256,7 @@ the [algorithm guide](guide/backends.md) for choosing a configuration.
 Keep the main argument and required instructions in ordinary prose. Use
 admonitions for a short point a reader should notice beside that argument:
 
-- `!!! example "Specific task"` gives a short runnable API recipe beside its
+- `!!! example "Example: Specific task"` gives a short runnable API recipe beside its
   method contract. Keep complete biological analyses on example pages.
 - `!!! note "Specific title"` explains interpretation or a modeling convention.
 - `!!! tip "Specific title"` gives an optional practical recommendation.

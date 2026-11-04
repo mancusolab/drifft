@@ -262,11 +262,11 @@ class DemographicTransition(eqx.Module):
         **Arguments:**
 
         - `demography`: Population history, oldest to newest.
-        - `backend_factory`: Factory receiving a gene-copy count for constant-size geometry.
+        - `backend_factory`: Factory receiving a diploid population size for constant-size geometry.
           Use `functools.partial(drifft.NUFFT, accuracy=1e-11)`, for example,
           to supply numerical settings.
         - `frequency_map`: Process shared by every generation.
-        - `boundary_backend_factory`: Factory receiving a gene-copy count for
+        - `boundary_backend_factory`: Factory receiving a diploid population size for
           rectangular transitions; defaults to the hold factory for all backends.
         - `method`: Geometry-free epoch algorithm; defaults to `Sequential()`.
           Holds call its `advance` method, including custom overrides.
@@ -302,16 +302,16 @@ class DemographicTransition(eqx.Module):
         if not isinstance(self.method, AbstractEpochMethod):
             raise TypeError("method must be an AbstractEpochMethod")
         self._backends = {
-            size: backend_factory(2 * size) for size in dict.fromkeys(demography.ne)
+            size: backend_factory(size) for size in dict.fromkeys(demography.ne)
         }
         for size, geometry in self._backends.items():
             if not isinstance(geometry, AbstractTransitionBackend):
                 raise TypeError(
                     "backend_factory must return an AbstractTransitionBackend"
                 )
-            if geometry.gene_copies != 2 * size:
+            if geometry.diploid_size != size:
                 raise ValueError(
-                    "backend_factory must preserve the requested gene-copy count"
+                    "backend_factory must preserve the requested diploid size"
                 )
             self.method.validate(geometry, frequency_map)
         if (
@@ -321,7 +321,7 @@ class DemographicTransition(eqx.Module):
             self._boundary_backends = self._backends
         else:
             self._boundary_backends = {
-                size: boundary_backend_factory(2 * size) for size in self._backends
+                size: boundary_backend_factory(size) for size in self._backends
             }
 
     def __check_init__(self) -> None:
@@ -331,16 +331,16 @@ class DemographicTransition(eqx.Module):
                 raise TypeError(
                     "boundary_backend_factory must return an AbstractTransitionBackend"
                 )
-            if backend.gene_copies != 2 * size:
+            if backend.diploid_size != size:
                 raise ValueError(
-                    "boundary_backend_factory must preserve the requested gene-copy count"
+                    "boundary_backend_factory must preserve the requested diploid size"
                 )
 
     def _transition(self, source_ne: int, destination_ne: int) -> Transition:
         return Transition(
             self._boundary_backends[destination_ne],
             self.frequency_map,
-            source_gene_copies=2 * source_ne,
+            source_diploid_size=source_ne,
         )
 
     @eqx.filter_jit

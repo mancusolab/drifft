@@ -31,7 +31,7 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 
 # 32 diploid individuals carry 64 gene copies.
-backend = drifft.FFT(gene_copies=64)
+backend = drifft.FFT(diploid_size=32)
 selection = drifft.AdditiveSelection(s=0.02)
 transition = drifft.Transition(backend, frequency_map=selection)
 

@@ -42,7 +42,7 @@ def test_method_reuses_settings_across_population_sizes():
     method = drifft.RationalKrylov(dimension=24)
     for copies in (8, 16):
         result = method.advance(
-            drifft.Jacobi(copies),
+            drifft.Jacobi(copies // 2),
             jnp.eye(copies + 1)[2],
             frequency_map=drifft.Neutral(),
             generations=13,
@@ -207,7 +207,7 @@ def test_custom_population_method_uses_same_representation_in_demography(history
 
     frequency_map = drifft.FrequencyMap(lambda x: x**2)
     initial = jnp.eye(9)[1]
-    backend = drifft.Jacobi(8)
+    backend = drifft.Jacobi(4)
     method = PopulationMethod()
     direct = method.advance(
         backend, initial, frequency_map=frequency_map, generations=sum(history[1])
@@ -235,7 +235,7 @@ def test_public_prepared_problem_reconstructs_interior_source(method, generation
     frequency_map = drifft.Neutral()
     problem = drifft.prepare_epoch(
         method,
-        drifft.Jacobi(copies),
+        drifft.Jacobi(copies // 2),
         initial,
         frequency_map=frequency_map,
         generations=generations,
@@ -255,7 +255,7 @@ def test_public_problem_result_applies_shared_failure_checks():
     """Custom methods can finish with the same convergence and throwing contract."""
     problem = drifft.prepare_epoch(
         drifft.Sequential(),
-        drifft.Dense(4),
+        drifft.Dense(2),
         jnp.ones(5),
         frequency_map=drifft.Neutral(),
         generations=0,

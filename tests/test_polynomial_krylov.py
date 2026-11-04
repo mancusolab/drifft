@@ -46,7 +46,7 @@ def test_reduced_power_action_and_derivatives(steps):
 @pytest.mark.parametrize("segregating", [False, True])
 def test_polynomial_matches_dense_with_immigration(backend_type, segregating):
     """Match selected powers with signed mass and a source after every generation."""
-    backend = backend_type(12)
+    backend = backend_type(6)
     size = 11 if segregating else 13
     mass = jnp.linspace(-0.01, 0.04, size)
     source = jnp.zeros(size).at[1].set(0.002)
@@ -72,7 +72,7 @@ def test_polynomial_matches_dense_with_immigration(backend_type, segregating):
 def test_polynomial_zero_and_invariant_seeds(generations):
     """Zero mass and absorbing states remain finite, including Arnoldi breakdown."""
     method = drifft.PolynomialKrylov(dimension=8)
-    backend = drifft.FFT(12)
+    backend = drifft.FFT(6)
     for mass in (jnp.zeros(13), jnp.eye(13)[0]):
         result = method.advance(
             backend, mass, frequency_map=drifft.Neutral(), generations=generations
@@ -99,7 +99,7 @@ def test_polynomial_uses_only_operator_applications():
 def test_polynomial_nonconvergence_and_nonfinite_status():
     """An inadequate basis must not silently accept a long power."""
     method = drifft.PolynomialKrylov(dimension=2)
-    backend = drifft.FFT(80)
+    backend = drifft.FFT(40)
     mass = jnp.eye(79)[0]
     result = method.advance(
         backend,
@@ -179,7 +179,7 @@ def test_polynomial_demography_and_gradients(backend_type):
 @pytest.mark.parametrize("copies, generations", [(16, 25), (512, 12)])
 def test_polynomial_composed_map_matches_sequential(backend_type, copies, generations):
     """FFT and NUFFT retain general frequency-map support under polynomial powering."""
-    backend = backend_type(copies)
+    backend = backend_type(copies // 2)
     frequency_map = drifft.Composition(
         drifft.Underdominance(0.4), drifft.Mutation(0.01, 0.02)
     )
@@ -257,7 +257,7 @@ def test_zero_initial_mass_with_immigration(backend_type, generations):
     for _ in range(generations):
         expected = matrix.T @ expected + source
     result = drifft.PolynomialKrylov(dimension=16).advance(
-        backend_type(12),
+        backend_type(6),
         mass,
         frequency_map=drifft.Neutral(),
         generations=generations,

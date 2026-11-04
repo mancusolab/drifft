@@ -76,7 +76,7 @@ def run_drifft_worker(args: argparse.Namespace) -> dict[str, Any]:
     records = []
     for gene_copies in args.sizes:
         start = time.perf_counter()
-        backend = drifft.NUFFT(gene_copies, tail_tol=args.tail_tol)
+        backend = drifft.NUFFT(gene_copies // 2, tail_tol=args.tail_tol)
         jax.block_until_ready(backend)
         planning_seconds = time.perf_counter() - start
         plan_bytes = sum(leaf.nbytes for leaf in jax.tree.leaves(backend))
@@ -418,6 +418,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--worker", choices=["drifft", "fastdtwf"], help=argparse.SUPPRESS
     )
     args = parser.parse_args(argv)
+    if any(size % 2 for size in args.sizes):
+        parser.error("gene-copy sizes must be even for diploid populations")
     if min(args.sizes) < 2 or args.repeats < 1 or args.max_steps < 1:
         parser.error("sizes must be >= 2; repeats and max-steps must be positive")
     if any(not math.isfinite(s) or not 0 <= s <= 1 for s in args.selections):

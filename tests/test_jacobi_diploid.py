@@ -62,7 +62,7 @@ def test_composed_epochs_match_dense(mutation_first, segregating, generations):
     for _ in range(generations):
         expected = expected @ matrix + source
     result = drifft.RationalKrylov(dimension=32).advance(
-        drifft.Jacobi(copies),
+        drifft.Jacobi(copies // 2),
         initial,
         frequency_map=composed_map(parameters, mutation_first),
         generations=generations,
@@ -86,7 +86,7 @@ def test_mutation_leaves_endpoints_without_losing_small_probabilities(endpoint, 
     actual = (
         drifft.RationalKrylov(dimension=32)
         .advance(
-            drifft.Jacobi(copies),
+            drifft.Jacobi(copies // 2),
             initial,
             frequency_map=composed_map(parameters),
             generations=generations,
@@ -102,7 +102,7 @@ def test_mutation_leaves_endpoints_without_losing_small_probabilities(endpoint, 
 def test_composed_parameters_have_correct_jvp_vjp_and_batching(mutation_first):
     """Differentiate all four parameters through assembly, shifted solves and decoding."""
     copies, generations = 12, 7
-    backend = drifft.Jacobi(copies)
+    backend = drifft.Jacobi(copies // 2)
     method = drifft.RationalKrylov(dimension=20)
     initial = jnp.eye(copies + 1)[0]
     values = jnp.sin(jnp.arange(copies + 1) * 0.3)
@@ -184,7 +184,7 @@ def test_mutation_only_including_constant_and_reversing_maps(forward, backward):
     actual = (
         drifft.RationalKrylov(dimension=12)
         .advance(
-            drifft.Jacobi(8),
+            drifft.Jacobi(4),
             initial,
             frequency_map=drifft.Mutation(forward, backward),
             generations=9,
@@ -214,7 +214,7 @@ def test_constrained_selection_rules_match_diploid_reference(selection, het, hom
     actual = (
         drifft.RationalKrylov(dimension=16)
         .advance(
-            drifft.Jacobi(12),
+            drifft.Jacobi(6),
             initial,
             frequency_map=selection,
             generations=11,
@@ -248,7 +248,7 @@ def test_overdominance_matches_independent_dense_reference(order, strength):
         generations,
     )
     result = drifft.RationalKrylov(dimension=16).advance(
-        drifft.Jacobi(copies),
+        drifft.Jacobi(copies // 2),
         initial,
         frequency_map=frequency_map,
         generations=generations,
@@ -284,7 +284,7 @@ def test_overdominance_domain_checked_including_identity(order, strength, genera
         frequency_map = drifft.Composition(selection, mutation)
     with pytest.raises(eqx.EquinoxRuntimeError, match="selection strength"):
         drifft.RationalKrylov().advance(
-            drifft.Jacobi(8),
+            drifft.Jacobi(4),
             jnp.eye(9)[0],
             frequency_map=frequency_map,
             generations=generations,
@@ -308,7 +308,7 @@ def test_composed_domains_are_checked_even_for_zero_generations(parameters, mess
     """Planning limits and mutation preconditions remain active for identity actions."""
     with pytest.raises(eqx.EquinoxRuntimeError, match=message):
         drifft.RationalKrylov().advance(
-            drifft.Jacobi(8),
+            drifft.Jacobi(4),
             jnp.eye(9)[0],
             frequency_map=composed_map(jnp.array(parameters)),
             generations=0,
@@ -319,7 +319,7 @@ def test_composed_domains_are_checked_even_for_zero_generations(parameters, mess
 @pytest.mark.parametrize("rank", [1, None])
 def test_padding_handles_strength_bounds_approaching_one(rank):
     """A pole-bound ellipse below floating-point resolution falls back to full dimension."""
-    backend = drifft.Jacobi(8, rank=rank, max_strength=np.nextafter(1.0, 0.0))
+    backend = drifft.Jacobi(4, rank=rank, max_strength=np.nextafter(1.0, 0.0))
     assert backend._diploid_padded_rank == 7
 
 
@@ -327,7 +327,7 @@ def test_genuinely_truncated_rational_assembly_matches_sampled_reduced_operator(
     """Compare ED independently when both rank and Hahn padding are truncated."""
     from drifft._backend.jacobi import _assemble_diploid
 
-    backend = drifft.Jacobi(512)
+    backend = drifft.Jacobi(256)
     geometry = backend._geometry
     parameters = jnp.array([-0.04, 0.08, 0.002, 0.004])
     frequency_map = composed_map(parameters)
@@ -353,7 +353,7 @@ def test_composed_underdominance_keeps_its_nonnegative_domain():
     )
     with pytest.raises(eqx.EquinoxRuntimeError, match="selection strength"):
         drifft.RationalKrylov().advance(
-            drifft.Jacobi(8),
+            drifft.Jacobi(4),
             jnp.eye(9)[0],
             frequency_map=frequency_map,
             generations=0,
@@ -379,7 +379,7 @@ def test_composed_underdominance_keeps_its_nonnegative_domain():
 def test_unsupported_compositions_are_rejected_explicitly(frequency_map):
     """The quadratic implementation must not silently accept higher-degree maps."""
     with pytest.raises(TypeError, match="diploid selection|one Mutation"):
-        drifft.Jacobi(8)._validate_reduced_map(frequency_map)
+        drifft.Jacobi(4)._validate_reduced_map(frequency_map)
 
 
 def test_truncated_selected_mutation_epoch_matches_dense_sample_probabilities():
@@ -388,7 +388,7 @@ def test_truncated_selected_mutation_epoch_matches_dense_sample_probabilities():
 
     copies, generations = 512, 100
     parameters = jnp.array([1e-4, 2e-4, 1e-8, 1e-8])
-    backend = drifft.Jacobi(copies)
+    backend = drifft.Jacobi(copies // 2)
     initial = jnp.eye(copies + 1)[0]
     matrix = dense_diploid(copies, parameters)
     expected = jax.lax.fori_loop(0, generations, lambda _, p: p @ matrix, initial)

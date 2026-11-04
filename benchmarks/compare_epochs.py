@@ -50,16 +50,16 @@ def run_worker(args: argparse.Namespace) -> dict[str, Any]:
             options = {"accuracy": 1e-13, "tail_tol": 1e-15, "nufft_tol": 1e-15}
         if backend_name == "reference":
             backend = drifft.NUFFT(
-                size, accuracy=1e-13, tail_tol=1e-15, nufft_tol=1e-15
+                size // 2, accuracy=1e-13, tail_tol=1e-15, nufft_tol=1e-15
             )
         else:
             backend = (drifft.FFT if backend_name == "fft" else drifft.NUFFT)(
-                size, tail_tol=1e-12
+                size // 2, tail_tol=1e-12
             )
         transition = drifft.Transition(
             backend,
             frequency_map=drifft.Underdominance(strength),
-            source_gene_copies=source,
+            source_diploid_size=source // 2,
         )
         mass = jnp.full(source + 1, 1 / (source + 1), dtype=jnp.float64)
         if args.initial == "singleton":
@@ -294,10 +294,15 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--worker", choices=BACKENDS, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    if args.gene_copies < 2 or (
-        args.source_gene_copies is not None and args.source_gene_copies < 2
+    if (
+        args.gene_copies < 2
+        or args.gene_copies % 2
+        or (
+            args.source_gene_copies is not None
+            and (args.source_gene_copies < 2 or args.source_gene_copies % 2)
+        )
     ):
-        parser.error("population sizes must be >= 2")
+        parser.error("gene-copy sizes must be even and >= 2")
     if any(g < 1 for g in args.generations):
         parser.error("generations must be positive")
     if args.source_gene_copies not in (None, args.gene_copies) and args.generations != [

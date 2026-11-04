@@ -84,7 +84,7 @@ def main():
 
     cases.append(("binomial_jvp_logchoose", binomial_jvp, (logchoose, q)))
     for name in ("FFT", "NUFFT", "Jacobi"):
-        backend = getattr(drifft, name)(1024)
+        backend = getattr(drifft, name)(512)
         values = jnp.sin(jnp.arange(1025.0) / 17)
 
         def expectation_loss(q, v, backend=backend):

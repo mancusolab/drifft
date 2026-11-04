@@ -19,7 +19,7 @@ jax.config.update("jax_enable_x64", True)
 @pytest.mark.parametrize("generations", [0, 1, 7])
 def test_epoch_matches_dense_with_immigration(kind, segregating, generations):
     """Include immigration after every generation, including the final one."""
-    backend = drifft.FFT(16) if kind == "sequential" else drifft.Jacobi(16)
+    backend = drifft.FFT(8) if kind == "sequential" else drifft.Jacobi(8)
     method = (
         drifft.Sequential()
         if kind == "sequential"
@@ -48,7 +48,7 @@ def test_epoch_matches_dense_with_immigration(kind, segregating, generations):
 
 def test_epoch_selection_derivative_and_batching():
     """Reuse geometry across traced strengths and compare derivatives to dense powers."""
-    backend = drifft.Jacobi(20)
+    backend = drifft.Jacobi(10)
     method = drifft.RationalKrylov(dimension=32)
     initial = jnp.linspace(0.01, 0.1, 19)
     values = jnp.sin(jnp.arange(19))
@@ -85,7 +85,7 @@ def test_epoch_selection_derivative_and_batching():
 
 def test_epoch_zero_and_absorbing_inputs():
     """Happy breakdown and zero seeds must not produce NaNs."""
-    backend = drifft.Jacobi(16)
+    backend = drifft.Jacobi(8)
     method = drifft.RationalKrylov()
     for initial in [jnp.zeros(17), jnp.eye(17)[0], jnp.eye(17)[-1]]:
         result = method.advance(
@@ -120,7 +120,7 @@ def test_demography_uses_jacobi_method_with_singleton_input():
 
 def test_epoch_rejects_unsupported_maps():
     """Rational Jacobi assembly rejects arbitrary frequency functions."""
-    backend = drifft.Jacobi(16)
+    backend = drifft.Jacobi(8)
     method = drifft.RationalKrylov()
     with pytest.raises(TypeError, match="diploid selection"):
         method.advance(
@@ -133,7 +133,7 @@ def test_epoch_rejects_unsupported_maps():
 
 def test_truncated_krylov_matches_dense_long_epoch():
     """Exercise an actual reduced Krylov space rather than a complete basis."""
-    backend = drifft.Jacobi(128)
+    backend = drifft.Jacobi(64)
     method = drifft.RationalKrylov(dimension=40)
     initial = jnp.eye(127)[0]
     source = initial * 1e-4
@@ -158,7 +158,7 @@ def test_truncated_krylov_matches_dense_long_epoch():
 def test_krylov_reports_and_throws_on_underresolved_power(generations):
     """A tiny Krylov budget must expose its failed estimate to callers."""
     copies = 80 if generations == 100 else 800
-    backend = drifft.Jacobi(copies)
+    backend = drifft.Jacobi(copies // 2)
     method = drifft.RationalKrylov(dimension=2)
     initial = jnp.zeros(copies - 1).at[0].set(1)
     result = method.advance(
@@ -186,8 +186,8 @@ def test_krylov_reports_and_throws_on_underresolved_power(generations):
 @pytest.mark.parametrize(
     "options",
     [
-        {"gene_copies": 3},
-        {"gene_copies": True},
+        {"diploid_size": 1},
+        {"diploid_size": True},
         {"rank": 0},
         {"rank": 16},
         {"dimension": 1},
@@ -204,13 +204,13 @@ def test_krylov_rejects_invalid_configuration(options):
         if any(key in options for key in ("dimension", "rtol", "atol")):
             drifft.RationalKrylov(**options)
         else:
-            drifft.Jacobi(**({"gene_copies": 16} | options))
+            drifft.Jacobi(**({"diploid_size": 8} | options))
 
 
 @pytest.mark.parametrize("generations", [-1, 1.5, True])
 def test_epoch_rejects_invalid_generation_counts(generations):
     """Reject nonintegral and negative durations before tracing the recurrence."""
-    backend = drifft.Jacobi(16)
+    backend = drifft.Jacobi(8)
     method = drifft.RationalKrylov()
     with pytest.raises(ValueError, match="generations"):
         method.advance(
@@ -223,7 +223,7 @@ def test_epoch_rejects_invalid_generation_counts(generations):
 
 def test_epoch_runtime_and_shape_validation():
     """Traced selection and static shape failures remain explicit."""
-    backend = drifft.Jacobi(16)
+    backend = drifft.Jacobi(8)
     method = drifft.RationalKrylov()
     with pytest.raises(ValueError, match="distribution"):
         method.advance(
@@ -256,7 +256,7 @@ def test_epoch_runtime_and_shape_validation():
 
 def test_krylov_mass_and_immigration_gradients():
     """Differentiate through a truncated basis, not only its selection matrix."""
-    backend = drifft.Jacobi(64)
+    backend = drifft.Jacobi(32)
     method = drifft.RationalKrylov(dimension=32)
     mass = jnp.linspace(0.01, 0.05, 63)
     immigration = jnp.linspace(0.0001, 0.0002, 63)

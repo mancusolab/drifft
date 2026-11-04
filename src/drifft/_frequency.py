@@ -68,7 +68,7 @@ class FrequencyMap(AbstractFrequencyMap):
     probabilities in `[0, 1]`. Its parameters stay connected to differentiation;
     its output is returned without conversion, clipping, or normalization.
 
-    !!! example "Custom offspring probabilities"
+    !!! example "Example: Custom offspring probabilities"
 
         ```python
         import drifft
@@ -361,6 +361,23 @@ class Composition(AbstractFrequencyMap):
     Selection and mutation generally do not commute, so their order is part of
     the model. Each component must preserve shape and return finite probabilities
     in `[0, 1]`; component failures propagate without additional validation.
+
+    !!! example "Example: Selection followed by mutation"
+
+        ```python
+        import jax
+        import jax.numpy as jnp
+        import drifft
+
+        jax.config.update("jax_enable_x64", True)
+
+        model = drifft.Composition(
+            drifft.DiploidSelection(s_het=0.01, s_hom=0.02),
+            drifft.Mutation(forward_rate=1e-5, backward_rate=1e-6),
+        )
+        frequencies = jnp.array([0.1, 0.5, 0.9])
+        offspring_probabilities = model(frequencies)
+        ```
     """
 
     maps: tuple[AbstractFrequencyMap, ...]

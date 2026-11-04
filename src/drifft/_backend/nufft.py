@@ -40,7 +40,7 @@ class NUFFT(AbstractTransitionBackend):
     """
 
     nodes: jax.Array
-    gene_copies: int = eqx.field(static=True)
+    diploid_size: int = eqx.field(static=True)
     degree: int = eqx.field(static=True)
     encoding: Literal["lobatto", "filtered"] = eqx.field(static=True)
     taper_width: int = eqx.field(static=True)
@@ -57,7 +57,7 @@ class NUFFT(AbstractTransitionBackend):
 
     def __init__(
         self,
-        gene_copies: int,
+        diploid_size: int,
         *,
         accuracy: float = 1e-10,
         encoding: Literal["lobatto", "filtered"] = "lobatto",
@@ -70,7 +70,7 @@ class NUFFT(AbstractTransitionBackend):
 
         **Arguments:**
 
-        - `gene_copies`: Destination gene copies, at least two.
+        - `diploid_size`: Diploid effective population size, a Python integer at least one.
         - `accuracy`: Nominal value-error budget, in `[1e-13, 0.1)`.
         - `encoding`: `"lobatto"` (default) interpolates the samples;
           `"filtered"` tapers them and corrects endpoints as a polynomial.
@@ -96,11 +96,12 @@ class NUFFT(AbstractTransitionBackend):
         FFT-specific settings belong to the FFT backend.
         """
         if (
-            isinstance(gene_copies, bool)
-            or not isinstance(gene_copies, int)
-            or gene_copies < 2
+            isinstance(diploid_size, bool)
+            or not isinstance(diploid_size, int)
+            or diploid_size < 1
         ):
-            raise ValueError("gene_copies must be an integer >= 2")
+            raise ValueError("diploid_size must be a Python integer >= 1")
+        gene_copies = 2 * diploid_size
         if (
             isinstance(batch_size, bool)
             or not isinstance(batch_size, int)
@@ -178,7 +179,7 @@ class NUFFT(AbstractTransitionBackend):
         )
         nodes = jnp.where(index <= sample_degree / 2, low, 1 - low)
         self.nodes = nodes
-        self.gene_copies = gene_copies
+        self.diploid_size = diploid_size
         self.degree = degree
         self.encoding = encoding
         self.taper_width = taper_width
@@ -195,18 +196,18 @@ class NUFFT(AbstractTransitionBackend):
 
     def __check_init__(self) -> None:
         """Reject inconsistent dimensions without inspecting array values."""
-        if self.gene_copies < 2 or not 1 <= self.degree <= self.gene_copies:
-            raise ValueError("degree must be between 1 and gene_copies")
+        if self._gene_copies < 2 or not 1 <= self.degree <= self._gene_copies:
+            raise ValueError("degree must be between 1 and 2 * diploid_size")
         if self.encoding not in ("lobatto", "filtered"):
             raise ValueError('encoding must be "lobatto" or "filtered"')
         if self.taper_width and (
             self.encoding != "filtered"
-            or not 1 <= self.taper_width <= self.degree + 1 < self.gene_copies
+            or not 1 <= self.taper_width <= self.degree + 1 < self._gene_copies
         ):
             raise ValueError("taper width and compressed degree are inconsistent")
         if self.nodes.shape != (self.degree + 1 + (self.taper_width > 0),):
             raise ValueError("nodes must match the encoding's sampling degree")
-        if self.batch_size < 1 or not 1 <= self.radius <= self.gene_copies:
+        if self.batch_size < 1 or not 1 <= self.radius <= self._gene_copies:
             raise ValueError("batch_size and radius must be positive")
 
     @property
@@ -220,7 +221,7 @@ class NUFFT(AbstractTransitionBackend):
         **Arguments:**
 
         - `probabilities`: Vector of finite source probabilities in `[0, 1]`.
-        - `values`: Finite real destination vector of length `gene_copies + 1`.
+        - `values`: Finite real destination vector of length `2 * diploid_size + 1`.
 
         Both inputs accept Python lists, NumPy arrays, or JAX arrays and are
         converted to float64 before shape validation.
@@ -238,7 +239,7 @@ class NUFFT(AbstractTransitionBackend):
         """
         probabilities = jnp.asarray(probabilities, dtype=jnp.float64)
         values = jnp.asarray(values, dtype=jnp.float64)
-        if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:
+        if values.shape != (self._gene_copies + 1,) or probabilities.ndim != 1:
             raise ValueError(
                 "Expected values.shape == (M+1,) and one-dimensional probabilities"
             )
@@ -247,13 +248,13 @@ class NUFFT(AbstractTransitionBackend):
             coefficients = filter_cosine_coefficients(
                 coefficients,
                 self.taper_width,
-                values[jnp.array([0, self.gene_copies])],
+                values[jnp.array([0, self._gene_copies])],
             )
         return _evaluate(
             coefficients,
             probabilities,
             self.nufft_tol,
-            values[jnp.array([0, self.gene_copies])],
+            values[jnp.array([0, self._gene_copies])],
         )
 
 

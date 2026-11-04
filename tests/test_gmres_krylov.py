@@ -30,7 +30,7 @@ def test_gmres_rational_matches_dense(backend_type, segregating):
     for _ in range(25):
         expected = matrix.T @ expected + source
     result = drifft.RationalKrylov(dimension=20).advance(
-        backend_type(12),
+        backend_type(6),
         mass,
         frequency_map=drifft.Underdominance(0.3),
         generations=25,
@@ -45,7 +45,7 @@ def test_gmres_rational_matches_dense(backend_type, segregating):
 @pytest.mark.parametrize("generations", [0, 1, 15])
 def test_gmres_zero_mass_and_immigration(backend_type, generations):
     """Zero right-hand sides and source-only histories remain valid."""
-    backend = backend_type(12)
+    backend = backend_type(6)
     for source in (None, jnp.eye(11)[0] * 1e-3):
         kwargs: dict[str, Any] = dict(
             frequency_map=drifft.Neutral(),
@@ -134,7 +134,7 @@ def test_singular_matrix_free_shift_reports_failure():
 @pytest.mark.parametrize("copies", [128, 512])
 def test_truncated_gmres_power_matches_sequential(backend_type, copies):
     """Exercise a truncated basis, real FFT blocks and general frequency maps."""
-    backend = backend_type(copies)
+    backend = backend_type(copies // 2)
     mass = jnp.zeros(copies + 1).at[copies // 3].set(1)
     frequency_map = drifft.Composition(
         drifft.Underdominance(0.2), drifft.Mutation(1e-3, 2e-3)

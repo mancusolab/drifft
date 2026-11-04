@@ -47,7 +47,7 @@ def run_worker(args: argparse.Namespace) -> None:
         jax.config.update("jax_enable_x64", True)
         jax.config.update("jax_enable_compilation_cache", False)
         backend = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(
-            gene_copies, tail_tol=args.tail_tol
+            gene_copies // 2, tail_tol=args.tail_tol
         )
         jax_mass = jnp.full(gene_copies + 1, 1.0 / (gene_copies + 1), dtype=jnp.float64)
         transition = drifft.Transition(
@@ -309,8 +309,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--worker", choices=["nufft", "fft", "fastdtwf"], help=argparse.SUPPRESS
     )
     args = parser.parse_args(argv)
-    if args.gene_copies < 2 or min(args.cold_repeats, args.warm_repeats) < 1:
-        parser.error("gene-copies must be >= 2 and repetition counts must be positive")
+    if (
+        args.gene_copies < 2
+        or args.gene_copies % 2
+        or min(args.cold_repeats, args.warm_repeats) < 1
+    ):
+        parser.error(
+            "gene-copies must be even and >= 2 and repetition counts must be positive"
+        )
     if any(not math.isfinite(s) or not 0 <= s <= 1 for s in args.selections):
         parser.error("selections must be finite and in [0, 1]")
     if any(not math.isfinite(sd) or sd <= 0 for sd in args.tv_sds):

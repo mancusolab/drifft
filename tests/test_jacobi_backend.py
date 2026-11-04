@@ -15,14 +15,14 @@ jax.config.update("jax_enable_x64", True)
 
 def test_jacobi_is_a_transition_backend():
     """Expose Jacobi through the same public backend contract and exports."""
-    backend = drifft.Jacobi(16)
+    backend = drifft.Jacobi(8)
     assert isinstance(backend, drifft.AbstractTransitionBackend)
 
 
 def test_jacobi_expect_and_rectangular_transpose_match_binomial():
     """Arbitrary probability rows include endpoints, signed values and derivatives."""
     copies = 16
-    backend = drifft.Jacobi(copies)
+    backend = drifft.Jacobi(copies // 2)
     q = jnp.array([0.0, 1e-9, 0.1, 0.37, 0.8, 1 - 1e-9, 1.0])
     values = jnp.sin(jnp.arange(copies + 1) * 0.7)
     mass = jnp.cos(jnp.arange(q.size) * 0.3)
@@ -91,11 +91,11 @@ def test_jacobi_sequential_history_matches_its_actual_transition_transpose():
     values = jnp.cos(jnp.arange(15) * 0.4)
     expected = initial
     for source, destination, duration in [(12, 8, 4), (8, 14, 3)]:
-        hold = drifft.Transition(backend(source), rule)
+        hold = drifft.Transition(backend(source // 2), rule)
         for _ in range(duration - 1):
             expected = hold.advance(expected)
         expected = drifft.Transition(
-            backend(destination), rule, source_gene_copies=source
+            backend(destination // 2), rule, source_diploid_size=source // 2
         ).advance(expected)
     actual = model.advance(initial).distribution
     assert jnp.allclose(actual, expected, atol=2e-12)
@@ -112,10 +112,10 @@ def test_jacobi_sequential_history_matches_its_actual_transition_transpose():
 @pytest.mark.parametrize("throw", [False, True])
 def test_sequential_jacobi_one_step_does_not_apply_reduced_assembly_domain(throw):
     """Strong selection is valid for arbitrary-probability one-step evaluation."""
-    backend = drifft.Jacobi(16)
+    backend = drifft.Jacobi(8)
     rule = drifft.DiploidSelection(0.8, 0.99)
     initial = jnp.eye(17)[5]
-    expected = drifft.Transition(drifft.FFT(16), rule).advance(initial)
+    expected = drifft.Transition(drifft.FFT(8), rule).advance(initial)
     actual = drifft.Sequential().advance(
         backend, initial, frequency_map=rule, generations=1, throw=throw
     )
@@ -127,7 +127,7 @@ def test_transition_rejects_unsupported_backend_at_construction():
     """Runtime validation must match the annotated backend contract."""
 
     class InvalidBackend:
-        gene_copies = 16
+        diploid_size = 8
 
     with pytest.raises(TypeError, match="AbstractTransitionBackend"):
         drifft.Transition(InvalidBackend(), drifft.Neutral())  # ty: ignore[invalid-argument-type]
@@ -138,7 +138,7 @@ def test_jacobi_segregating_rectangular_operations():
     source, destination = 20, 16
     rule = drifft.Mutation(0.02, 0.03)
     transition = drifft.Transition(
-        drifft.Jacobi(destination), rule, source_gene_copies=source
+        drifft.Jacobi(destination // 2), rule, source_diploid_size=source // 2
     )
     probabilities = np.asarray(rule(jnp.arange(source + 1) / source))
     matrix = jnp.asarray(
@@ -159,7 +159,7 @@ def test_jacobi_segregating_rectangular_operations():
 def test_truncated_jacobi_one_step_values_and_endpoint_derivatives():
     """Exercise the common interface with an actually truncated spectral basis."""
     copies = 512
-    backend = drifft.Jacobi(copies)
+    backend = drifft.Jacobi(copies // 2)
     assert backend.rank < copies - 1
     q = jnp.array([0.0, 1e-6, 0.005, 0.12, 0.41, 0.9, 1 - 1e-6, 1.0])
     values = jnp.sin(jnp.arange(copies + 1) * 0.13)
@@ -185,7 +185,7 @@ def test_jacobi_expected_visits_and_selection_derivative():
     from scipy.special import comb
 
     copies = 16
-    backend = drifft.Jacobi(copies)
+    backend = drifft.Jacobi(copies // 2)
     frequencies = jnp.arange(1, copies) / copies
     counts = jnp.arange(1, copies)
     choose = jnp.asarray(comb(copies, np.arange(1, copies)))

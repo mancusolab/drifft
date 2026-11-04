@@ -34,7 +34,7 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 
 # 2,000 gene copies represent 1,000 diploid individuals.
-backend = drifft.FFT(gene_copies=2000)
+backend = drifft.FFT(diploid_size=1000)
 transition = drifft.Transition(
     backend, frequency_map=drifft.Underdominance(strength=0.01)
 )

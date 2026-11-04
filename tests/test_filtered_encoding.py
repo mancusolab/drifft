@@ -15,7 +15,7 @@ jax.config.update("jax_enable_x64", True)
 @pytest.mark.parametrize("size,accuracy", [(2, 1e-10), (16, 1e-10), (128, 1e-3)])
 def test_filtered_rows_mass_endpoints_and_certificate(size, accuracy):
     """Cover exact fallback and compression, including near-boundary rows."""
-    backend = drifft.NUFFT(size, accuracy=accuracy, encoding="filtered")
+    backend = drifft.NUFFT(size // 2, accuracy=accuracy, encoding="filtered")
     q = jnp.asarray(
         np.unique(np.r_[0, 1e-12, 1 / size, np.linspace(0, 1, 41), 1 - 1e-12])
     )
@@ -38,7 +38,7 @@ def test_filtered_rows_mass_endpoints_and_certificate(size, accuracy):
 
 def test_filtered_derivatives_are_of_one_endpoint_corrected_polynomial():
     """Interpolation away from endpoints independently determines endpoint slopes."""
-    backend = drifft.NUFFT(128, accuracy=1e-3, encoding="filtered")
+    backend = drifft.NUFFT(64, accuracy=1e-3, encoding="filtered")
     values = jnp.asarray(np.random.default_rng(9).uniform(-1, 1, 129))
     # Interior Chebyshev roots determine the output polynomial without using
     # production sampling, coefficient transforms, or endpoint substitutions.
@@ -88,14 +88,14 @@ def test_filtered_derivatives_are_of_one_endpoint_corrected_polynomial():
 def test_invalid_encoding(encoding):
     """Reject unknown encoding names at construction."""
     with pytest.raises(ValueError, match="encoding"):
-        drifft.NUFFT(128, encoding=encoding)
+        drifft.NUFFT(64, encoding=encoding)
 
 
 def test_lobatto_default_and_sharper_planning():
     """Keep the default encoding while reducing the conservative degree."""
     from drifft._backend.nufft import _choose_degree
 
-    backend = drifft.NUFFT(10000)
+    backend = drifft.NUFFT(5000)
     assert backend.encoding == "lobatto"
     assert backend.degree == _choose_degree(10000, backend.spectral_tol)
     assert backend.degree < 750  # Previous 4M/d certificate selects 754.
@@ -105,7 +105,7 @@ def test_lobatto_default_and_sharper_planning():
 
 def test_filtered_matches_sampled_fourier_definition():
     """Verify taper weights and alias conventions by an explicit Fourier sum."""
-    backend = drifft.NUFFT(128, accuracy=1e-3, encoding="filtered")
+    backend = drifft.NUFFT(64, accuracy=1e-3, encoding="filtered")
     size, modes, width = 128, backend.degree + 1, backend.taper_width
     values = np.random.default_rng(14).uniform(-1, 1, size + 1)
     theta = np.pi * np.arange(2 * modes) / modes
@@ -173,8 +173,8 @@ def test_filtered_derivative_padding_uses_output_degree():
     """Use the same degree convention for both encoding variants."""
     import math
 
-    base = drifft.NUFFT(256, accuracy=1e-6, encoding="filtered")
+    base = drifft.NUFFT(128, accuracy=1e-6, encoding="filtered")
     padded = drifft.NUFFT(
-        256, accuracy=1e-6, encoding="filtered", derivative_accuracy=True
+        128, accuracy=1e-6, encoding="filtered", derivative_accuracy=True
     )
     assert padded.degree == math.ceil(1.5 * base.degree)

@@ -25,8 +25,8 @@ import drifft
 
 jax.config.update("jax_enable_x64", True)
 M = 256
-coarse = drifft.NUFFT(M, accuracy=1e-6)
-fine = drifft.NUFFT(M, accuracy=1e-10, derivative_accuracy=True)
+coarse = drifft.NUFFT(M // 2, accuracy=1e-6)
+fine = drifft.NUFFT(M // 2, accuracy=1e-10, derivative_accuracy=True)
 loss_indicator = jnp.zeros(M + 1).at[0].set(1.0)
 
 # The allele starts with four copies.

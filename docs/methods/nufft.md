@@ -78,7 +78,7 @@ The implementation replaces the values at $q=0$ and $q=1$ by $f_0$ and $f_M$.
 ### Filtered encoding
 
 Filtered encoding tapers the highest cosine modes to control uniform
-approximation error. Select it with `NUFFT(M, encoding="filtered")`; unlike
+approximation error. Select it with `NUFFT(diploid_size=M // 2, encoding="filtered")`; unlike
 ordinary interpolation, it needs an endpoint correction.
 Write $n_{\mathrm{modes}}=L+1$ for the retained coefficient count, so $L$
 continues to denote the output degree. Filtered encoding samples

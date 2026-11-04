@@ -16,7 +16,7 @@ jax.config.update("jax_enable_x64", True)
 @pytest.mark.parametrize("M", [4096, 10000, 65536])
 def test_large_sampled_rows(M):
     """Check representative large-population rows without forming a dense matrix."""
-    backend = wf.NUFFT(M)
+    backend = wf.NUFFT(M // 2)
     rng = np.random.default_rng(5)
     rows = np.unique(
         np.r_[0, 1, 2, M // 2, M - 2, M - 1, M, rng.integers(0, M + 1, 32)]
@@ -52,7 +52,7 @@ def test_spectral_occupation(s):
     # This size actually exercises spectral evaluation in the solve.
     """Compare expected visits against an independent small dense solve."""
     M = 512
-    backend = wf.NUFFT(M)
+    backend = wf.NUFFT(M // 2)
     x = np.arange(1, M) / M
     p = (x - s * x * (1 - x)) / (1 - 2 * s * x * (1 - x))
     Q = binom.pmf(np.arange(1, M)[None, :], M, p[:, None])
@@ -69,7 +69,7 @@ def test_spectral_occupation(s):
 
 def test_selection_derivative_interior():
     """Compare interior selection tangents with an analytic binomial derivative."""
-    backend = wf.NUFFT(1024)
+    backend = wf.NUFFT(512)
     v = jnp.asarray(np.random.default_rng(19).normal(size=1025))
     fun = jax.jit(
         lambda s: wf.Transition(backend, wf.Underdominance(s)).expect(v)[400:600]

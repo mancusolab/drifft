@@ -25,7 +25,7 @@ jax.config.update("jax_enable_x64", True)
 )
 def test_zero_generation_epoch_rejects_invalid_selection(strength, throw):
     """Domain violations raise even when no transition consumes the strength."""
-    backend = drifft.Jacobi(8, max_strength=0.1)
+    backend = drifft.Jacobi(4, max_strength=0.1)
     method = drifft.RationalKrylov()
     initial = jnp.ones(9) / 9
     with pytest.raises(eqx.EquinoxRuntimeError, match="selection strength"):

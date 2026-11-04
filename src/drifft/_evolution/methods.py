@@ -102,7 +102,7 @@ class AbstractEpochMethod(eqx.Module):
 
         - `backend`: Prepared geometry compatible with this method.
         - `distribution`: Real mass, converted to float64. Length is
-          `backend.gene_copies + 1`, or `backend.gene_copies - 1` if segregating.
+          `2 * backend.diploid_size + 1`, or `2 * backend.diploid_size - 1` if segregating.
           Signed entries are supported; no normalization is applied.
         - `frequency_map`: Process shared by every generation.
         - `generations`: Nonnegative Python integer, static under JIT.
@@ -127,7 +127,7 @@ class AbstractEpochMethod(eqx.Module):
         supports higher derivatives; higher-order Krylov operator sensitivities
         are unsupported.
 
-        !!! example "Evolve with immigration"
+        !!! example "Example: Evolve with immigration"
 
             ```python
             import jax
@@ -135,7 +135,7 @@ class AbstractEpochMethod(eqx.Module):
             import drifft
 
             jax.config.update("jax_enable_x64", True)
-            backend = drifft.Jacobi(128)
+            backend = drifft.Jacobi(64)
             initial = jnp.zeros(127).at[0].set(1.0)
             source = jnp.zeros_like(initial).at[0].set(128 * 1e-8)
             result = drifft.RationalKrylov(dimension=40).advance(

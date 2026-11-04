@@ -15,7 +15,7 @@ jax.config.update("jax_enable_x64", True)
 
 def test_dense_public_backend_and_rectangular_operations():
     """Expose an independent full matrix through the common transition interface."""
-    backend = drifft.Dense(12)
+    backend = drifft.Dense(6)
     assert isinstance(backend, drifft.AbstractTransitionBackend)
     q = jnp.array([0.0, 1e-12, 0.2, 0.53, 0.9, 1 - 1e-12, 1.0])
     transition = drifft.Transition(backend, probabilities=q)
@@ -31,7 +31,7 @@ def test_dense_public_backend_and_rectangular_operations():
 
 def test_dense_endpoint_derivatives_include_orders_above_degree():
     """Ordinary AD must differentiate the polynomial at endpoints without custom rules."""
-    backend = drifft.Dense(2)
+    backend = drifft.Dense(1)
     q = jnp.array([0.0, 0.21, 1.0])
     values = jnp.array([-0.7, 0.4, 1.9])
 
@@ -59,16 +59,16 @@ def test_dense_endpoint_derivatives_include_orders_above_degree():
         np.testing.assert_allclose(actual, expected, atol=2e-14, rtol=0)
 
 
-@pytest.mark.parametrize("gene_copies", [1, 0, -2, True, 4.5])
-def test_dense_invalid_gene_copy_counts(gene_copies):
+@pytest.mark.parametrize("diploid_size", [0, -2, True, 4.5])
+def test_dense_invalid_diploid_sizes(diploid_size):
     """Reject invalid static dimensions before tracing."""
-    with pytest.raises(ValueError, match="gene_copies"):
-        drifft.Dense(gene_copies)
+    with pytest.raises(ValueError, match="diploid_size"):
+        drifft.Dense(diploid_size)
 
 
 def test_dense_shape_validation_and_empty_probability_rows():
     """Match the backend shape contract, including an empty direct evaluation."""
-    backend = drifft.Dense(8)
+    backend = drifft.Dense(4)
     for q, values in [(jnp.ones((2, 2)), jnp.ones(9)), (jnp.ones(2), jnp.ones(8))]:
         with pytest.raises(ValueError, match="shape|vector|values"):
             jax.jit(backend.expect)(q, values)
@@ -118,7 +118,7 @@ def test_dense_demography_with_mutation_selection_and_immigration(segregating):
 def test_dense_expected_visits_matches_independent_linear_solve():
     """Use Dense in the standard occupation solver without a backend-specific path."""
     size = 10
-    transition = drifft.Transition(drifft.Dense(size), drifft.Underdominance(0.02))
+    transition = drifft.Transition(drifft.Dense(size // 2), drifft.Underdominance(0.02))
     q = np.asarray(transition.probabilities)[1:-1]
     matrix = binom.pmf(np.arange(1, size)[None, :], size, q[:, None])
     expected = np.linalg.solve(np.eye(size - 1) - matrix.T, np.eye(size - 1)[0])
@@ -130,7 +130,7 @@ def test_dense_expected_visits_matches_independent_linear_solve():
 @pytest.mark.parametrize("method_name", ["PolynomialKrylov", "RationalKrylov"])
 def test_dense_krylov_power_and_selection_gradient_match_sequential(method_name):
     """Use the shared operator rules with a dense reference transition."""
-    backend = drifft.Dense(8)
+    backend = drifft.Dense(4)
     initial = jnp.eye(9)[2]
     values = jnp.cos(jnp.arange(9) * 0.4)
     method = getattr(drifft, method_name)(dimension=16, rtol=1e-9, atol=1e-12)

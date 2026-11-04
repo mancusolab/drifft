@@ -39,7 +39,7 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
     start = time.perf_counter()
     if mode == "initialize":
         if settings["initialization"] == "equilibrium":
-            transition = drifft.Transition(drifft.FFT(2 * sizes[0]), frequency_map)
+            transition = drifft.Transition(drifft.FFT(sizes[0]), frequency_map)
             solution = transition.expected_visits(
                 rtol=settings["equilibrium_rtol"],
                 atol=settings["equilibrium_atol"],
@@ -60,11 +60,11 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
         return dict(seconds=seconds, converged=True, residual_norm=residual)
 
     initial = jnp.asarray(json.loads((directory / "initial.json").read_text()))
-    fft = {size: drifft.FFT(2 * size) for size in dict.fromkeys(sizes)}
+    fft = {size: drifft.FFT(size) for size in dict.fromkeys(sizes)}
     epochs = (
         fft
         if mode == "fft"
-        else {size: drifft.Jacobi(2 * size, rank=settings["rank"]) for size in fft}
+        else {size: drifft.Jacobi(size, rank=settings["rank"]) for size in fft}
     )
     method = (
         drifft.Sequential()
@@ -109,7 +109,7 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
             hold_seconds = time.perf_counter() - tick
             tick = time.perf_counter()
             transition = drifft.Transition(
-                fft[destination], frequency_map, source_gene_copies=2 * source
+                fft[destination], frequency_map, source_diploid_size=source
             )
             distribution = transition.advance(result.distribution, segregating=True)
             distribution = distribution.at[0].add(2 * destination * mutation_rate)

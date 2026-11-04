@@ -5,13 +5,13 @@ and solve for expected visits before absorption.
 
 ::: drifft.Transition
     options:
-        members: [__init__, probabilities, expect, advance, as_lineax, expected_visits]
+        members: [__init__, source_size, dest_size, probabilities, expect, advance, as_lineax, expected_visits]
 
 ---
 
 ::: drifft.ExpectedVisitsResult
     options:
-        members: [__new__]
+        members: []
 
 ---
 

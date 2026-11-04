@@ -45,7 +45,7 @@ def diagnostics(backend, strength):
 
     import drifft
 
-    size = backend.gene_copies
+    size = 2 * backend.diploid_size
     low = np.r_[0, 1e-15, 1e-10, 0.1 / size, 1 / size, 2 / size, 0.01, 0.1, 0.5]
     probabilities = np.unique(
         np.r_[low, 1 - low, np.random.default_rng(19).uniform(size=8)]
@@ -143,7 +143,7 @@ def run_worker(args):
                 patch.object(nufft_module, "_choose_filtered_modes", matched_modes)
             )
         backend = drifft.NUFFT(
-            size,
+            size // 2,
             accuracy=args.accuracies[0],
             encoding="filtered" if args.worker.startswith("filtered") else "lobatto",
             derivative_accuracy=args.derivative_accuracy,
@@ -353,6 +353,8 @@ def main(argv=None):
         help=argparse.SUPPRESS,
     )
     args = parser.parse_args(argv)
+    if any(size % 2 for size in args.sizes):
+        parser.error("gene-copy sizes must be even for diploid populations")
     if min(args.sizes) < 2 or min(args.cold_repeats, args.warm_repeats) < 1:
         parser.error("sizes must be >= 2 and repetition counts positive")
     if any(not math.isfinite(a) or not 1e-13 <= a < 0.1 for a in args.accuracies):

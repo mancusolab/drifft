@@ -26,7 +26,7 @@ def run_worker(args):
     runs = []
     for size in args.sizes:
         start = time.perf_counter()
-        backend = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(size)
+        backend = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(size // 2)
         jax.block_until_ready(backend)
         planning = time.perf_counter() - start
         values = jnp.asarray(np.random.default_rng(17).normal(size=size + 1))
@@ -113,6 +113,8 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--worker", choices=["fft", "nufft"], help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if any(size % 2 for size in args.sizes):
+        parser.error("gene-copy sizes must be even for diploid populations")
     if (
         min(args.sizes) < 2
         or args.repeats < 1

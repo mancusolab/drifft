@@ -356,7 +356,7 @@ def test_truncated_jacobi_likelihood_gradient_matches_sequential_fft(method_type
     from scipy.stats import binom
 
     copies = 512
-    jacobi, fft = drifft.Jacobi(copies), drifft.FFT(copies)
+    jacobi, fft = drifft.Jacobi(copies // 2), drifft.FFT(copies // 2)
     assert jacobi.rank < copies - 1
     initial = jnp.zeros(copies + 1).at[3].set(1.0)
     sampling_weights = jnp.asarray(binom.pmf(5, 100, jnp.arange(copies + 1) / copies))

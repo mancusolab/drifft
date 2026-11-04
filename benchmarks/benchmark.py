@@ -72,7 +72,7 @@ def run(args: argparse.Namespace) -> None:
         mass = jnp.ones(source + 1) / (source + 1)
         start = time.perf_counter()
         backend = drifft.NUFFT(
-            size,
+            size // 2,
             accuracy=args.accuracy,
             batch_size=args.batch_size,
             derivative_accuracy=args.derivative_accuracy,
@@ -86,7 +86,9 @@ def run(args: argparse.Namespace) -> None:
         )
         for strength in args.selections:
             transition = drifft.Transition(
-                backend, drifft.Underdominance(strength), source_gene_copies=source
+                backend,
+                drifft.Underdominance(strength),
+                source_diploid_size=source // 2,
             )
             actual, expect_times = measure_kernel(
                 drifft.Transition.expect, (transition, values), args.repeats
@@ -99,7 +101,9 @@ def run(args: argparse.Namespace) -> None:
                 """Differentiate expectations with respect to the scalar selection strength."""
                 return jax.jvp(
                     lambda t: drifft.Transition(
-                        backend, drifft.Underdominance(t), source_gene_copies=source
+                        backend,
+                        drifft.Underdominance(t),
+                        source_diploid_size=source // 2,
                     ).expect(x),
                     (s,),
                     (jnp.ones_like(s),),
@@ -228,10 +232,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--device", choices=["cpu", "gpu"])
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
+    if any(size % 2 for size in args.sizes):
+        parser.error("gene-copy sizes must be even for diploid populations")
     if args.repeats < 1 or min(args.sizes) < 2 or args.batch_size < 1:
         parser.error("repeats/batch-size must be positive and sizes >= 2")
-    if args.source_gene_copies is not None and args.source_gene_copies < 2:
-        parser.error("source-gene-copies must be >= 2")
+    if args.source_gene_copies is not None and (
+        args.source_gene_copies < 2 or args.source_gene_copies % 2
+    ):
+        parser.error("source-gene-copies must be even and >= 2")
     if any(not np.isfinite(s) or not 0 <= s <= 1 for s in args.selections):
         parser.error("selections must be finite and in [0, 1]")
     if not np.isfinite(args.accuracy) or not 1e-13 <= args.accuracy < 0.1:

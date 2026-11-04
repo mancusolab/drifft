@@ -10,17 +10,22 @@ import jax
 class AbstractTransitionBackend(eqx.Module):
     r"""Interface for prepared geometry with a linear expectation operation.
 
-    For destination gene-copy count $M$ and values $f_j$, backends evaluate the
-    binomial expectation
+    For diploid destination size $N$ (`diploid_size`), let $M=2N$. For values
+    $f_j$ at allele counts $j=0,\ldots,M$, backends evaluate the binomial expectation
 
     $$B_M[f](q)=\sum_{j=0}^{M}\binom{M}{j}q^j(1-q)^{M-j}f_j.$$
 
-    Implementations provide `gene_copies` and an `expect` operation linear in
+    Implementations provide `diploid_size` and an `expect` operation linear in
     destination values, supporting transposition, JVP, VJP, and batching.
     Prepare geometry outside JIT; use `Transition` for compiled application.
     """
 
-    gene_copies: eqx.AbstractVar[int]
+    diploid_size: eqx.AbstractVar[int]
+
+    @property
+    def _gene_copies(self) -> int:
+        """Number of allele-bearing copies in the diploid population."""
+        return 2 * self.diploid_size
 
     @abstractmethod
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
@@ -29,7 +34,7 @@ class AbstractTransitionBackend(eqx.Module):
         **Arguments:**
 
         - `probabilities`: Vector of finite source probabilities in `[0, 1]`.
-        - `values`: Finite real destination vector of length `gene_copies + 1`.
+        - `values`: Finite real destination vector of length `2 * diploid_size + 1`.
 
         Both inputs accept Python lists, NumPy arrays, or JAX arrays and are
         converted to float64 before shape validation.

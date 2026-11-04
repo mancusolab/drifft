@@ -22,7 +22,7 @@ def test_occupation(M, s, backend_name):
     """Validate visits, total absorption time, and residuals against a dense chain."""
     import drifft as wf
 
-    backend = getattr(wf, backend_name)(M)
+    backend = getattr(wf, backend_name)(M // 2)
     x = np.arange(1, M) / M
     p = (x - s * x * (1 - x)) / (1 - 2 * s * x * (1 - x))
     Q = binom.pmf(np.arange(1, M)[None, :], M, p[:, None])
@@ -55,7 +55,7 @@ def test_nonconvergence_and_bicgstab():
     """Expose failed convergence and verify the alternative nonsymmetric solver."""
     import drifft as wf
 
-    backend = wf.NUFFT(64)
+    backend = wf.NUFFT(32)
     transition = wf.Transition(backend, wf.Underdominance(jnp.asarray(0.0)))
     result = transition.expected_visits(max_steps=1, restart=2, throw=False)
     assert not bool(result.converged)

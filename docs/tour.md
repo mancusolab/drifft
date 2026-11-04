@@ -49,7 +49,7 @@ A **backend** represents the one-generation binomial transition. `Transition`
 binds it to the frequency map:
 
 ```python
-backend = drifft.FFT(gene_copies=128)
+backend = drifft.FFT(diploid_size=64)
 transition = drifft.Transition(backend, frequency_map=frequency_map)
 after_one_generation = transition.advance(initial)
 ```
@@ -72,7 +72,8 @@ final = result.distribution
 
 This evolves `initial` for 39 generations at 64 diploid individuals, then
 changes to 32 on generation 40, independently of the one-generation calculation.
-Backends use **gene-copy counts**, while `Demography` uses **diploid sizes**.
+Backends and `Demography` both use **diploid sizes**; allele counts run from zero
+to twice that size.
 The [bottleneck example](examples/bottleneck.md) explains boundary timing.
 
 ## Compute a statistic

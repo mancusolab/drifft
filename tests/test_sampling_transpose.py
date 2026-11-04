@@ -19,7 +19,7 @@ jax.config.update("jax_enable_x64", True)
 @pytest.mark.parametrize("size,batch_size", [(16, 3), (512, 17)])
 def test_sampling_signed_adjoint_and_transforms(size, batch_size):
     """Validate signed sampling, streaming adjoints, and JAX transformations."""
-    backend = NUFFT(size, batch_size=batch_size)
+    backend = NUFFT(size // 2, batch_size=batch_size)
     rng = np.random.default_rng(size)
     values = jnp.asarray(rng.normal(size=(2, size + 1)))
     mass = jnp.asarray(rng.normal(size=backend.degree + 1))
@@ -64,7 +64,7 @@ def test_sampling_signed_adjoint_and_transforms(size, batch_size):
 @pytest.mark.parametrize("size,batch_size", [(512, 7), (2048, 19)])
 def test_sampling_transpose_initializes_full_accumulator_only_once(size, batch_size):
     """Prevent an M-sized zero fill inside every transpose scan iteration."""
-    backend = NUFFT(size, batch_size=batch_size)
+    backend = NUFFT(size // 2, batch_size=batch_size)
     transpose = jax.jit(
         lambda mass: jax.linear_transpose(
             lambda v: sample_bernstein(backend, v), jnp.zeros(size + 1)
@@ -81,7 +81,7 @@ def test_sampling_transpose_initializes_full_accumulator_only_once(size, batch_s
 
 def test_sampling_rejects_trainable_geometry():
     """Reject derivatives with respect to fixed sampling nodes."""
-    backend = NUFFT(16)
+    backend = NUFFT(8)
 
     def sample_nodes(nodes):
         """Expose sampling nodes as inputs to check rejection of geometry gradients."""

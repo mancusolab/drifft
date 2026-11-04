@@ -155,7 +155,7 @@ def sample_bernstein(backend: "NUFFT", values: jax.Array) -> jax.Array:
     return _sample(
         backend.nodes,
         jnp.asarray(values, dtype=backend.nodes.dtype),
-        size=backend.gene_copies,
+        size=backend._gene_copies,
         radius=backend.radius,
         batch_size=backend.batch_size,
         transposed=False,

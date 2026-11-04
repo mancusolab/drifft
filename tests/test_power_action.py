@@ -124,7 +124,7 @@ def test_prepared_epoch_derivatives_include_encoding_and_source(
     from drifft._evolution.preparation import _prepare_epoch
 
     copies, steps = 12, 5
-    backend = backend_type(copies)
+    backend = backend_type(copies // 2)
     size = copies - 1 if segregating else copies + 1
     initial = jnp.linspace(0.01, 0.03, size)
     source = jnp.linspace(0.0001, 0.0002, size)

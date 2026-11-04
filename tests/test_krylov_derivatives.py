@@ -25,7 +25,7 @@ def test_breakdown_derivatives_match_sequential(
     backend_type, method_type, reverse, zero_seed
 ):
     """Represent mass and mutation sensitivities outside the primal Krylov space."""
-    backend = backend_type(12)
+    backend = backend_type(6)
     method = method_type(dimension=20)
     absent = jnp.eye(13)[0]
     reward = jnp.sin(jnp.arange(13) * 0.3)
@@ -54,7 +54,7 @@ def test_breakdown_derivatives_match_sequential(
             absent.at[0].set(0.0).at[3].set(1.0) if zero_seed else jnp.asarray(1.0)
         )
         differentiated = eqx.filter_jit(lambda x: jax.jvp(fn, (x,), (direction,))[1])
-    reference_backend = drifft.FFT(12)
+    reference_backend = drifft.FFT(6)
 
     def reference(parameter):
         mass = parameter if zero_seed else absent
@@ -122,7 +122,7 @@ def test_no_power_still_differentiates_zero_mass(
     backend_type, generations, method_type
 ):
     """Identity and single-step encoding do not construct a Krylov basis."""
-    backend = backend_type(12)
+    backend = backend_type(6)
     initial = jnp.zeros(13)
     direction = jnp.eye(13)[3]
     method = method_type()
@@ -138,7 +138,7 @@ def test_no_power_still_differentiates_zero_mass(
 
 def test_batched_derivatives_include_breakdown_members():
     """Mutation sensitivities remain nonzero for both zero and nonzero rates."""
-    backend = drifft.FFT(12)
+    backend = drifft.FFT(6)
     method = drifft.PolynomialKrylov(dimension=20)
     mass = jnp.eye(13)[0]
     frequencies = jnp.arange(13) / 12
@@ -185,7 +185,7 @@ def test_sequential_mutation_boundary_sensitivity_matches_dense_reference():
     expected = np.zeros_like(mass)
     for _ in range(generations):
         expected, mass = transition @ expected + derivative @ mass, transition @ mass
-    backend = drifft.FFT(copies)
+    backend = drifft.FFT(copies // 2)
 
     def action(u):
         return (
@@ -216,7 +216,7 @@ def test_sequential_mutation_boundary_sensitivity_matches_dense_reference():
 )
 def test_zero_immigration_sensitivity(backend_type, method_type):
     """The affine auxiliary coordinate must not hide a zero physical seed."""
-    backend = backend_type(12)
+    backend = backend_type(6)
     method = method_type(dimension=20)
     mass = jnp.zeros(11)
 
@@ -234,7 +234,7 @@ def test_zero_immigration_sensitivity(backend_type, method_type):
 
     assert objective(jnp.asarray(0.0)) == 0
     actual = eqx.filter_jit(jax.grad(objective))(jnp.asarray(0.0))
-    reference_backend = drifft.FFT(12)
+    reference_backend = drifft.FFT(6)
 
     def reference(rate):
         return (

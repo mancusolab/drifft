@@ -16,7 +16,7 @@ jax.config.update("jax_enable_x64", True)
 
 def test_fft_probability_derivatives_above_binomial_degree_vanish():
     """Reach the constant-degree recurrence at endpoints and in the interior."""
-    backend = FFT(2)
+    backend = FFT(1)
     probabilities = jnp.array([0.0, 0.13, 0.5, 0.89, 1.0])
     values = jnp.array([-0.7, 0.4, 1.9])
 
@@ -42,7 +42,7 @@ def test_fft_probability_derivatives_above_binomial_degree_vanish():
 @pytest.mark.parametrize("size", [16, 1024])
 def test_fft_probability_derivatives_and_transpose(size):
     """Match binomial first and second derivatives, including reflection endpoints."""
-    backend = FFT(size)
+    backend = FFT(size // 2)
     q = jnp.array([0.0, 1e-12, 0.03, 0.5, 0.97, 1 - 1e-12, 1.0])
     values = jnp.asarray(np.random.default_rng(size).normal(size=size + 1))
     mass = jnp.array([-0.2, 0.3, -0.7, 0.9, 0.4, -0.5, 0.8])
@@ -112,7 +112,7 @@ def test_fft_probability_derivatives_and_transpose(size):
 def test_fft_selection_gradients_match_binomial_chain_rule():
     """Check forward and transpose selection derivatives against the chain rule."""
     size = 16
-    backend = FFT(size)
+    backend = FFT(size // 2)
     x = np.arange(size + 1) / size
     strength = 0.4
     heterozygosity = x * (1 - x)

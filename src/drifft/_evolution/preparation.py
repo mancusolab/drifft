@@ -48,7 +48,7 @@ def _prepare_transition(
     backend, distribution, frequency_map, generations, segregating, immigration
 ):
     distribution, source = _epoch_inputs(
-        distribution, immigration, backend.gene_copies, generations, segregating
+        distribution, immigration, backend._gene_copies, generations, segregating
     )
     transition = Transition(backend, frequency_map)
     operation = partial(transition.advance, segregating=segregating)
@@ -87,7 +87,7 @@ def _prepare_jacobi(
 ):
     """Encode the reduced action and affine forcing without choosing a power algorithm."""
     distribution, source = _epoch_inputs(
-        distribution, immigration, backend.gene_copies, generations, segregating
+        distribution, immigration, backend._gene_copies, generations, segregating
     )
     distribution = backend._validate_parameters(distribution, frequency_map)
     if generations == 0:

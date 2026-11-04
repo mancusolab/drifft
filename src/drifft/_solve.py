@@ -68,7 +68,7 @@ ExpectedVisitsResult.__new__.__doc__ = r"""Construct the result container withou
 
 **Arguments:**
 
-- `visits`: Candidate float64 expected visits of length `gene_copies-1`,
+- `visits`: Candidate float64 expected visits of length `2 * diploid_size-1`,
   including generation zero. Index zero represents one mutant copy.
 - `status`: Complete calculation outcome, an `ExpectedVisitsStatus`.
 - `solver_status`: Unmodified Lineax result code.

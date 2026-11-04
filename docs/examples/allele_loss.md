@@ -22,7 +22,7 @@ import drifft
 jax.config.update("jax_enable_x64", True)
 M = 64  # 32 diploid individuals.
 generations = 80
-backend = drifft.FFT(M)
+backend = drifft.FFT(M // 2)
 initial = jnp.zeros(M + 1).at[1].set(1.0)
 fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
 

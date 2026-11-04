@@ -21,6 +21,8 @@ SCRIPT = Path(__file__).resolve().parents[1] / "benchmarks" / "benchmark.py"
         ["--accuracy", "nan"],
         ["--batch-size", "0"],
         ["--source-gene-copies", "0"],
+        ["--source-gene-copies", "3"],
+        ["--sizes", "3"],
         ["--repeats", "0"],
         ["--seed", "-1"],
     ],

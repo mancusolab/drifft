@@ -157,7 +157,7 @@ class FFT(AbstractTransitionBackend):
     offsets: jax.Array
     boundary_logchoose: jax.Array
     max_tail_mass: jax.Array
-    gene_copies: int = eqx.field(static=True)
+    diploid_size: int = eqx.field(static=True)
     tail_tol: float = eqx.field(static=True)
     interp_order: int = eqx.field(static=True)
     min_mode_count: int = eqx.field(static=True)
@@ -168,7 +168,7 @@ class FFT(AbstractTransitionBackend):
 
     def __init__(
         self,
-        gene_copies: int,
+        diploid_size: int,
         *,
         tail_tol: float = 1e-12,
         interp_order: int = 12,
@@ -180,7 +180,7 @@ class FFT(AbstractTransitionBackend):
 
         **Arguments:**
 
-        - `gene_copies`: Integer gene-copy count, at least two (diploid population size is `gene_copies/2`).
+        - `diploid_size`: Diploid effective population size, a Python integer at least one.
         - `tail_tol`: Discarded mass budget in `[1e-15, .1)`, default `1e-12`.
         - `interp_order`: Even polynomial stencil size from 2 through 16, default 12.
         - `min_mode_count`: Boundary cutoff in expected copies, at least 8, default 128.
@@ -191,7 +191,7 @@ class FFT(AbstractTransitionBackend):
 
         `None`. Initializes host-computed quantile windows and cached kernel FFTs.
         Construction is not JIT-compatible. Core intervals partition log-odds;
-        halos support interpolation. For `gene_copies <= 2*min_mode_count` all rows use the
+        halos support interpolation. For `diploid_size <= min_mode_count` all rows use the
         direct fallback. Tail tolerance does not bound interpolation or roundoff.
 
         **Raises:**
@@ -201,11 +201,12 @@ class FFT(AbstractTransitionBackend):
         fixed environment but need not be bitwise identical across platforms.
         """
         if (
-            not isinstance(gene_copies, int)
-            or isinstance(gene_copies, bool)
-            or gene_copies < 2
+            isinstance(diploid_size, bool)
+            or not isinstance(diploid_size, int)
+            or diploid_size < 1
         ):
-            raise ValueError("gene_copies must be an integer >= 2")
+            raise ValueError("diploid_size must be a Python integer >= 1")
+        gene_copies = 2 * diploid_size
         # These are host configuration checks, not operations on traced values.
         if not (np.isfinite(tail_tol) and 1e-15 <= tail_tol < 0.1):
             raise ValueError("tail_tol must be finite and in [1e-15, 0.1)")
@@ -328,7 +329,7 @@ class FFT(AbstractTransitionBackend):
         self.offsets = jnp.asarray(offsets, dtype=jnp.int32)
         self.boundary_logchoose = jnp.asarray(logchoose)
         self.max_tail_mass = jnp.asarray(max_tail)
-        self.gene_copies = gene_copies
+        self.diploid_size = diploid_size
         self.tail_tol = tail_tol
         self.interp_order = interp_order
         self.min_mode_count = min_mode_count
@@ -351,7 +352,7 @@ class FFT(AbstractTransitionBackend):
                 "Backend block metadata must have matching one-dimensional shapes"
             )
         if (
-            not 1 <= self.boundary_width <= self.gene_copies + 1
+            not 1 <= self.boundary_width <= self._gene_copies + 1
             or self.boundary_logchoose.shape != (self.boundary_width,)
         ):
             raise ValueError("boundary_width must match the boundary coefficient array")
@@ -362,7 +363,7 @@ class FFT(AbstractTransitionBackend):
         **Arguments:**
 
         - `probabilities`: Vector of finite source probabilities in `[0, 1]`.
-        - `values`: Finite real destination vector of length `gene_copies + 1`.
+        - `values`: Finite real destination vector of length `2 * diploid_size + 1`.
 
         Both inputs accept Python lists, NumPy arrays, or JAX arrays and are
         converted to float64 before shape validation.
@@ -380,15 +381,15 @@ class FFT(AbstractTransitionBackend):
         """
         probabilities = jnp.asarray(probabilities, dtype=jnp.float64)
         values = jnp.asarray(values, dtype=jnp.float64)
-        if values.shape != (self.gene_copies + 1,) or probabilities.ndim != 1:
+        if values.shape != (self._gene_copies + 1,) or probabilities.ndim != 1:
             raise ValueError(
                 "Expected values.shape == (M+1,) and one-dimensional probabilities"
             )
-        cutoff = min(self.min_mode_count / self.gene_copies, 0.5)
+        cutoff = min(self.min_mode_count / self._gene_copies, 0.5)
         is_boundary = (probabilities <= cutoff) | (probabilities >= 1 - cutoff)
         boundary_columns = jnp.arange(self.boundary_width)
         boundary_values = jnp.stack(
-            (values[boundary_columns], values[self.gene_copies - boundary_columns])
+            (values[boundary_columns], values[self._gene_copies - boundary_columns])
         )
 
         # Batched map bounds per-batch forward temporary memory independently of M.
@@ -547,7 +548,7 @@ def _expect_boundary(
     # At .5 choose one reflection branch rather than averaging opposite slopes.
     low = jnp.where(p > 0.5, 1 - p, p)
     weights = _binomial_weights(
-        backend.gene_copies,
+        backend._gene_copies,
         jnp.arange(backend.boundary_width),
         backend.boundary_logchoose,
         low,
