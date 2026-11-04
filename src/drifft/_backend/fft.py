@@ -71,19 +71,18 @@ def _build_block(
     """Construct exact DTD factors with recurrence and stable modal normalization."""
     if not (0 < j0 < M and 0 <= lo <= hi <= M and rlo <= rhi):
         raise ValueError("Invalid block intervals or reference count")
-    # Build variable-sized blocks on the host, using NumPy's longdouble where
-    # available for cancellation-sensitive recurrences; store float64 JAX arrays.
-    p = np.longdouble(j0) / M
+    # Build variable-sized blocks on the host in float64, matching stored factors.
+    p = np.float64(j0) / M
     eta = np.log(p) - np.log1p(-p)
     h = 1 / (M * p * (1 - p))
-    r = np.arange(rlo, rhi + 1, dtype=np.longdouble)
+    r = np.arange(rlo, rhi + 1, dtype=np.float64)
     delta = h * r
     loga = delta * j0 - M * np.log1p(p * np.expm1(delta)) + h * r**2 / 2
     # Build the recurrence through zero even when the requested window excludes it.
     left, right = min(lo, j0), max(hi, j0)
-    j = np.arange(left, right, dtype=np.longdouble)
+    j = np.arange(left, right, dtype=np.float64)
     increments = np.log(M - j) - np.log(j + 1) + eta + h * (j - j0 + 0.5)
-    cumulative = np.r_[np.longdouble(0), np.cumsum(increments)]
+    cumulative = np.r_[np.float64(0), np.cumsum(increments)]
     logb = (cumulative - cumulative[j0 - left])[lo - left : hi - left + 1]
     logB = (
         -0.5 * np.log(2 * np.pi * M * p * (1 - p))
