@@ -43,6 +43,34 @@ aggregate population mass at representatives, then scatter through their rows.
 Both operations and their derivatives use fixed geometry and bounded batches,
 following the streaming sampling pattern in the NUFFT backend.
 
+## Differentiation
+
+For fixed sampling geometry, let $\widetilde S$ denote the prepared approximation.
+Population mass $p$ maps to sample mass $q=\widetilde S^T p$, while sample
+values $f$ map to population expectations $g=\widetilde S f$. Their directional
+derivatives and pullbacks are
+
+$$
+\dot q=\widetilde S^T\dot p,\qquad \bar p=\widetilde S\bar q,
+\qquad
+\dot g=\widetilde S\dot f,\qquad \bar f=\widetilde S^T\bar g.
+$$
+
+These are derivatives of the implemented approximation. Population and sample
+sizes, interpolation nodes, and prepared weights are fixed configuration;
+differentiate the input mass or values instead. The sampling maps themselves
+have zero second derivatives, but nonlinear likelihoods composed with them
+can have nonzero curvature. Conditioning on sample segregation also requires
+differentiating its normalization denominator.
+
+The `_CountInterpolation` HiJAX primitive supplies the linear JVP and its
+streaming transpose. Reverse mode is derived with `vjp_from_lin`, retaining
+interpolation geometry without retaining the input vector or a population-by-stencil
+weight matrix. Other parts of a composed likelihood may still retain their
+own residuals. Symbolically inactive tangents and cotangents skip interpolation;
+numerically zero inputs remain differentiable. Tangent-only batching preserves
+the shared primal output.
+
 ## Accuracy and controls
 
 For $p\le n$, the forward difference of a hypergeometric row satisfies

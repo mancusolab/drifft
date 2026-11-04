@@ -446,6 +446,12 @@ from JVP rules, with explicit transposes for linear inputs. The Krylov Fréchet
 primitive supplies its operator pullback explicitly and rejects unsupported
 higher derivatives. Dense's binomial operation uses ordinary JAX AD.
 
+For [hypergeometric sampling](hypergeometric.md#differentiation), the prepared
+observation map is linear in its input mass or values. Its interpolation
+primitive derives reverse mode from linearization with `vjp_from_lin`, so
+the pullback retains geometry rather than the input vector. Its explicit
+transpose regenerates interpolation weights in bounded batches.
+
 The primal power is computed with convergence diagnostics and passed through
 a cached-power primitive. Its derivative is attached to $A$ and $z$; the
 cached value and primal Arnoldi basis are not differentiated. Preparation and

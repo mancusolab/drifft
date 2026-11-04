@@ -7,9 +7,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from jax.experimental import hijax
 from scipy.stats import hypergeom
 
 import drifft
+from drifft._sampling import _CountInterpolation
 
 jax.config.update("jax_enable_x64", True)
 
@@ -360,3 +362,119 @@ def test_streaming_ad_and_batch_sizes():
     np.testing.assert_allclose(
         hvp, gradient * (gradient @ direction), rtol=0, atol=2e-14
     )
+
+
+@pytest.mark.parametrize("action", ["advance", "expect"])
+def test_tangent_only_batching_preserves_shared_primal(action):
+    """Batch nonleading tangent axes without broadcasting the fixed primal."""
+    population, sample = 60, 3
+    sampling = drifft.HypergeometricSampling(population, sample, tail_tol=0)
+    assert sampling.representative_counts.size < population + 1
+    matrix = jnp.asarray(_matrix(population, sample))
+    operator = matrix.T if action == "advance" else matrix
+    values = jnp.sin(jnp.arange(operator.shape[1]))
+    directions = jnp.stack((jnp.ones_like(values), -values), axis=1)
+    fn = getattr(sampling, action)
+    primal, tangent = jax.jit(
+        jax.vmap(
+            lambda d: jax.jvp(fn, (values,), (d,)),
+            in_axes=1,
+            out_axes=(None, 1),
+        )
+    )(directions)
+    np.testing.assert_allclose(primal, operator @ values, rtol=0, atol=2e-13)
+    np.testing.assert_allclose(tangent, operator @ directions, rtol=0, atol=2e-13)
+
+
+@pytest.mark.parametrize("transposed", [False, True])
+def test_interpolation_preserves_symbolic_zeros_and_geometry_guard(transposed):
+    """Inactive derivatives avoid dense zeros but still reject trainable geometry."""
+    sampling = drifft.HypergeometricSampling(60, 3, tail_tol=0)
+    knots, barycentric = sampling.representative_counts, sampling._barycentric
+    values = jnp.ones(61 if transposed else knots.size)
+    primals = (knots, barycentric, values)
+    primitive = _CountInterpolation(
+        *map(jax.typeof, primals),
+        population=60,
+        batch_size=7,
+        transposed=transposed,
+    )
+    zeros = tuple(hijax.Zero(jax.typeof(x).to_tangent_aval()) for x in primals)
+    _, tangent = primitive.jvp(primals, zeros)
+    assert isinstance(tangent, hijax.Zero)
+    assert tangent.aval == primitive.out_aval.to_tangent_aval()
+    out_ct = hijax.Zero(primitive.out_aval.to_tangent_aval())
+    accum = hijax.ValAccum(jax.typeof(values))
+    primitive.transpose(out_ct, knots, barycentric, accum)
+    assert isinstance(accum.freeze(), hijax.Zero)
+    with pytest.raises(ValueError, match="fixed geometry"):
+        primitive.jvp(primals, (zeros[0], jnp.zeros_like(barycentric), zeros[2]))
+    with pytest.raises(ValueError, match="fixed geometry"):
+        primitive.transpose(
+            out_ct, knots, hijax.ValAccum(jax.typeof(barycentric)), values
+        )
+
+
+@pytest.mark.parametrize("transposed", [False, True])
+def test_interpolation_pullback_retains_only_geometry(transposed):
+    """A fixed linear interpolation pullback must not retain the input vector."""
+    sampling = drifft.HypergeometricSampling(60, 3, tail_tol=0)
+    knots, barycentric = sampling.representative_counts, sampling._barycentric
+    values = jnp.ones(61 if transposed else knots.size)
+    primitive = _CountInterpolation(
+        *map(jax.typeof, (knots, barycentric, values)),
+        population=60,
+        batch_size=7,
+        transposed=transposed,
+    )
+    _, pullback = jax.vjp(lambda x: primitive(knots, barycentric, x), values)
+    # Bound retained array storage, without depending on residual tuple layout.
+    retained_bytes = sum(
+        leaf.nbytes for leaf in jax.tree.leaves(pullback) if eqx.is_array(leaf)
+    )
+    assert retained_bytes <= knots.nbytes + barycentric.nbytes
+
+
+@pytest.mark.parametrize("action", ["advance", "expect"])
+def test_sampling_reverse_mode_compositions(action):
+    """Check checkpointing, shared gradients and higher derivatives against exact rows."""
+    sampling = drifft.HypergeometricSampling(60, 3, tail_tol=0, batch_size=7)
+    matrix = jnp.asarray(_matrix(60, 3))
+    operator = matrix.T if action == "advance" else matrix
+    fn = getattr(sampling, action)
+    values = jnp.sin(jnp.arange(operator.shape[1]))
+    weights = jnp.cos(jnp.arange(operator.shape[0]))
+    direction = jnp.cos(jnp.arange(values.size))
+    coefficient = operator.T @ weights
+
+    def loss(x):
+        return 0.5 * (fn(x) @ weights) ** 2
+
+    expected_gradient = coefficient * (coefficient @ values)
+    actual = jax.jit(jax.grad(jax.checkpoint(loss)))(values)
+    np.testing.assert_allclose(actual, expected_gradient, rtol=2e-12, atol=2e-12)
+
+    def shared_loss(x):
+        return jax.vmap(lambda scale: scale * loss(x))(jnp.array([1.0, 2.0, 3.0])).sum()
+
+    np.testing.assert_allclose(
+        jax.jit(jax.grad(shared_loss))(values),
+        6 * expected_gradient,
+        rtol=2e-12,
+        atol=2e-12,
+    )
+    np.testing.assert_allclose(
+        jax.jit(jax.grad(lambda x: loss(x) + 2 * loss(x)))(values),
+        3 * expected_gradient,
+        rtol=2e-12,
+        atol=2e-12,
+    )
+    expected_hvp = coefficient * (coefficient @ direction)
+    forward_over_reverse = jax.jit(
+        lambda x: jax.jvp(jax.grad(loss), (x,), (direction,))[1]
+    )(values)
+    reverse_over_reverse = jax.jit(jax.grad(lambda x: jax.grad(loss)(x) @ direction))(
+        values
+    )
+    for actual in (forward_over_reverse, reverse_over_reverse):
+        np.testing.assert_allclose(actual, expected_hvp, rtol=2e-12, atol=2e-12)

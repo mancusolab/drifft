@@ -172,12 +172,16 @@ class _CountInterpolation(hijax.HiPrim):
             dbarycentric, hijax.Zero
         ):
             raise ValueError("sampling interpolation requires fixed geometry")
-        return self(*primals), self(
-            knots, barycentric, hijax.instantiate_zeros(dvalues)
+        tangent = (
+            hijax.Zero(self.out_aval.to_tangent_aval())
+            if isinstance(dvalues, hijax.Zero)
+            else self(knots, barycentric, dvalues)
         )
+        return self(*primals), tangent
 
     lin, linearized = hijax.linearize_from_jvp
-    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+    # The linear map needs only geometry in reverse mode, not the input values.
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_lin
 
     def transpose(self, out_ct, *maybe_accums):
         """Apply the opposite action without retaining per-batch intermediates."""
@@ -186,19 +190,21 @@ class _CountInterpolation(hijax.HiPrim):
             barycentric, hijax.GradAccum
         ):
             raise ValueError("sampling interpolation requires fixed geometry")
+        if isinstance(out_ct, hijax.Zero):
+            return
         if isinstance(values, hijax.GradAccum):
             values.accum(
                 _interpolate(
                     knots,
                     barycentric,
-                    hijax.instantiate_zeros(out_ct),
+                    out_ct,
                     **(self.params | {"transposed": not self.params["transposed"]}),
                 )
             )
 
     def batch_dim_rule(self, axis_data, dims):
-        """Use the mapped expansion with a leading batch axis."""
-        return 0
+        """Keep the primal unmapped when only its tangent is batched."""
+        return 0 if any(dim is not None for dim in dims) else None
 
 
 def _interpolate(knots, barycentric, values, **config):
