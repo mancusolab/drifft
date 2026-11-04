@@ -26,9 +26,9 @@ import drifft
 
 jax.config.update("jax_enable_x64", True)
 selection = drifft.AdditiveSelection(s=0.02)
-initial = jnp.zeros(129).at[1].set(1.0)  # 128 gene copies, 64 diploid individuals.
 backend = drifft.FFT(diploid_size=64)
 transition = drifft.Transition(backend, frequency_map=selection)
+initial = jnp.zeros(transition.source_size()).at[1].set(1.0)
 after_one_generation = transition.advance(initial)
 ```
 

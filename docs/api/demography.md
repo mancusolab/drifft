@@ -5,7 +5,7 @@ and evolution method.
 
 ::: drifft.Demography
     options:
-        members: [__init__, initial_ne, final_ne, total_generations]
+        members: [__init__]
 
 ---
 

@@ -225,7 +225,9 @@ the section heading. Keep the page TOC integrated on the left. It includes publi
 but excludes constructor headings (rendered at level 6 by the function template,
 below `toc_depth = 5`).
 Place prepared-problem helpers in the extension API, not the everyday method
-reference. Example-admonition titles are labels, not TOC headings.
+reference. Example-admonition titles are labels, not TOC headings. API member
+lists should select constructors and methods; attributes and properties are
+omitted by the shared attribute template.
 
 Keep exhaustive input and failure contracts in the API,
 derivations in numerical-method chapters, and validation procedures in the

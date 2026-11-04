@@ -20,17 +20,15 @@ import matplotlib.pyplot as plt
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-M = 64  # 32 diploid individuals.
 generations = 80
-backend = drifft.FFT(M // 2)
-initial = jnp.zeros(M + 1).at[1].set(1.0)
+backend = drifft.FFT(diploid_size=32)
 fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
 
 for s in [0.0, 0.02, 0.1]:
     transition = drifft.Transition(
         backend, drifft.AdditiveSelection(s=s)
     )
-    distribution = initial
+    distribution = jnp.zeros(transition.source_size()).at[1].set(1.0)
     loss = [float(distribution[0])]
     fixation = [float(distribution[-1])]
     for _ in range(generations):

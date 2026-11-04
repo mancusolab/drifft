@@ -24,16 +24,17 @@ import jax.numpy as jnp
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-M = 256
-coarse = drifft.NUFFT(M // 2, accuracy=1e-6)
-fine = drifft.NUFFT(M // 2, accuracy=1e-10, derivative_accuracy=True)
-loss_indicator = jnp.zeros(M + 1).at[0].set(1.0)
+diploid_size = 128
+M = 2 * diploid_size  # Number of copies in the exact binomial reference.
+coarse = drifft.NUFFT(diploid_size=diploid_size, accuracy=1e-6)
+fine = drifft.NUFFT(diploid_size=diploid_size, accuracy=1e-10, derivative_accuracy=True)
 
 # The allele starts with four copies.
 def loss_probability(backend, s):
     transition = drifft.Transition(
         backend, drifft.AdditiveSelection(s=s)
     )
+    loss_indicator = jnp.zeros(transition.dest_size()).at[0].set(1.0)
     return transition.expect(loss_indicator)[4]
 
 def exact_loss(s):

@@ -1,6 +1,9 @@
 # Validation and benchmarks
 
-Run commands from the repository root.
+Run commands from the repository root. Benchmark CLI sizes (`--sizes`,
+`--gene-copies`, and `--source-gene-copies`) count allele-bearing copies and must
+be even. The scripts convert them to diploid sizes when constructing backends.
+`compare_demography.py` uses diploid sizes in its demographic configuration.
 
 ```sh
 uv run pytest -p no:capture

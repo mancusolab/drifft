@@ -165,7 +165,7 @@ class Transition(eqx.Module):
 
     @property
     def probabilities(self) -> jax.Array:
-        r"""Current float64 source probabilities, shape `(2 * source_diploid_size + 1,)`.
+        r"""Current float64 source probabilities, shape `(source_size(),)`.
 
         Evaluates the bound map on each access, or returns the explicit rows
         with their supplied length.
@@ -201,16 +201,15 @@ class Transition(eqx.Module):
 
         **Arguments:**
 
-        - `values`: Finite real vector of length `2 * backend.diploid_size + 1`,
-          or `2 * backend.diploid_size - 1` when segregating. Converted to float64;
+        - `values`: Finite real vector of length `dest_size()`,
+          or `dest_size() - 2` when segregating. Converted to float64;
           signed entries are supported.
         - `segregating`: Use interior states with endpoint values fixed to zero.
 
         **Returns:**
 
-        A float64 vector of length `2 * source_diploid_size + 1`, or
-        `2 * source_diploid_size - 1` when segregating. Explicit full-state rows
-        instead return one value per supplied probability. No survival conditioning.
+        A float64 vector of length `source_size()`, or `source_size() - 2` when
+        segregating. No survival conditioning.
 
         !!! example "Example: Expected allele count"
 
@@ -256,16 +255,15 @@ class Transition(eqx.Module):
 
         **Arguments:**
 
-        - `distribution`: Finite real vector of length `2 * source_diploid_size + 1`,
-          or `2 * source_diploid_size - 1` when segregating. Converted to float64;
-          signed entries are supported. For explicit full-state rows, use one mass
-          per supplied probability.
+        - `distribution`: Finite real vector of length `source_size()`,
+          or `source_size() - 2` when segregating. Converted to float64;
+          signed entries are supported.
         - `segregating`: Discard endpoint hits after the transition.
 
         **Returns:**
 
-        A float64 vector of length `2 * backend.diploid_size + 1`, or
-        `2 * backend.diploid_size - 1` when segregating. No renormalization occurs.
+        A float64 vector of length `dest_size()`, or `dest_size() - 2` when
+        segregating. No renormalization occurs.
 
         !!! example "Example: Offspring from a singleton"
 
@@ -367,7 +365,7 @@ class Transition(eqx.Module):
         **Returns:**
 
         An `ExpectedVisitsResult` with float64 `visits` of length
-        `2 * backend.diploid_size - 1`, plus convergence diagnostics.
+        `dest_size() - 2`, plus convergence diagnostics.
 
         !!! example "Example: Visits from a singleton"
 

@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import drifft
 
 jax.config.update("jax_enable_x64", True)
-backend = drifft.FFT(64)
+backend = drifft.FFT(diploid_size=64)
 initial = jnp.zeros(127).at[0].set(1.0)
 
 @final

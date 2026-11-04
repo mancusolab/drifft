@@ -8,4 +8,4 @@ is [`AbstractEpochMethod`](methods.md#drifft.AbstractEpochMethod).
 
 ::: drifft.EpochProblem
     options:
-        members: [operator, initial, steps, reconstruct, error_norm, result]
+        members: [reconstruct, error_norm, result]

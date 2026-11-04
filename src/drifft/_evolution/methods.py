@@ -135,7 +135,7 @@ class AbstractEpochMethod(eqx.Module):
             import drifft
 
             jax.config.update("jax_enable_x64", True)
-            backend = drifft.Jacobi(64)
+            backend = drifft.Jacobi(diploid_size=64)
             initial = jnp.zeros(127).at[0].set(1.0)
             source = jnp.zeros_like(initial).at[0].set(128 * 1e-8)
             result = drifft.RationalKrylov(dimension=40).advance(

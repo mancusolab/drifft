@@ -36,7 +36,7 @@ selection = drifft.AdditiveSelection(s=0.02)
 transition = drifft.Transition(backend, frequency_map=selection)
 
 # Exactly one copy of the derived allele is present initially.
-initial = jnp.zeros(65).at[1].set(1.0)
+initial = jnp.zeros(transition.source_size()).at[1].set(1.0)
 after_one_generation = transition.advance(initial)
 print(f"Loss probability: {after_one_generation[0]:.4f}")
 ```

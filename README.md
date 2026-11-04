@@ -40,7 +40,7 @@ transition = drifft.Transition(
 )
 
 # Start with one mutant copy.
-distribution = jnp.zeros(2001).at[1].set(1.0)
+distribution = jnp.zeros(transition.source_size()).at[1].set(1.0)
 next_distribution = transition.advance(distribution)
 ```
 
