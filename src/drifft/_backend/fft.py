@@ -34,8 +34,16 @@ class _FFTBlock(eqx.Module):
     a: jax.Array
     kernel_fft: jax.Array
     nfft: int = eqx.field(static=True)
-    length: int = eqx.field(static=True)
-    rows: int = eqx.field(static=True)
+
+    @property
+    def length(self) -> int:
+        """Number of input columns in the block."""
+        return self.b.shape[0]
+
+    @property
+    def rows(self) -> int:
+        """Number of output nodes in the block."""
+        return self.a.shape[0]
 
 
 def _stirling_correction(n: int) -> float:
@@ -103,8 +111,6 @@ def _build_block(
         jnp.asarray(a),
         jnp.asarray(np.fft.rfft(kernel, nfft)),
         nfft,
-        L,
-        R,
     )
 
 
