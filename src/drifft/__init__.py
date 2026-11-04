@@ -33,6 +33,7 @@ from ._frequency import (
     Underdominance,
 )
 from ._operator import Transition
+from ._sampling import HypergeometricSampling
 from ._solve import ExpectedVisitsResult, ExpectedVisitsStatus
 
 __all__ = [
@@ -56,6 +57,7 @@ __all__ = [
     "ExpectedVisitsStatus",
     "FFT",
     "FrequencyMap",
+    "HypergeometricSampling",
     "IntervalDiagnostics",
     "Jacobi",
     "MultiplicativeSelection",
