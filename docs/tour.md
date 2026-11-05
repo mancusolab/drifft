@@ -117,8 +117,7 @@ assert jnp.allclose(
 ```
 
 `advance()` evolves one initial distribution; `expect()` returns conditional
-expectations indexed by initial count. Demographic expectations currently
-require Sequential. For trajectories stopped at loss or fixation, see
+expectations indexed by initial count. For trajectories stopped at loss or fixation, see
 [segregating transitions and expected visits](api/transitions.md#drifft.Transition.advance).
 
 ## Differentiate selection

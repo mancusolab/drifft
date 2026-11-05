@@ -171,8 +171,8 @@ def test_polynomial_demography_and_gradients(backend_type):
         jax.vmap(lambda p: model.advance(p, segregating=True).distribution)
     )(jnp.stack((mass, 2 * mass)))
     assert jnp.allclose(batched[1], 2 * batched[0], atol=1e-10)
-    with pytest.raises(ValueError, match="Sequential"):
-        model.expect(jnp.ones(11))
+    expectation = model.expect(weights, segregating=True)
+    assert jnp.allclose(mass @ expectation.values, batched[0] @ weights, atol=1e-10)
 
 
 @pytest.mark.parametrize("backend_type", [drifft.FFT, drifft.NUFFT])

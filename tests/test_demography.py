@@ -354,8 +354,9 @@ def test_expect_validates_layout_source_and_return_contract():
         model.expect(jnp.ones(9), segregating=True)
     for method in (drifft.PolynomialKrylov(), drifft.RationalKrylov()):
         updated = eqx.tree_at(lambda m: m.method, model, method)
-        with pytest.raises(ValueError, match="Sequential"):
-            updated.expect(jnp.ones(7), segregating=True)
+        result = updated.expect(jnp.ones(7), segregating=True)
+        assert jnp.array_equal(result.values, jnp.ones(7))
+        assert result.offset == 0
     values = jnp.arange(9.0)
     result = model.expect(values)
     assert isinstance(result, drifft.DemographicExpectation)

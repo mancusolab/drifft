@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 
 from ._backend import AbstractTransitionBackend
+from ._demographic_action import _demographic_advance, _demographic_expect
 from ._evolution.methods import AbstractEpochMethod, Sequential
 from ._evolution.preparation import validate_domain
 from ._evolution.problem import EvolutionStatus, _epoch_result
@@ -352,9 +353,16 @@ class DemographicTransition(eqx.Module):
     operations use the interior restrictions of these kernels.
 
     Numerical methods evaluate or approximate the action without forming $H$.
-    [`Sequential`][drifft.Sequential] provides a matched expectation transpose;
-    both Krylov methods support forward evolution. The method docstrings below
-    describe singleton source input and its expectation offset.
+    Both orientations use the configured method. Krylov forward and backward
+    actions approximate the same represented operator independently. The method
+    docstrings below describe singleton source input and its expectation offset.
+
+    Differentiation targets these mathematical actions with respect to process
+    parameters, input mass or values, and singleton rate. Geometry and method
+    settings are fixed. [`Sequential`][drifft.Sequential] supports higher
+    derivatives through the represented transitions; Krylov operator
+    sensitivities support first derivatives. Adaptive projection bases and
+    numerical diagnostics are not differentiation targets.
     """
 
     geometry: DemographicGeometry
@@ -467,19 +475,27 @@ class DemographicTransition(eqx.Module):
 
         [`DemographicResult`][drifft.DemographicResult] containing final mass and each interval's outcome.
         Output length is `2 * final_pop_size + 1`, or `2 * final_pop_size - 1` when segregating.
-        No mass normalization occurs.
+        No mass normalization occurs. Derivatives of `distribution` include
+        process, input-mass, and singleton-rate dependence; diagnostics are
+        excluded from differentiation.
 
         **Raises:**
 
         `ValueError` for invalid shapes, flags, or singleton input in full-state
         mode. Invalid rates or process domains raise even with `throw=False`.
-        Other numerical failures raise with `throw=True` and return status with false.
+        Primal numerical failures raise with `throw=True` and return status
+        with false. Sensitivity and pullback failures raise even with
+        `throw=False`. Higher-order Krylov operator sensitivities raise explicitly.
         """
         distribution, rate = _singleton_inputs(
             distribution, segregating, singleton_mutation_rate
         )
-        return self._advance(
-            distribution, segregating=segregating, singleton_rate=rate, throw=throw
+        return _demographic_advance(
+            self,
+            distribution,
+            segregating=segregating,
+            singleton_rate=rate,
+            throw=throw,
         )
 
     def _advance(self, distribution, *, segregating, singleton_rate, throw):
@@ -570,7 +586,7 @@ class DemographicTransition(eqx.Module):
         segregating: bool = False,
         singleton_mutation_rate: float | jax.Array | None = None,
     ) -> DemographicExpectation:
-        r"""Compute the matched expectation transpose for [`Sequential`][drifft.Sequential] histories.
+        r"""Compute the expectation action of the demographic history.
 
         Let $P_t$ be the one-generation transition from $t$ to $t+1$, including
         size changes, and $b_{t+1}$ the source added after that step. Starting
@@ -601,11 +617,12 @@ class DemographicTransition(eqx.Module):
             expected_count = initial @ expectation.values + expectation.offset
             ```
 
-        !!! warning "Requires [`Sequential`][drifft.Sequential]"
+        !!! warning "Krylov approximation"
 
-            The demographic transition `model` must use
-            [`Sequential`][drifft.Sequential] to call `expect`. Krylov methods
-            do not provide the matched expectation transpose.
+            Krylov methods approximate the backward action independently of
+            the forward action. Their pairing agrees to numerical accuracy,
+            rather than being an exact transpose of an input-dependent
+            projection. Increase dimension or tighten tolerances as needed.
 
         **Arguments:**
 
@@ -621,66 +638,34 @@ class DemographicTransition(eqx.Module):
         A [`DemographicExpectation`][drifft.DemographicExpectation] with float64 `values` of length
         `2 * initial_pop_size + 1`, or `2 * initial_pop_size - 1` when segregating, and a
         scalar `offset`. The reward `initial @ result.values + result.offset`
-        equals the terminal reward from `advance` with the same layout and rate.
+        equals the terminal reward from `advance` with the same layout and rate,
+        up to numerical approximation error.
         The offset is zero without a source or for an identity history.
+        Both `values` and `offset` retain their process and input-value
+        derivatives. Only `offset` depends on singleton rate; its rate
+        derivative can be nonzero even at zero rate.
         Signed vectors are supported; no normalization occurs.
 
         **Raises:**
 
         `ValueError` for incompatible shapes, nonboolean flags, invalid source
-        configuration or a non-[`Sequential`][drifft.Sequential] method, which does not provide a matched
-        transpose of its input-dependent approximation. Invalid rate values raise
-        at runtime, including for identity histories. Input finiteness is a caller
+        configuration. Numerical convergence and sensitivity failures raise at
+        runtime. Higher-order Krylov operator sensitivities raise explicitly.
+        Invalid rate values raise at runtime, including for identity histories.
+        Input finiteness is a caller
         precondition, as for [`Transition.expect`][drifft.Transition.expect].
         """
-        if not isinstance(self.method, Sequential):
-            raise ValueError(
-                "expect requires Sequential; adaptive epoch actions have no matched transpose"
-            )
         values, rate = _singleton_inputs(values, segregating, singleton_mutation_rate)
         size = 2 * self.demography.final_pop_size + (-1 if segregating else 1)
         if values.shape != (size,):
             raise ValueError(f"values must have {size} entries")
-        offset = jnp.asarray(0.0)
-        # Transposition reverses composition: apply the last boundary's
-        # expectation first, then its source-size hold, moving backward in time.
-        for source, destination, duration in reversed(
-            tuple(
-                zip(
-                    self.demography.pop_sizes[:-1],
-                    self.demography.pop_sizes[1:],
-                    self.demography.generations,
-                    strict=True,
-                )
-            )
-        ):
-            # Sources enter after each forward step, so evaluate their reward
-            # before transposing that step's transition.
-            if segregating:
-                offset = offset + 2 * destination * rate * values[0]
-            values = self._transition(source, destination).expect(
-                values, segregating=segregating
-            )
-            if duration > 1:
-                backend = self.geometry._backends[source]
-                assert isinstance(backend, AbstractTransitionBackend)
-                transition = Transition(backend, self.frequency_map)
-
-                def step(_, carry, source=source, transition=transition):
-                    current, accumulated = carry
-                    if segregating:
-                        accumulated = accumulated + 2 * source * rate * current[0]
-                    return transition.expect(
-                        current, segregating=segregating
-                    ), accumulated
-
-                values, offset = jax.lax.fori_loop(
-                    0, duration - 1, step, (values, offset)
-                )
+        expected, offset = _demographic_expect(
+            self, values, segregating=segregating, singleton_rate=rate
+        )
         # Keep validation live even when an outer JIT consumes only the
         # identity history's offset and discards the expectation vector.
         return eqx.error_if(
-            DemographicExpectation(values, offset),
+            DemographicExpectation(expected, offset),
             ~jnp.isfinite(rate) | (rate < 0),
             "singleton_mutation_rate must be finite and nonnegative",
         )

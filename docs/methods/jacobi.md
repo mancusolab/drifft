@@ -122,7 +122,7 @@ The full-state construction preserves mass but need not preserve positivity.
 Endpoint rows are absorbing only when the frequency map fixes zero and one;
 segregating evolution discards endpoint mass on every generation regardless.
 
-Sequential preserves the expectation/propagation pairing. An input-dependent
-Krylov approximation does not provide a matched expectation transpose; use
-Sequential for `model.expect()`. The [autodiff chapter](autodiff.md) explains
-parameter derivatives through the transforms and the reduced power.
+Sequential preserves the expectation/propagation pairing. Krylov methods
+approximate forward and backward actions independently, so their pairing
+agrees up to approximation error. The [autodiff chapter](autodiff.md) explains
+the shared derivative contract and how to validate gradients.

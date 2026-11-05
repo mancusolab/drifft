@@ -144,9 +144,9 @@ changes the size to 32 and is handled by the boundary transition. Demographic
 holds call the method's `advance`, including an override if you supply one.
 Keep the inherited implementation unless the method needs custom orchestration.
 
-[`DemographicTransition.expect`](api/demography.md#drifft.DemographicTransition.expect) currently requires [`Sequential`](api/methods.md#drifft.Sequential); implementing a
-custom `solve` does not enable demographic expectations, even for the repeated
-linear action above.
+[`DemographicTransition.expect`](api/demography.md#drifft.DemographicTransition.expect) calls `solve` on the transposed working operator, with the encoding and
+decoding maps transposed around it. A custom solver must support this action
+and retain the represented operator semantics.
 
 ## Check a new method
 

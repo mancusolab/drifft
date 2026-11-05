@@ -82,7 +82,7 @@ assert jnp.allclose(expected_total, expected_counts.sum(), rtol=1e-10, atol=1e-1
 ```
 
 Here the initial contribution is zero, so `expectation.offset` equals the
-expected terminal segregating mass. Demographic expectations require Sequential.
+expected terminal segregating mass. Krylov expectations approximate the backward action independently of forward evolution.
 For a constant-size interval with an arbitrary source vector, pass `source_mass`
 to [`AbstractEpochMethod.advance`](../api/methods.md#drifft.AbstractEpochMethod.advance).
 This vector supplies the mass to add each generation directly;

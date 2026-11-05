@@ -11,7 +11,7 @@ import jax.numpy as jnp
 
 from .._backend import AbstractTransitionBackend
 from .._frequency import AbstractFrequencyMap
-from .autodiff import _cached_power_action, _frechet_action, _power_action
+from .autodiff import _cached_power_action, _power_action
 from .preparation import _prepare_epoch, _prepare_transition, validate_representation
 from .problem import (
     EpochProblem,
@@ -295,26 +295,6 @@ class Sequential(AbstractEpochMethod):
         """Apply repeated operator actions in working coordinates."""
         return jax.lax.fori_loop(0, steps, lambda _, state: operator.mv(state), initial)
 
-    def _power_jvp(self, operator, tangent_operator, initial, tangent_initial, steps):
-        """Evolve the state and its sensitivity without differentiating the loop."""
-        if tangent_operator is None:
-            return (
-                _power_action(self, operator, initial, steps),
-                _power_action(self, operator, tangent_initial, steps),
-            )
-
-        def step(_, carry):
-            # Differentiate x_next = A x directly: dx_next = A dx + dA x.
-            # Carrying the pair avoids differentiating a saved state trajectory.
-            state, tangent = carry
-            following = operator.mv(state)
-            tangent = jax.tree.map(
-                jnp.add, operator.mv(tangent), tangent_operator.mv(state)
-            )
-            return following, tangent
-
-        return jax.lax.fori_loop(0, steps, step, (initial, tangent_initial))
-
 
 Sequential.__init__.__doc__ = r"""Configure repeated one-generation evolution.
 
@@ -391,22 +371,6 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         """Evaluate an unencoded power and require its numerical checks to pass."""
         return self.solve(_working_problem(operator, initial, steps)).distribution
 
-    def _power_jvp(self, operator, tangent_operator, initial, tangent_initial, steps):
-        """Approximate the mathematical power sensitivity without basis AD."""
-        value = _power_action(self, operator, initial, steps)
-        if tangent_operator is None:
-            tangent = _power_action(self, operator, tangent_initial, steps)
-        else:
-            tangent = _frechet_action(
-                self,
-                operator,
-                initial,
-                tangent_operator.tangent,
-                tangent_initial,
-                steps,
-            )
-        return value, tangent
-
     def solve(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
         r"""Approximate a prepared power and attach its mathematical sensitivities.
 
@@ -476,7 +440,7 @@ class RationalKrylov(AbstractKrylovMethod):
         shifted solves and the projected power,
         [accuracy and controls](../methods/jacobi_krylov.md#accuracy-and-controls)
         for convergence, and [differentiation and adjoints](../methods/jacobi_krylov.md#differentiation-and-adjoints)
-        for sensitivity calculations and the lack of a matched expectation transpose.
+        for sensitivity calculations and independently approximated backward actions.
     """
 
     _polynomial: ClassVar[bool] = False
@@ -504,7 +468,7 @@ class PolynomialKrylov(AbstractKrylovMethod):
         See [Krylov computation](../methods/jacobi_krylov.md#computation) for
         the projected power, [accuracy and controls](../methods/jacobi_krylov.md#accuracy-and-controls)
         for convergence, and [differentiation and adjoints](../methods/jacobi_krylov.md#differentiation-and-adjoints)
-        for sensitivity calculations and the lack of a matched expectation transpose.
+        for sensitivity calculations and independently approximated backward actions.
     """
 
     _polynomial: ClassVar[bool] = True

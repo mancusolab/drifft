@@ -1,4 +1,4 @@
-"""HiJAX power actions with method-owned sensitivities and explicit adjoints.
+"""HiJAX power actions with mathematical sensitivities and explicit adjoints.
 
 Preparation, reconstruction, and diagnostics remain outside these primitives.
 [`Sequential`][drifft.Sequential] uses an exact coupled recurrence. Krylov methods approximate the
@@ -20,23 +20,12 @@ from .sensitivity import _frechet_operator_pullback, _frechet_power
 
 
 class _PowerMethod[State](Protocol):
-    """Internal primal and joint-JVP contract consumed by the HiJAX power rule."""
+    """Numerical power evaluation consumed by the shared HiJAX rule."""
 
     def _power_action(
         self, operator: lx.AbstractLinearOperator, initial: State, steps: int
     ) -> State:
         """Evaluate a checked working-coordinate power."""
-        ...
-
-    def _power_jvp(
-        self,
-        operator: lx.AbstractLinearOperator,
-        tangent_operator: lx.TangentLinearOperator | None,
-        initial: State,
-        tangent_initial: State,
-        steps: int,
-    ) -> tuple[State, State]:
-        """Return the primal and its joint operator/state directional derivative."""
         ...
 
 
@@ -86,6 +75,18 @@ def _accumulate(accums, values):
     jax.tree.map(add, accums, values, is_leaf=lambda x: x is None or _is_ad_leaf(x))
 
 
+def _sequential_power_direction(operator, perturbation, initial, tangent, steps):
+    """Evaluate D(A**g x)[dA, dx] by the coupled mathematical recurrence."""
+
+    def step(_, carry):
+        state, direction = carry
+        return operator.mv(state), jax.tree.map(
+            jnp.add, operator.mv(direction), perturbation.mv(state)
+        )
+
+    return jax.lax.fori_loop(0, steps, step, (initial, tangent))[1]
+
+
 class _PowerAction(hijax.HiPrim):
     """Power evaluation or cached value with the same mathematical derivative."""
 
@@ -106,7 +107,7 @@ class _PowerAction(hijax.HiPrim):
         return method._power_action(operator, initial, steps)
 
     def jvp(self, primals, tangents):
-        """Apply method-owned sensitivities without differentiating configuration."""
+        """Differentiate the mathematical power, independently of solver implementation."""
         operator, initial, steps, method, *value = eqx.combine(
             primals, cast(tuple, self.params["static"])
         )
@@ -124,20 +125,20 @@ class _PowerAction(hijax.HiPrim):
         tangent_initial = jax.tree.map(
             hijax.instantiate_zeros, t_initial, is_leaf=_is_ad_leaf
         )
-        if not self.params["cached"]:
-            return method._power_jvp(
-                operator, tangent_operator, initial, tangent_initial, steps
-            )
-        # A cached value is only a primal shortcut: its tangent is deliberately
-        # ignored. Differentiate A**g x through the operator and state, otherwise
-        # AD would follow the adaptive projection that produced the cached value.
+        primal = self(*primals)
         if tangent_operator is None:
             tangent = _power_action(method, operator, tangent_initial, steps)
-        else:
+        elif isinstance(method, _KrylovConfig):
+            # Numerical evaluation of the same power derivative by a projected
+            # block action; its adaptive basis is never the differentiation target.
             tangent = _frechet_action(
                 method, operator, initial, operator_direction, tangent_initial, steps
             )
-        return value[0], tangent
+        else:
+            tangent = _sequential_power_direction(
+                operator, tangent_operator, initial, tangent_initial, steps
+            )
+        return primal, tangent
 
     lin, linearized = hijax.linearize_from_jvp
     vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
@@ -173,7 +174,7 @@ def _bind_power(operator, initial, steps, method, *value):
 def _power_action[State](
     method: _PowerMethod[State], operator, initial: State, steps: int
 ) -> State:
-    """Apply a power with method-owned JVPs and an operator-level transpose."""
+    """Apply a power with a shared mathematical JVP and operator-level transpose."""
     return _bind_power(operator, initial, steps, method)
 
 

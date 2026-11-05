@@ -119,11 +119,9 @@ Krylov differentiation targets the mathematical power sensitivity; it does
 not differentiate the input-dependent basis construction. This distinction
 matters when validating gradients at finite basis dimension.
 
-!!! note "Advanced: power sensitivities"
+The [autodiff chapter](autodiff.md#accuracy-and-limitations) describes the
+shared derivative contract, accuracy checks, and higher-order limitations.
 
-    The [autodiff chapter](autodiff.md) derives the coupled forward action and
-    low-rank reverse action, and specifies their convergence and higher-order
-    limitations.
-
-The primal approximation is input dependent and has no matched expectation
-transpose. Use Sequential when you need `model.expect()`.
+The Krylov projection is input dependent. `model.expect()` approximates the
+mathematical backward action with its own projection; forward/backward pairing
+therefore holds up to approximation error.

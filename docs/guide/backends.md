@@ -63,7 +63,7 @@ They are configured separately from the backend:
 
 | Method | When to use it |
 | --- | --- |
-| [`Sequential`](../api/methods.md#drifft.Sequential) | Default: applies the transition each generation. Required for `model.expect()` and higher-order derivatives. |
+| [`Sequential`](../api/methods.md#drifft.Sequential) | Default: applies the transition each generation. Supports higher-order derivatives. |
 | [`PolynomialKrylov`](../api/methods.md#drifft.PolynomialKrylov) | To approximate long intervals using operator applications, without shifted linear solves. Works with FFT or NUFFT for custom frequency maps. |
 | [`RationalKrylov`](../api/methods.md#drifft.RationalKrylov) | To approximate long intervals using shifted solves. Pair with Jacobi to perform these solves in reduced coordinates. |
 

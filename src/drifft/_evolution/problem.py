@@ -1,7 +1,7 @@
 """Prepared power problems and numerical outcome contracts."""
 
 from collections.abc import Callable
-from typing import ClassVar, NamedTuple, Protocol, final
+from typing import ClassVar, NamedTuple, Protocol, final, runtime_checkable
 
 import equinox as eqx
 import jax
@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import lineax as lx
 
 
+@runtime_checkable
 class _KrylovConfig(Protocol):
     """Configuration consumed by projection and sensitivity kernels."""
 
