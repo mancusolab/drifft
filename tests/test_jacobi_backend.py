@@ -83,8 +83,7 @@ def test_jacobi_sequential_history_matches_its_actual_transition_transpose():
 
     rule = drifft.FrequencyMap(lambda x: x * x)
     model = drifft.DemographicTransition(
-        drifft.Demography([6, 4, 7], [4, 3]),
-        backend_factory=backend,
+        drifft.Demography([6, 4, 7], [4, 3]).prepare(backend_factory=backend),
         frequency_map=rule,
     )
     initial = jnp.sin(jnp.arange(13) * 0.3)
@@ -214,8 +213,7 @@ def test_sequential_jacobi_history_higher_derivatives_match_dense():
 
     history = drifft.Demography([6, 4, 7], [4, 3])
     model = drifft.DemographicTransition(
-        history,
-        backend_factory=drifft.Jacobi,
+        history.prepare(backend_factory=drifft.Jacobi),
         frequency_map=drifft.Mutation(0.002, 0.008),
     )
     initial = jnp.eye(13)[2]

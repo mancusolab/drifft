@@ -54,26 +54,26 @@ class AbstractEpochMethod(eqx.Module):
 
         **Raises:**
 
-        `TypeError` for unsupported backend or map types. Sequential accepts
-        all transition backends; reduced Jacobi powers restrict map compositions.
+        `TypeError` for unsupported backend or map types. [`Sequential`][drifft.Sequential] accepts
+        all transition backends; reduced [`Jacobi`][drifft.Jacobi] powers restrict map compositions.
         """
         ...
 
     @abstractmethod
     def solve(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
-        r"""Evaluate a power problem returned by `prepare_epoch`.
+        r"""Evaluate a power problem returned by [`prepare_epoch`][drifft.prepare_epoch].
 
         **Arguments:**
 
-        - `problem`: Read-only `EpochProblem` with the working operator, initial
-          state, exponent, reconstruction and result checks. Use `prepare_epoch`
+        - `problem`: Read-only [`EpochProblem`][drifft.EpochProblem] with the working operator, initial
+          state, exponent, reconstruction and result checks. Use [`prepare_epoch`][drifft.prepare_epoch]
           to obtain it from population-space inputs; custom methods should use
           `problem.result` to finish the action.
         - `throw`: Raise on numerical failure when true; otherwise return status.
 
         **Returns:**
 
-        An `EpochResult` in population coordinates. Its error estimate covers
+        An [`EpochResult`][drifft.EpochResult] in population coordinates. Its error estimate covers
         the power approximation, excluding backend and representation errors.
 
         **Raises:**
@@ -139,8 +139,8 @@ class AbstractEpochMethod(eqx.Module):
 
         **Returns:**
 
-        An `EpochResult` in population coordinates; zero generations preserves
-        the input without adding source mass. Sequential reports zero power-approximation
+        An [`EpochResult`][drifft.EpochResult] in population coordinates; zero generations preserves
+        the input without adding source mass. [`Sequential`][drifft.Sequential] reports zero power-approximation
         error; Krylov estimates exclude backend and representation errors.
         Check `converged` with `throw=False`.
 
@@ -148,14 +148,14 @@ class AbstractEpochMethod(eqx.Module):
 
         `TypeError` for unsupported combinations; `ValueError` for static input errors.
         Runtime domain checks remain active even with `throw=False`; Krylov
-        sensitivity failures also raise independently of `throw`. Sequential
+        sensitivity failures also raise independently of `throw`. [`Sequential`][drifft.Sequential]
         supports higher derivatives; higher-order Krylov operator sensitivities
         are unsupported.
 
         !!! note "Generation timing"
 
             This call uses the supplied backend for all 250 generations.
-            `Demography([64, 64], [250])` instead uses 249 hold generations and
+            [`Demography([64, 64], [250])`][drifft.Demography] instead uses 249 hold generations and
             one boundary generation, even with equal sizes. Different numerical
             representations of these steps can produce different approximations
             to the same biological recurrence.
@@ -202,13 +202,13 @@ def prepare_epoch(
 
     - `method`: Epoch algorithm whose representation requirement selects preparation.
     - `backend`: Prepared geometry, constructed outside JIT.
-    - `distribution`: Full or interior mass, as in `AbstractEpochMethod.advance`.
+    - `distribution`: Full or interior mass, as in [`AbstractEpochMethod.advance`][drifft.AbstractEpochMethod.advance].
     - `frequency_map`, `generations`, `segregating`, `source_mass`: Process, static
       duration, state layout and per-generation source as in that interface.
 
     **Returns:**
 
-    A PyTree implementing the read-only `EpochProblem` contract. Pass it to
+    A PyTree implementing the read-only [`EpochProblem`][drifft.EpochProblem] contract. Pass it to
     `method.solve`; custom `advance` implementations can use this function
     inside JIT or differentiation. Preparation preserves biological parameter
     links and owns source timing and representation-specific reconstruction.
@@ -247,8 +247,8 @@ class Sequential(AbstractEpochMethod):
     each step instead computes $v_{t+1}=\widetilde P^T v_t+b$; segregating
     evolution uses the interior restriction $\widetilde Q$.
 
-    Construct as `Sequential()`. Geometry is supplied separately to `advance` or
-    through `DemographicTransition`. The reported power-action error is zero;
+    Construct as [`Sequential()`][drifft.Sequential]. Geometry is supplied separately to `advance` or
+    through [`DemographicTransition`][drifft.DemographicTransition]. The reported power-action error is zero;
     backend approximation and floating-point errors remain.
     """
 
@@ -257,7 +257,7 @@ class Sequential(AbstractEpochMethod):
     def validate(
         self, backend: AbstractTransitionBackend, frequency_map: AbstractFrequencyMap
     ) -> None:
-        r"""Check the types required by `AbstractEpochMethod.validate`.
+        r"""Check the types required by [`AbstractEpochMethod.validate`][drifft.AbstractEpochMethod.validate].
 
         **Arguments:**
 
@@ -265,7 +265,7 @@ class Sequential(AbstractEpochMethod):
 
         **Returns:**
 
-        `None`. No reduced-assembly map restrictions apply to Sequential.
+        `None`. No reduced-assembly map restrictions apply to [`Sequential`][drifft.Sequential].
 
         **Raises:**
 
@@ -280,12 +280,12 @@ class Sequential(AbstractEpochMethod):
 
         **Arguments:**
 
-        - `problem`: Prepared problem; see `AbstractEpochMethod.solve`.
+        - `problem`: Prepared problem; see [`AbstractEpochMethod.solve`][drifft.AbstractEpochMethod.solve].
         - `throw`: Raise on nonfinite output when true.
 
         **Returns:**
 
-        An `EpochResult` with zero power-approximation error. This does not
+        An [`EpochResult`][drifft.EpochResult] with zero power-approximation error. This does not
         measure accumulated backend error or floating-point roundoff.
         """
         state = _power_action(self, problem.operator, problem.initial, problem.steps)
@@ -320,7 +320,7 @@ Sequential.__init__.__doc__ = r"""Configure repeated one-generation evolution.
 
 **Arguments:**
 
-No arguments. Supply geometry separately to `advance` or `DemographicTransition`.
+No arguments. Supply geometry separately to `advance` or [`DemographicTransition`][drifft.DemographicTransition].
 """
 
 
@@ -334,10 +334,10 @@ class AbstractKrylovMethod(AbstractEpochMethod):
 
     Backend reduction is permitted when available. Power-error estimates exclude
     backend and representation errors. First-order operator sensitivities are
-    supported; higher-order operator sensitivities require `Sequential`.
+    supported; higher-order operator sensitivities require [`Sequential`][drifft.Sequential].
 
-    Use `PolynomialKrylov` or `RationalKrylov` for evolution. For an independent
-    power algorithm, implement `AbstractEpochMethod`; this base shares the
+    Use [`PolynomialKrylov`][drifft.PolynomialKrylov] or [`RationalKrylov`][drifft.RationalKrylov] for evolution. For an independent
+    power algorithm, implement [`AbstractEpochMethod`][drifft.AbstractEpochMethod]; this base shares the
     built-in Krylov machinery rather than providing configurable basis builders
     or shifted-solve strategies.
     """
@@ -372,15 +372,15 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         **Arguments:**
 
         - `backend`, `frequency_map`: Geometry and process as in
-          `AbstractEpochMethod.validate`.
+          [`AbstractEpochMethod.validate`][drifft.AbstractEpochMethod.validate].
 
         **Returns:**
 
-        `None`. Jacobi additionally checks that the map supports reduced assembly.
+        `None`. [`Jacobi`][drifft.Jacobi] additionally checks that the map supports reduced assembly.
 
         **Raises:**
 
-        `TypeError` for unsupported types or Jacobi map compositions. Parameter
+        `TypeError` for unsupported types or [`Jacobi`][drifft.Jacobi] map compositions. Parameter
         value checks are deferred to preparation, including for zero generations.
         """
         validate_representation(
@@ -412,12 +412,12 @@ class AbstractKrylovMethod(AbstractEpochMethod):
 
         **Arguments:**
 
-        - `problem`: Prepared problem; see `AbstractEpochMethod.solve`.
+        - `problem`: Prepared problem; see [`AbstractEpochMethod.solve`][drifft.AbstractEpochMethod.solve].
         - `throw`: Raise on a failed primal action when true.
 
         **Returns:**
 
-        An `EpochResult` with reconstructed mass and a power-error estimate from
+        An [`EpochResult`][drifft.EpochResult] with reconstructed mass and a power-error estimate from
         nested spaces and recurrence defects. This estimate is not a certificate
         and excludes backend approximation. With `throw=False`, inspect `converged`.
 
@@ -425,7 +425,7 @@ class AbstractKrylovMethod(AbstractEpochMethod):
 
         Runtime errors for failed primal checks with `throw=True`, or failed
         sensitivities regardless of `throw`. Higher-order operator sensitivities
-        raise explicitly; use Sequential when they are needed.
+        raise explicitly; use [`Sequential`][drifft.Sequential] when they are needed.
         """
         if not isinstance(problem, _PowerProblem):
             raise TypeError(
@@ -465,7 +465,7 @@ class RationalKrylov(AbstractKrylovMethod):
     supplies the power. Compared with polynomial Krylov, this space can capture
     slow, near-stationary dynamics with fewer basis vectors, reducing the cost
     of long intervals when the savings outweigh the shifted-solve cost.
-    Jacobi uses a reusable dense LU factorization for shifted solves;
+    [`Jacobi`][drifft.Jacobi] uses a reusable dense LU factorization for shifted solves;
     other backends use unpreconditioned Lineax GMRES.
     Inner failures are reported as `linear_solve_failed`, independently of
     the outer power tolerances.
@@ -495,7 +495,7 @@ class PolynomialKrylov(AbstractKrylovMethod):
     and $k$ is the working exponent. Arnoldi constructs an orthonormal basis
     $V_m$ for this space; $H_m=V_m^TAV_m$ is the projected operator. Building
     the basis needs only operator applications, with no shifted solves.
-    All transition backends are supported, including Dense for small references.
+    All transition backends are supported, including [`Dense`][drifft.Dense] for small references.
     Basis storage is $O(dm)$ for working-state size $d$; the basis size is
     capped by `dimension`, $d$, and $k+1$.
 

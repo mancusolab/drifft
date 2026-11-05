@@ -1,8 +1,8 @@
 # Jacobi reduction
 
-`Jacobi` approximates binomial expectations in polynomial coefficients. It
+[`Jacobi`](../api/backends.md#drifft.Jacobi) approximates binomial expectations in polynomial coefficients. It
 supports one-generation transitions and supplies a reduced state for Krylov
-evolution. This differs from the Chebyshev interpolation used by `NUFFT`.
+evolution. This differs from the Chebyshev interpolation used by [`NUFFT`](../api/backends.md#drifft.NUFFT).
 
 Configuration: [API reference](../api/backends.md#drifft.Jacobi).
 

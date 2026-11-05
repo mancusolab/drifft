@@ -1,6 +1,6 @@
 # Hypergeometric sampling
 
-`HypergeometricSampling` maps a final population distribution to a sample drawn
+[`HypergeometricSampling`](../api/sampling.md#drifft.HypergeometricSampling) maps a final population distribution to a sample drawn
 without replacement. It does not advance a generation or apply selection.
 
 Configuration: [API reference](../api/sampling.md).

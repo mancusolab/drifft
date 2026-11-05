@@ -61,23 +61,23 @@ including matched-degree and larger-degree derivative experiments.
 Use `benchmarks/compare_demography.py` to compare Sequential FFT with Jacobi and
 RationalKrylov on a neutral history with singleton mutation input. Its
 [report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RATIONAL_KRYLOV.md)
-includes a rerun after the backend/method API separation; check each
-measurement's recorded revision and workload.
+records the revision and workload for each measurement.
 
 See [historical replacement results](https://github.com/mancusolab/drifft/blob/main/benchmarks/BERNSTEIN.md) for measured limitations.
 The older [CPU report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RESULTS.md) and
 [fastDTWF comparison](https://github.com/mancusolab/drifft/blob/main/benchmarks/FASTDTWF.md) describe the previous backend and
-record earlier revisions; their measurements have not been regenerated for this refactor.
+record earlier revisions. Interpret those measurements against their recorded
+implementations rather than the current code.
 
 ## Schiffels–Durbin likelihood calculation
 
 These recorded measurements accompany the [sample-likelihood example](examples/schiffels_durbin.md).
-They were not rerun for the documentation reorganization.
+They describe the recorded run and have not been remeasured against the current code.
 
 For the default history, all 53 interval checks passed with 128 Krylov vectors.
 Total probability mass differed from one by $4.3\times10^{-12}$, and every
 population and sample bin was positive. Compared with the previous FFT plus
-512-vector `PolynomialKrylov` calculation, the likelihood of $K=5$ differed
+512-vector [`PolynomialKrylov`](api/methods.md#drifft.PolynomialKrylov) calculation, the likelihood of $K=5$ differed
 relatively by $1.3\times10^{-10}$. The largest relative difference across the
 conditional sample probabilities was $8.5\times10^{-8}$. These are comparisons
 between approximations, not exact-error bounds.

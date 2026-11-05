@@ -9,7 +9,7 @@ and end at 64 diploid individuals, and use neutral reproduction without mutation
 
 ## Calculation
 
-After [installing drifft](../index.md#installation), save the code below as
+After [installing `drifft`](../index.md#installation), save the code below as
 `bottleneck.py` and run `uv run --with matplotlib python bottleneck.py`.
 Matplotlib is needed only for plotting.
 
@@ -47,9 +47,10 @@ for index, (label, history) in enumerate(histories.items()):
         label=label,
         linestyle="-" if index == 0 else "--",
     )
+    # Prepare the count grids for this history before applying its biological model.
+    geometry = history.prepare(backend_factory=drifft.FFT)
     model = drifft.DemographicTransition(
-        history,
-        backend_factory=drifft.FFT,
+        geometry,
         method=drifft.Sequential(),  # Apply reproduction one generation at a time.
         frequency_map=drifft.Neutral(),  # Isolate drift: no selection or mutation.
     )
@@ -57,6 +58,7 @@ for index, (label, history) in enumerate(histories.items()):
     result = model.advance(initial)
     assert result.converged
     distribution = result.distribution
+    # Weight final frequencies by their probabilities to compute the moments.
     mean = distribution @ frequencies
     variance = distribution @ (frequencies - mean) ** 2
     # Neutral drift preserves total probability and mean frequency, even as size changes.

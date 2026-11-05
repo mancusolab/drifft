@@ -1,6 +1,6 @@
 # Local FFT convolution
 
-`FFT` represents one-generation binomial expectations using local convolutions.
+[`FFT`](../api/backends.md#drifft.FFT) represents one-generation binomial expectations using local convolutions.
 It operates on population-sized vectors; it does not maintain a reduced state
 between generations.
 

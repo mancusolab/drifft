@@ -1,7 +1,7 @@
 """HiJAX power actions with method-owned sensitivities and explicit adjoints.
 
 Preparation, reconstruction, and diagnostics remain outside these primitives.
-Sequential uses an exact coupled recurrence. Krylov methods approximate the
+[`Sequential`][drifft.Sequential] uses an exact coupled recurrence. Krylov methods approximate the
 Frechet action and its operator pullback without differentiating Arnoldi bases.
 """
 

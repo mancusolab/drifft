@@ -1,4 +1,4 @@
-"""Selection-independent, host-side FFT geometry construction."""
+"""Selection-independent, host-side [`FFT`][drifft.FFT] geometry construction."""
 
 # pattern: Functional Core
 # Deterministic planning, no file or network I/O.
@@ -379,7 +379,7 @@ class FFT(AbstractTransitionBackend):
         `ValueError` for incompatible vector shapes, including during JIT tracing.
 
         Finiteness and probability ranges follow the unchecked preconditions of
-        `AbstractTransitionBackend.expect`; signed values are supported.
+        [`AbstractTransitionBackend.expect`][drifft.AbstractTransitionBackend.expect]; signed values are supported.
         """
         probabilities = jnp.asarray(probabilities, dtype=jnp.float64)
         values = jnp.asarray(values, dtype=jnp.float64)

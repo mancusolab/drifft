@@ -9,6 +9,7 @@ import numpy as np
 
 import drifft
 
+# Enable float64 before preparing geometry; the numerical backends require it.
 jax.config.update("jax_enable_x64", True)
 
 # Bundled example history; see the documentation for provenance limitations.
@@ -22,38 +23,48 @@ raw_time, raw_ne = history_data.T
 # The default run ends before the large recent expansion.
 end_time = 252
 keep = raw_time >= end_time
+# Convert inferred sizes and dates to integer diploid sizes and generation counts.
 pop_sizes = np.rint(raw_ne[keep]).astype(int).tolist()
 boundaries = np.rint(raw_time[keep]).astype(int)
+# Dates decrease toward the present; adjacent differences give positive durations.
 generations = (boundaries[:-1] - boundaries[1:]).tolist()
 history = drifft.Demography(pop_sizes=pop_sizes, generations=generations)
 print(f"History endpoint: {boundaries[-1]} generations ago")
 
+# Composition is ordered: recurrent mutation acts before additive selection here.
 frequency_map = drifft.Composition(
     drifft.Mutation(forward_rate=1e-8, backward_rate=1e-8),
     drifft.AdditiveSelection(s=2e-4),
 )
-model = drifft.DemographicTransition(
-    history,
+# Use reduced Jacobi geometry for holds and FFT for changes between count grids.
+geometry = history.prepare(
     backend_factory=drifft.Jacobi,
     boundary_backend_factory=drifft.FFT,
-    method=drifft.RationalKrylov(dimension=128, rtol=1e-10, atol=1e-13),
+)
+# Approximate long holds with a Krylov basis capped at 128 vectors.
+method = drifft.RationalKrylov(dimension=128, rtol=1e-10, atol=1e-13)
+model = drifft.DemographicTransition(
+    geometry,
+    method=method,
     frequency_map=frequency_map,
 )
 
 # Explicit ancestral condition: the derived allele is absent at the oldest boundary.
 initial = jnp.zeros(2 * history.initial_pop_size + 1).at[0].set(1.0)
+# Return failure diagnostics for inspection instead of raising on numerical failure.
 result = model.advance(initial, throw=False)
 # In practice, check result.converged and that population mass is finite and sums to one.
 population_probabilities = result.distribution
 
 # Sample 100 gene copies without replacement from the endpoint population.
 sample_size = 50
-observed_count = 5  # Illustrative observation, not an empirical dataset.
+observed_count = 5  # One illustrative site: 5 derived copies out of 100 sampled copies.
 sampling = drifft.HypergeometricSampling(
     pop_size=history.final_pop_size,
     sample_size=sample_size,
     accuracy=1e-10,
 )
+# Marginalize over unknown population counts to obtain P(K=k) in the sample.
 sample_probabilities = sampling.advance(population_probabilities)
 # In practice, check sample mass and positivity before conditioning or taking logs.
 
@@ -61,6 +72,7 @@ sample_probabilities = sampling.advance(population_probabilities)
 segregating = sample_probabilities[1:-1]
 conditional_probabilities = segregating / segregating.sum()
 likelihood = sample_probabilities[observed_count]
+# Removing the zero-count bin shifts interior indices down by one.
 conditional_likelihood = conditional_probabilities[observed_count - 1]
 print(f"P(K={observed_count}) = {likelihood:.6g}")
 print(f"Log likelihood = {jnp.log(likelihood):.6g}")

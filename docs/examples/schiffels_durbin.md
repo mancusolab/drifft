@@ -71,6 +71,7 @@ import numpy as np
 
 import drifft
 
+# Enable float64 before preparing geometry; the numerical backends require it.
 jax.config.update("jax_enable_x64", True)
 
 # Bundled example history; see the documentation for provenance limitations.
@@ -84,38 +85,48 @@ raw_time, raw_ne = history_data.T
 # The default run ends before the large recent expansion.
 end_time = 252
 keep = raw_time >= end_time
+# Convert inferred sizes and dates to integer diploid sizes and generation counts.
 pop_sizes = np.rint(raw_ne[keep]).astype(int).tolist()
 boundaries = np.rint(raw_time[keep]).astype(int)
+# Dates decrease toward the present; adjacent differences give positive durations.
 generations = (boundaries[:-1] - boundaries[1:]).tolist()
 history = drifft.Demography(pop_sizes=pop_sizes, generations=generations)
 print(f"History endpoint: {boundaries[-1]} generations ago")
 
+# Composition is ordered: recurrent mutation acts before additive selection here.
 frequency_map = drifft.Composition(
     drifft.Mutation(forward_rate=1e-8, backward_rate=1e-8),
     drifft.AdditiveSelection(s=2e-4),
 )
-model = drifft.DemographicTransition(
-    history,
+# Use reduced Jacobi geometry for holds and FFT for changes between count grids.
+geometry = history.prepare(
     backend_factory=drifft.Jacobi,
     boundary_backend_factory=drifft.FFT,
-    method=drifft.RationalKrylov(dimension=128, rtol=1e-10, atol=1e-13),
+)
+# Approximate long holds with a Krylov basis capped at 128 vectors.
+method = drifft.RationalKrylov(dimension=128, rtol=1e-10, atol=1e-13)
+model = drifft.DemographicTransition(
+    geometry,
+    method=method,
     frequency_map=frequency_map,
 )
 
 # Explicit ancestral condition: the derived allele is absent at the oldest boundary.
 initial = jnp.zeros(2 * history.initial_pop_size + 1).at[0].set(1.0)
+# Return failure diagnostics for inspection instead of raising on numerical failure.
 result = model.advance(initial, throw=False)
 # In practice, check result.converged and that population mass is finite and sums to one.
 population_probabilities = result.distribution
 
 # Sample 100 gene copies without replacement from the endpoint population.
 sample_size = 50
-observed_count = 5  # Illustrative observation, not an empirical dataset.
+observed_count = 5  # One illustrative site: 5 derived copies out of 100 sampled copies.
 sampling = drifft.HypergeometricSampling(
     pop_size=history.final_pop_size,
     sample_size=sample_size,
     accuracy=1e-10,
 )
+# Marginalize over unknown population counts to obtain P(K=k) in the sample.
 sample_probabilities = sampling.advance(population_probabilities)
 # In practice, check sample mass and positivity before conditioning or taking logs.
 
@@ -123,6 +134,7 @@ sample_probabilities = sampling.advance(population_probabilities)
 segregating = sample_probabilities[1:-1]
 conditional_probabilities = segregating / segregating.sum()
 likelihood = sample_probabilities[observed_count]
+# Removing the zero-count bin shifts interior indices down by one.
 conditional_likelihood = conditional_probabilities[observed_count - 1]
 print(f"P(K={observed_count}) = {likelihood:.6g}")
 print(f"Log likelihood = {jnp.log(likelihood):.6g}")
@@ -169,6 +181,41 @@ through recurrent mutation. This is a finite-allele likelihood, not an
 infinite-sites spectrum with singleton mutation input or MSMC's likelihood for
 inferring demography. Multisite composite-likelihood uncertainty requires
 separate treatment of linkage and ascertainment.
+
+## Differentiate the sample likelihood
+
+Reuse both demographic and sampling geometry. Only the frequency map and its
+lightweight transition binding are constructed inside the objective:
+
+```python
+def log_likelihood(parameters):
+    s, u, v = parameters
+    # Preserve the mutation-then-selection order used in the forward calculation.
+    process = drifft.Composition(
+        drifft.Mutation(forward_rate=u, backward_rate=v),
+        drifft.AdditiveSelection(s=s),
+    )
+    # Rebind the process while reusing demographic geometry and algorithm settings.
+    transition = drifft.DemographicTransition(geometry, process, method=method)
+    population = transition.advance(initial).distribution
+    # Sampling sums over latent population counts; its fixed geometry is reusable.
+    probabilities = sampling.advance(population)
+    # A scalar count describes one site, so this is one log probability.
+    return jnp.log(probabilities[observed_count])
+
+
+# The gradient has entries for s, u, and v, in the same order as the input.
+value_and_gradient = jax.jit(jax.value_and_grad(log_likelihood))
+loglik, gradient = value_and_gradient(jnp.array([2e-4, 1e-8, 1e-8]))
+```
+
+This differentiates the unconditional single-site count likelihood with respect to selection
+and both recurrent mutation rates. For sample-segregating ascertainment, divide
+by `probabilities[1:-1].sum()` before taking the log. Sampling sizes and geometry
+remain fixed; gradients pass through the population probabilities. For an array
+`observed_counts` of independent sites sharing this model and sample size, sum
+the site contributions with `jnp.log(probabilities[observed_counts]).sum()`.
+For dependent sites, that sum is a composite log likelihood.
 
 ## Numerical checks
 

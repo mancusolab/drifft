@@ -9,7 +9,7 @@ penalties. Population size is constant, with no mutation or added source mass.
 
 ## Calculation
 
-After [installing drifft](../index.md#installation), save the code below as
+After [installing `drifft`](../index.md#installation), save the code below as
 `allele_loss.py` and run `uv run --with matplotlib python allele_loss.py`.
 Matplotlib is needed only for plotting.
 
@@ -19,20 +19,26 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import drifft
 
+# Enable float64 before preparing geometry; the numerical backends require it.
 jax.config.update("jax_enable_x64", True)
 generations = 80
+# Geometry depends on population size, so reuse it for every selection strength.
 backend = drifft.FFT(pop_size=32)
 fig, axes = plt.subplots(1, 2, figsize=(9, 3.5))
 
 for s in [0.0, 0.02, 0.1]:
     transition = drifft.Transition(backend, drifft.AdditiveSelection(s=s))
+    # Put all probability at count one: one derived copy among 64 gene copies.
     distribution = jnp.zeros(transition.source_size()).at[1].set(1.0)
+    # Keep both endpoints: index 0 is loss, index -1 is fixation. Include time zero.
     loss = [float(distribution[0])]
     fixation = [float(distribution[-1])]
+    # Each advance is one generation; without mutation, endpoint mass stays absorbed.
     for _ in range(generations):
         distribution = transition.advance(distribution)
         loss.append(float(distribution[0]))
         fixation.append(float(distribution[-1]))
+    # Full-state evolution retains all outcomes, so total probability stays one.
     assert jnp.isclose(distribution.sum(), 1.0, rtol=0, atol=1e-10)
     label = f"s = {s:g}"
     axes[0].plot(range(generations + 1), loss, label=label)

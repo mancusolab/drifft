@@ -4,6 +4,7 @@
 from ._backend import FFT, NUFFT, AbstractTransitionBackend, Dense, Jacobi
 from ._demography import (
     DemographicExpectation,
+    DemographicGeometry,
     DemographicResult,
     DemographicTransition,
     Demography,
@@ -45,6 +46,7 @@ __all__ = [
     "AdditiveSelection",
     "Composition",
     "DemographicExpectation",
+    "DemographicGeometry",
     "DemographicResult",
     "DemographicTransition",
     "Demography",

@@ -12,12 +12,12 @@ distribution.
 
 | Backend | When to use it |
 | --- | --- |
-| `FFT` | Default for one-generation transitions and Sequential evolution. |
-| `NUFFT` | When retained FFT geometry is too large; trades storage for computation. |
-| `Jacobi` | For reduced-state evolution with Krylov across long constant-size intervals. |
-| `Dense` | As an independent binomial reference for small populations. |
+| [`FFT`](../api/backends.md#drifft.FFT) | Default for one-generation transitions and Sequential evolution. |
+| [`NUFFT`](../api/backends.md#drifft.NUFFT) | When retained FFT geometry is too large; trades storage for computation. |
+| [`Jacobi`](../api/backends.md#drifft.Jacobi) | For reduced-state evolution with Krylov across long constant-size intervals. |
+| [`Dense`](../api/backends.md#drifft.Dense) | As an independent binomial reference for small populations. |
 
-For one generation, pass a backend instance to `Transition`:
+For one generation, pass a backend instance to [`Transition`](../api/transitions.md#drifft.Transition):
 
 ```python
 import jax
@@ -32,17 +32,17 @@ initial = jnp.zeros(transition.source_size()).at[1].set(1.0)
 after_one_generation = transition.advance(initial)
 ```
 
-Replace `drifft.FFT` with `drifft.NUFFT` to change the representation without
-changing the selection model or state layout. Backends and `Demography` both
+Replace [`FFT`](../api/backends.md#drifft.FFT) with [`NUFFT`](../api/backends.md#drifft.NUFFT) to change the representation without
+changing the selection model or state layout. Backends and [`Demography`](../api/demography.md#drifft.Demography) both
 accept diploid population sizes. A size of $N$ gives $2N+1$ allele-count states.
 
-`pop_size`, `source_pop_size`, and `Demography.pop_sizes` count diploid
+`pop_size`, `source_pop_size`, and [`Demography.pop_sizes`](../api/demography.md#drifft.Demography) count diploid
 individuals. Backend factories receive diploid sizes. Hypergeometric sampling
 also uses diploid individuals for both `pop_size` and `sample_size`, with
 $2N+1$ population states and $2m+1$ sample states for diploid sizes $N$ and $m$.
 The sampling theory uses $n=2m$ for the number of sampled copies.
 
-Explicit `Transition(probabilities=...)` vectors represent complete diploid
+Explicit [`Transition(probabilities=...)`](../api/transitions.md#drifft.Transition) vectors represent complete diploid
 source grids: they require an odd number of entries, at least three. Entry $i$
 is the offspring allele probability from source count $i$; the probabilities
 need not be monotone or have absorbing endpoints. For arbitrary evaluation
@@ -63,19 +63,20 @@ They are configured separately from the backend:
 
 | Method | When to use it |
 | --- | --- |
-| `Sequential` | Default: applies the transition each generation. Required for `model.expect()` and higher-order derivatives. |
-| `PolynomialKrylov` | To approximate long intervals using operator applications, without shifted linear solves. Works with FFT or NUFFT for custom frequency maps. |
-| `RationalKrylov` | To approximate long intervals using shifted solves. Pair with Jacobi to perform these solves in reduced coordinates. |
+| [`Sequential`](../api/methods.md#drifft.Sequential) | Default: applies the transition each generation. Required for `model.expect()` and higher-order derivatives. |
+| [`PolynomialKrylov`](../api/methods.md#drifft.PolynomialKrylov) | To approximate long intervals using operator applications, without shifted linear solves. Works with FFT or NUFFT for custom frequency maps. |
+| [`RationalKrylov`](../api/methods.md#drifft.RationalKrylov) | To approximate long intervals using shifted solves. Pair with Jacobi to perform these solves in reduced coordinates. |
 
-For a population history, pass a backend **factory** and a method instance.
+For a population history, pass a backend **factory** to `history.prepare`,
+then bind the resulting geometry to a frequency map and method instance.
 Continuing the example above:
 
 ```python
 history = drifft.Demography(pop_sizes=[64, 32, 64], generations=[100, 100])
+geometry = history.prepare(backend_factory=drifft.FFT)
 model = drifft.DemographicTransition(
-    history,
+    geometry,
     frequency_map=selection,
-    backend_factory=drifft.FFT,
     method=drifft.Sequential(),
 )
 result = model.advance(initial)
@@ -84,11 +85,13 @@ result = model.advance(initial)
 To use reduced-state evolution within intervals and FFT at size changes:
 
 ```python
-reduced_model = drifft.DemographicTransition(
-    history,
-    frequency_map=selection,
+reduced_geometry = history.prepare(
     backend_factory=drifft.Jacobi,
     boundary_backend_factory=drifft.FFT,
+)
+reduced_model = drifft.DemographicTransition(
+    reduced_geometry,
+    frequency_map=selection,
     method=drifft.RationalKrylov(dimension=40),
 )
 reduced_result = reduced_model.advance(initial)

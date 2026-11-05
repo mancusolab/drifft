@@ -93,7 +93,7 @@ class NUFFT(AbstractTransitionBackend):
 
         `ValueError` for invalid configuration or disabled x64. Only float64 is
         supported; enable JAX x64 before construction.
-        FFT-specific settings belong to the FFT backend.
+        FFT-specific settings belong to the [`FFT`][drifft.FFT] backend.
         """
         if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 1:
             raise ValueError("pop_size must be a Python integer >= 1")
@@ -231,7 +231,7 @@ class NUFFT(AbstractTransitionBackend):
         `ValueError` for incompatible vector shapes, including during JIT tracing.
 
         Finiteness and probability ranges follow the unchecked preconditions of
-        `AbstractTransitionBackend.expect`; signed values are supported.
+        [`AbstractTransitionBackend.expect`][drifft.AbstractTransitionBackend.expect]; signed values are supported.
         """
         probabilities = jnp.asarray(probabilities, dtype=jnp.float64)
         values = jnp.asarray(values, dtype=jnp.float64)

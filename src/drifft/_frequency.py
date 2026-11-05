@@ -26,6 +26,11 @@ class AbstractFrequencyMap(eqx.Module):
     provides shorthand. Implementations must be pure and JAX-compatible;
     differentiable parameters are stored as array leaves.
 
+    Input frequencies and output probabilities must be finite and in `[0, 1]`.
+    Each map's parameter domain is a caller precondition, including under JIT
+    and vmap. Built-in constructors check scalar parameter shapes, not value
+    bounds; maps do not clip parameters or clip or normalize their outputs.
+
     !!! example "Example: Offspring allele probabilities"
 
         ```python
@@ -109,7 +114,7 @@ class FrequencyMap(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-FrequencyMap.__init__.__doc__ = r"""Initialize FrequencyMap.
+FrequencyMap.__init__.__doc__ = r"""Initialize [`FrequencyMap`][drifft.FrequencyMap].
 
 **Arguments:**
 
@@ -120,7 +125,7 @@ FrequencyMap.__init__.__doc__ = r"""Initialize FrequencyMap.
 **Raises:**
 
 `TypeError` for non-callable functions. Output shape and probability ranges
-follow `AbstractFrequencyMap`'s contract; transitions check output shape.
+follow [`AbstractFrequencyMap`][drifft.AbstractFrequencyMap]'s contract; transitions check output shape.
 """
 
 
@@ -204,8 +209,8 @@ class DiploidSelection(AbstractFrequencyMap):
     {(1-x)^2+2(1-s_{\mathrm{het}})x(1-x)+(1-s_{\mathrm{hom}})x^2}.$$
 
     Both coefficients are explicit; there is no default dominance relationship
-    or clipping. Negative coefficients represent fitness advantages. Mutation
-    is a separate map, applied in the order specified by `Composition`.
+    or clipping. Negative coefficients represent fitness advantages. [`Mutation`][drifft.Mutation]
+    is a separate map, applied in the order specified by [`Composition`][drifft.Composition].
     """
 
     s_het: jax.Array = eqx.field(converter=_as_float64)
@@ -231,7 +236,7 @@ class DiploidSelection(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-DiploidSelection.__init__.__doc__ = r"""Initialize DiploidSelection.
+DiploidSelection.__init__.__doc__ = r"""Initialize [`DiploidSelection`][drifft.DiploidSelection].
 
 **Arguments:**
 
@@ -245,13 +250,6 @@ fixation; a lethal derived homozygote is outside this map's domain.
 **Raises:**
 
 `ValueError` for nonscalar coefficients.
-
-!!! warning "Parameter domain"
-
-    Value constraints are caller preconditions, including under JIT and vmap.
-    Outputs and parameters are not clipped. All backends support this map.
-    Jacobi's reduced Krylov assembly requires both coefficients to have absolute
-    value at most its configured `max_strength`, which is strictly below one.
 """
 
 
@@ -259,7 +257,7 @@ fixation; a lethal derived homozygote is outside this map's domain.
 class Neutral(AbstractFrequencyMap):
     r"""Identity frequency map for neutral reproduction without mutation.
 
-    This is `DiploidSelection(0, 0)`, simplified to $q(x)=x$ to preserve
+    This is [`DiploidSelection(0, 0)`][drifft.DiploidSelection], simplified to $q(x)=x$ to preserve
     the input dtype and avoid unnecessary arithmetic.
     """
 
@@ -278,7 +276,7 @@ class Neutral(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-Neutral.__init__.__doc__ = r"""Initialize Neutral.
+Neutral.__init__.__doc__ = r"""Initialize [`Neutral`][drifft.Neutral].
 
 **Arguments:**
 
@@ -322,24 +320,21 @@ class Mutation(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-Mutation.__init__.__doc__ = r"""Initialize Mutation.
+Mutation.__init__.__doc__ = r"""Initialize [`Mutation`][drifft.Mutation].
 
 **Arguments:**
 
-- `forward_rate`: Per-generation probability of mutation from allele 0 to 1.
-- `backward_rate`: Per-generation probability of mutation from allele 1 to 0.
+- `forward_rate`: Finite per-generation probability in `[0, 1]` of mutation
+  from allele 0 to 1.
+- `backward_rate`: Finite per-generation probability in `[0, 1]` of mutation
+  from allele 1 to 0.
 
 Both rates default to zero and become dynamic float64 scalar leaves.
-Each rate lies in `[0, 1]`; their sum need not be less than one.
+Their sum need not be less than one. Enable JAX x64 before construction.
 
 **Raises:**
 
 `ValueError` for nonscalar rates.
-
-!!! warning "Parameter domain"
-
-    Rates must be finite and in `[0, 1]`. These value constraints are unchecked,
-    including under JIT. Enable JAX x64 before construction.
 """
 
 
@@ -380,7 +375,7 @@ class Composition(AbstractFrequencyMap):
 
         **Arguments:**
 
-        - `*maps`: One or more `AbstractFrequencyMap` instances, applied left to right.
+        - `*maps`: One or more [`AbstractFrequencyMap`][drifft.AbstractFrequencyMap] instances, applied left to right.
 
         **Raises:**
 
@@ -416,8 +411,8 @@ class Underdominance(AbstractFrequencyMap):
     r"""Symmetric heterozygote disadvantage, callable on allele frequencies.
 
     Genotypes 0/0, 0/1, and 1/1 have fitnesses $1$, $1-s$, and $1$.
-    This is the constrained diploid rule `DiploidSelection(s_het=s, s_hom=0)`;
-    both homozygotes have equal fitness. `AdditiveSelection(s)` instead
+    This is the constrained diploid rule [`DiploidSelection(s_het=s, s_hom=0)`][drifft.DiploidSelection];
+    both homozygotes have equal fitness. [`AdditiveSelection(s)`][drifft.AdditiveSelection] instead
     assigns fitnesses $1$, $1-s/2$, and $1-s$.
 
     For allele frequency $x$ and heterozygote disadvantage $s$,
@@ -425,7 +420,7 @@ class Underdominance(AbstractFrequencyMap):
     $$q_s(x) = \frac{x-sx(1-x)}{1-2sx(1-x)}.$$
 
     Uses the shared diploid numerical function. The named class also selects
-    the specialized underdominance assembly supported by the Jacobi backend.
+    the specialized underdominance assembly supported by the [`Jacobi`][drifft.Jacobi] backend.
     """
 
     strength: jax.Array = eqx.field(converter=_as_float64)
@@ -450,21 +445,18 @@ class Underdominance(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-Underdominance.__init__.__doc__ = r"""Initialize Underdominance.
+Underdominance.__init__.__doc__ = r"""Initialize [`Underdominance`][drifft.Underdominance].
 
 **Arguments:**
 
-- `strength`: Heterozygote fitness reduction in `[0, 1]`, converted to a
+- `strength`: Finite heterozygote fitness reduction in `[0, 1]`, converted to a
   float64 JAX leaf. Changing its value does not change model structure.
+
+Enable JAX x64 before construction.
 
 **Raises:**
 
 `ValueError` for nonscalar strength.
-
-!!! warning "Parameter domain"
-
-    Strength must be finite and in `[0, 1]`. This value constraint is unchecked,
-    including under JIT and vmap. Enable JAX x64 before construction.
 """
 
 
@@ -473,9 +465,9 @@ class AdditiveSelection(AbstractFrequencyMap):
     r"""Additive diploid fitness effects.
 
     Genotype fitnesses are $1$, $1-s/2$, and $1-s$. The coefficient is the
-    derived-homozygote fitness reduction, as in `DominanceSelection(s, h=0.5)`.
+    derived-homozygote fitness reduction, as in [`DominanceSelection(s, h=0.5)`][drifft.DominanceSelection].
 
-    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    Uses the [`DiploidSelection`][drifft.DiploidSelection] numerical rule with coefficients derived from
     the current parameter leaves on every call.
     """
 
@@ -501,7 +493,7 @@ class AdditiveSelection(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-AdditiveSelection.__init__.__doc__ = r"""Initialize AdditiveSelection.
+AdditiveSelection.__init__.__doc__ = r"""Initialize [`AdditiveSelection`][drifft.AdditiveSelection].
 
 **Arguments:**
 
@@ -509,10 +501,8 @@ AdditiveSelection.__init__.__doc__ = r"""Initialize AdditiveSelection.
   The heterozygote reduction is `s / 2`; negative values represent advantages.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
-construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
-checks that both derived selection coefficients have absolute value at most
-its configured `max_strength`.
+construction. The shared domain contract is defined by
+[`AbstractFrequencyMap`][drifft.AbstractFrequencyMap].
 
 **Raises:**
 
@@ -524,7 +514,7 @@ its configured `max_strength`.
 class DominanceSelection(AbstractFrequencyMap):
     r"""Diploid selection with fitnesses $1$, $1-hs$, and $1-s$.
 
-    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    Uses the [`DiploidSelection`][drifft.DiploidSelection] numerical rule with coefficients derived from
     the current parameter leaves on every call.
     """
 
@@ -552,7 +542,7 @@ class DominanceSelection(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-DominanceSelection.__init__.__doc__ = r"""Initialize DominanceSelection.
+DominanceSelection.__init__.__doc__ = r"""Initialize [`DominanceSelection`][drifft.DominanceSelection].
 
 **Arguments:**
 
@@ -560,10 +550,8 @@ DominanceSelection.__init__.__doc__ = r"""Initialize DominanceSelection.
 - `h`: Finite dominance coefficient, with finite `h * s <= 1`.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
-construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
-checks that both derived selection coefficients have absolute value at most
-its configured `max_strength`.
+construction. The shared domain contract is defined by
+[`AbstractFrequencyMap`][drifft.AbstractFrequencyMap].
 
 **Raises:**
 
@@ -575,7 +563,7 @@ its configured `max_strength`.
 class RecessiveSelection(AbstractFrequencyMap):
     r"""Completely recessive fitness effects with fitnesses $1$, $1$, and $1-s$.
 
-    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    Uses the [`DiploidSelection`][drifft.DiploidSelection] numerical rule with coefficients derived from
     the current parameter leaves on every call.
     """
 
@@ -601,17 +589,15 @@ class RecessiveSelection(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-RecessiveSelection.__init__.__doc__ = r"""Initialize RecessiveSelection.
+RecessiveSelection.__init__.__doc__ = r"""Initialize [`RecessiveSelection`][drifft.RecessiveSelection].
 
 **Arguments:**
 
 - `s`: Derived-homozygote fitness reduction, finite and strictly below one.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
-construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
-checks that both derived selection coefficients have absolute value at most
-its configured `max_strength`.
+construction. The shared domain contract is defined by
+[`AbstractFrequencyMap`][drifft.AbstractFrequencyMap].
 
 **Raises:**
 
@@ -623,7 +609,7 @@ its configured `max_strength`.
 class DominantSelection(AbstractFrequencyMap):
     r"""Completely dominant fitness effects with fitnesses $1$, $1-s$, and $1-s$.
 
-    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    Uses the [`DiploidSelection`][drifft.DiploidSelection] numerical rule with coefficients derived from
     the current parameter leaves on every call.
     """
 
@@ -649,17 +635,15 @@ class DominantSelection(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-DominantSelection.__init__.__doc__ = r"""Initialize DominantSelection.
+DominantSelection.__init__.__doc__ = r"""Initialize [`DominantSelection`][drifft.DominantSelection].
 
 **Arguments:**
 
 - `s`: Fitness reduction for carriers, finite and strictly below one.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
-construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
-checks that both derived selection coefficients have absolute value at most
-its configured `max_strength`.
+construction. The shared domain contract is defined by
+[`AbstractFrequencyMap`][drifft.AbstractFrequencyMap].
 
 **Raises:**
 
@@ -671,7 +655,7 @@ its configured `max_strength`.
 class Overdominance(AbstractFrequencyMap):
     r"""Symmetric heterozygote advantage with fitnesses $1$, $1+s$, and $1$.
 
-    Uses the `DiploidSelection` numerical rule with coefficients derived from
+    Uses the [`DiploidSelection`][drifft.DiploidSelection] numerical rule with coefficients derived from
     the current parameter leaves on every call.
     """
 
@@ -697,17 +681,15 @@ class Overdominance(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-Overdominance.__init__.__doc__ = r"""Initialize Overdominance.
+Overdominance.__init__.__doc__ = r"""Initialize [`Overdominance`][drifft.Overdominance].
 
 **Arguments:**
 
 - `strength`: Finite, nonnegative heterozygote fitness advantage.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
-construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
-checks that both derived selection coefficients have absolute value at most
-its configured `max_strength`.
+construction. The shared domain contract is defined by
+[`AbstractFrequencyMap`][drifft.AbstractFrequencyMap].
 
 **Raises:**
 
@@ -797,17 +779,15 @@ class MultiplicativeSelection(AbstractFrequencyMap):
 
 
 # Document the generated constructor without replacing its implementation.
-MultiplicativeSelection.__init__.__doc__ = r"""Initialize MultiplicativeSelection.
+MultiplicativeSelection.__init__.__doc__ = r"""Initialize [`MultiplicativeSelection`][drifft.MultiplicativeSelection].
 
 **Arguments:**
 
 - `r`: Finite, strictly positive fitness multiplier per derived allele.
 
 Parameters become dynamic float64 scalar leaves. Enable JAX x64 before
-construction. Value constraints are caller preconditions, including under JIT
-and vmap; no clipping is applied. FFT and NUFFT support this rule. Jacobi
-checks that both derived selection coefficients have absolute value at most
-its configured `max_strength`.
+construction. The shared domain contract is defined by
+[`AbstractFrequencyMap`][drifft.AbstractFrequencyMap].
 
 **Raises:**
 

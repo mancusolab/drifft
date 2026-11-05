@@ -36,7 +36,7 @@ Selection and mutation determine the offspring sampling probability before
 reproduction. Their order is part of the model, since the maps generally do
 not commute.
 
-`DiploidSelection(s_het, s_hom)` assigns genotype fitnesses $1$,
+[`DiploidSelection(s_het, s_hom)`](../api/frequency_maps.md#drifft.DiploidSelection) assigns genotype fitnesses $1$,
 $1-s_{\mathrm{het}}$, and $1-s_{\mathrm{hom}}$ to 0/0, 0/1, and 1/1.
 Under random mating, weighting genotype frequencies by survival gives
 
@@ -49,16 +49,16 @@ Negative coefficients give fitness advantages. The supported domain is
 $s_{\mathrm{het}}\le1$ and $s_{\mathrm{hom}}<1$, with finite coefficients;
 the strict homozygote bound keeps mean fitness positive at fixation.
 
-`DominanceSelection(s, h)` sets $s_{\mathrm{het}}=hs$ and
-$s_{\mathrm{hom}}=s$. `AdditiveSelection(s)` fixes $h=1/2$, giving
+[`DominanceSelection(s, h)`](../api/frequency_maps.md#drifft.DominanceSelection) sets $s_{\mathrm{het}}=hs$ and
+$s_{\mathrm{hom}}=s$. [`AdditiveSelection(s)`](../api/frequency_maps.md#drifft.AdditiveSelection) fixes $h=1/2$, giving
 $s_{\mathrm{het}}=s/2$ and requiring $s<1$. This is the uncapped additive
 model, rather than fastDTWF's capped default. The derived coefficient $hs$
-must also be finite. `MultiplicativeSelection(r)` instead uses fitnesses
+must also be finite. [`MultiplicativeSelection(r)`](../api/frequency_maps.md#drifft.MultiplicativeSelection) instead uses fitnesses
 $(1,\rho,\rho^2)$ and gives $q(x)=\rho x/(1-x+\rho x)$ for $\rho>0$
 (the API names this ratio `r`). Additive and
 multiplicative fitness produce different exact discrete-time updates.
 
-`Neutral` uses $q(x)=x$. For `Underdominance`, the genotype fitnesses of
+[`Neutral`](../api/frequency_maps.md#drifft.Neutral) uses $q(x)=x$. For [`Underdominance`](../api/frequency_maps.md#drifft.Underdominance), the genotype fitnesses of
 0/0, 0/1, and 1/1 are $1$, $1-s$, and $1$. Under random mating, mean fitness is
 $1-2sx(1-x)$ and the fitness-weighted allele-1 contribution is $x-sx(1-x)$.
 Dividing gives
@@ -67,17 +67,17 @@ $$
 q_s(x)=\frac{x-sx(1-x)}{1-2sx(1-x)}.
 $$
 
-Thus `Underdominance(strength=s)` is equivalent to
-`DiploidSelection(s_het=s, s_hom=0)`.
+Thus [`Underdominance(strength=s)`](../api/frequency_maps.md#drifft.Underdominance) is equivalent to
+[`DiploidSelection(s_het=s, s_hom=0)`](../api/frequency_maps.md#drifft.DiploidSelection).
 
 With directional mutation rates $\mu_{0\to1}$ and $\mu_{1\to0}$,
-`Mutation` gives the offspring frequency
+[`Mutation`](../api/frequency_maps.md#drifft.Mutation) gives the offspring frequency
 
 $$
 m(x)=x(1-\mu_{1\to0})+(1-x)\mu_{0\to1}.
 $$
 
-`Composition(selection, mutation)` therefore evaluates $m(q_s(x))$.
+[`Composition(selection, mutation)`](../api/frequency_maps.md#drifft.Composition) therefore evaluates $m(q_s(x))$.
 Reversing the arguments evaluates $q_s(m(x))$.
 
 For mutation alone, $m(0)=\mu_{0\to1}$ and $m(1)=1-\mu_{1\to0}$: both boundary states can be left
@@ -136,7 +136,7 @@ c_t=c_{t+1}+b^Tf_{t+1},\qquad f_t=Pf_{t+1}.
 $$
 
 Starting with zero terminal offset, the final reward is $v_0^Tf_0+c_0$.
-`DemographicTransition.expect(...)` returns a `DemographicExpectation` with
+[`DemographicTransition.expect(...)`](../api/demography.md#drifft.DemographicTransition.expect) returns a [`DemographicExpectation`](../api/demography.md#drifft.DemographicExpectation) with
 `values` and `offset`;
 see [singleton input and expectations](../api/demography.md#drifft.DemographicTransition.expect).
 
@@ -164,4 +164,4 @@ the initial generation. `expected_visits()` solves this system.
 See [expected visits](../api/transitions.md#drifft.Transition.expected_visits) for convergence diagnostics and limitations.
 
 Continue with [computational tasks and approximations](../methods/overview.md)
-for how drifft evaluates these quantities at larger population sizes.
+for how `drifft` evaluates these quantities at larger population sizes.

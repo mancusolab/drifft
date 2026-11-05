@@ -25,7 +25,7 @@ class Dense(AbstractTransitionBackend):
     each row, avoiding factorials, logarithms, and divisions by endpoint
     probabilities. The calculation is polynomial throughout, so ordinary
     JAX differentiation gives finite endpoint derivatives. It shares no
-    numerical kernels with FFT, NUFFT, or Jacobi. There is no truncation or
+    numerical kernels with [`FFT`][drifft.FFT], [`NUFFT`][drifft.NUFFT], or [`Jacobi`][drifft.Jacobi]. There is no truncation or
     interpolation, but floating-point roundoff remains.
     With $S$ source rows, matrix construction uses $O(SM)$ storage and
     $O(SM^2)$ arithmetic; use this backend for small-population checks.

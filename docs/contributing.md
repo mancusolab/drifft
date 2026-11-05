@@ -63,26 +63,28 @@ Keep names aligned with the direction of the transition:
 
 | Name | Meaning |
 | --- | --- |
-| `backend` | Transition representation (`FFT`, `NUFFT`, `Jacobi`, or reference `Dense`); Jacobi also supplies reduced Krylov geometry |
-| `method` | Geometry-free epoch algorithm (`Sequential`, `PolynomialKrylov`, or `RationalKrylov`) |
+| `backend` | Transition representation ([`FFT`](api/backends.md#drifft.FFT), [`NUFFT`](api/backends.md#drifft.NUFFT), [`Jacobi`](api/backends.md#drifft.Jacobi), or reference [`Dense`](api/backends.md#drifft.Dense)); Jacobi also supplies reduced Krylov geometry |
+| `method` | Geometry-free epoch algorithm ([`Sequential`](api/methods.md#drifft.Sequential), [`PolynomialKrylov`](api/methods.md#drifft.PolynomialKrylov), or [`RationalKrylov`](api/methods.md#drifft.RationalKrylov)) |
 | `backend_factory`, `boundary_backend_factory` | Prepare transition geometry for demographic holds and size changes |
 | `frequency_map` | Selection, mutation, or a composition of both |
 | `transition` | Backend bound to selection or explicit source probabilities |
 | `probabilities`, `stencil_width` | Computed quantities exposed as properties |
-| `expect(values)` | Destination values to source expectations; demographic calls return `DemographicExpectation(values, offset)` |
+| `expect(values)` | Destination values to source expectations; demographic calls return [`DemographicExpectation(values, offset)`](api/demography.md#drifft.DemographicExpectation) |
 | `advance(distribution)` | Source mass to destination mass; demographic calls return a result |
 | `as_lineax()` | Convert to the linear-operator interface |
 | `expected_visits()` | Domain-named solve returning values and convergence diagnostics |
-| `prepare_epoch()` | Population inputs to an opaque working problem for a method |
+| [`prepare_epoch()`](api/methods.md#drifft.prepare_epoch) | Population inputs to an opaque working problem for a method |
 
 Private helpers use verbs such as `build`, `compute`, `evaluate`, `sample`, and
 `solve`. Benchmark entrypoints use `run`; timing functions use `measure`.
 Published benchmark JSON retains historical `plan_*` field names so reports
 remain comparable; live code calls the prepared object a backend.
 
-`DemographicTransition` composes geometry, frequency maps, and epoch methods.
-Do not introduce a public epoch wrapper. `prepare_epoch` returns a PyTree
-described by the read-only `EpochProblem` protocol: the working operator,
+[`Demography.prepare`](api/demography.md#drifft.Demography.prepare) creates reusable [`DemographicGeometry`](api/demography.md#drifft.DemographicGeometry) outside JIT.
+[`DemographicTransition`](api/demography.md#drifft.DemographicTransition) binds that geometry to a frequency map and epoch method
+without rebuilding backends; binding is supported inside JAX transformations.
+Do not introduce a public epoch wrapper. [`prepare_epoch`](api/methods.md#drifft.prepare_epoch) returns a PyTree
+described by the read-only [`EpochProblem`](api/methods.md#drifft.EpochProblem) protocol: the working operator,
 initial state, exponent, reconstruction, and physical error measurements.
 Custom methods use this public contract; projection bookkeeping remains private.
 The method computes a power action without knowing the
@@ -208,8 +210,17 @@ configured. See [validation and benchmarks](benchmarks.md) for numerical checks.
 
 ### Audience and scope
 
+Format the tool name as `drifft` in prose and Markdown headings. Link API names
+to their reference entries using unqualified code labels, such as
+[`Transition`](api/transitions.md#drifft.Transition). Keep module-qualified names
+in executable examples and reference targets. Site metadata and URLs use plain text.
+
+Comment nonobvious steps in example code, explaining the modeling or numerical
+reason for them. Cover state indexing, geometry reuse, and observation assumptions
+where relevant; avoid narrating every line.
+
 Write for statistical and population geneticists familiar with Python. Explain
-drifft conventions and JAX/Equinox patterns; assume familiarity with drift,
+`drifft` conventions and JAX/Equinox patterns; assume familiarity with drift,
 expectations, derivatives, and conditioning. The tour owns the introductory
 walkthrough; examples own distinct biological workflows. Keep API page introductions to one or two sentences, followed by the API
 objects. Put precise conventions in the owning docstring; remove duplicates
@@ -245,7 +256,7 @@ distinct task or a substantial reference topic.
 
 Use the same top-level sections for each algorithm chapter: **Problem and
 representation**, **Computation**, **Cost and reuse**, **Accuracy and controls**,
-**Differentiation and adjoints**, and **Use in drifft**. Define dimensions before
+**Differentiation and adjoints**, and **Use in `drifft`**. Define dimensions before
 using cost formulas. Include preparation, application, transforms, and storage
 where relevant; distinguish the cost of one stage from the complete operation.
 

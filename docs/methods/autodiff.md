@@ -1,7 +1,7 @@
 # Differentiating Wright–Fisher evolution
 
 Here we derive the sensitivities of Wright–Fisher evolution and the numerical
-rules drifft uses to compute them. The derivation proceeds from the first
+rules `drifft` uses to compute them. The derivation proceeds from the first
 variation of a transition to adjoints of matrix powers, their Krylov
 approximations, and implicit derivatives of occupation equations.
 Notation follows the [shared conventions](../guide/notation.md); practical
@@ -59,7 +59,7 @@ $$
 \boxed{\dot v_{t+1}=\widetilde P_t^T \dot v_t+\dot{\widetilde P}_t^{\,T}v_t+\dot b_t.}
 $$
 
-`Sequential` implements the corresponding coupled state/tangent recurrence.
+[`Sequential`](../api/methods.md#drifft.Sequential) implements the corresponding coupled state/tangent recurrence.
 The action $\dot{\widetilde P}_t^{\,T}v_t$ comes from differentiating the operator action with
 its vector argument held fixed; no explicit derivative matrix is required.
 
@@ -108,7 +108,7 @@ singular transitions and absorbing states do not invalidate the identity.
 ### Coupled block representation
 
 The tangent recurrence can itself be evaluated as a power action. This lets
-drifft apply its evolution algorithms to the derivative without constructing
+`drifft` apply its evolution algorithms to the derivative without constructing
 the full Fréchet derivative as a linear operator on matrices.
 
 Define the coupled operator and its input and output states by
@@ -212,7 +212,7 @@ of the basis selected during the primal calculation.
 
 !!! warning "Derivative target"
 
-    drifft approximates $\mathrm D(A^kz)$, not the derivative of the executed
+    `drifft` approximates $\mathrm D(A^kz)$, not the derivative of the executed
     approximation $V_m(V_m^TAV_m)^kV_m^Tz$ with its input-dependent basis.
     At finite dimension, these derivatives need not agree. The custom rule's
     target is the mathematical power of the represented operator $A$.

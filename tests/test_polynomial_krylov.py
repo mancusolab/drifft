@@ -135,9 +135,9 @@ def test_polynomial_nonconvergence_and_nonfinite_status():
 def test_polynomial_demography_and_gradients(backend_type):
     """Differentiate selected demographic evolution, mass and singleton input."""
     model = drifft.DemographicTransition(
-        drifft.Demography([4, 3, 5], [4, 3]),
-        backend_factory=backend_type,
-        boundary_backend_factory=drifft.FFT,
+        drifft.Demography([4, 3, 5], [4, 3]).prepare(
+            backend_factory=backend_type, boundary_backend_factory=drifft.FFT
+        ),
         method=drifft.PolynomialKrylov(dimension=16),
         frequency_map=drifft.Underdominance(0.03),
     )

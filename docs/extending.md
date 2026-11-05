@@ -1,19 +1,19 @@
 # Custom evolution methods
 
-An evolution method controls how drifft propagates a distribution over a
+An evolution method controls how `drifft` propagates a distribution over a
 constant-size interval. Implement one when you want a different algorithm for
 applying many generations of the same transition. Changing selection or mutation
 belongs in a [frequency map](api/frequency_maps.md); changing the one-generation
 numerical representation belongs in a [backend](api/backends.md).
 
-A custom method subclasses `AbstractEpochMethod` and implements two methods:
+A custom method subclasses [`AbstractEpochMethod`](api/methods.md#drifft.AbstractEpochMethod) and implements two methods:
 
 - `validate(backend, frequency_map)` rejects unsupported types or combinations.
   It runs before preparation and should not inspect traced parameter values.
 - `solve(problem, *, throw=True)` computes the prepared power and returns an
-  `EpochResult` using `problem.result(...)`.
+  [`EpochResult`](api/methods.md#drifft.EpochResult) using `problem.result(...)`.
 
-The inherited `advance` connects these methods: it calls `prepare_epoch`, then
+The inherited `advance` connects these methods: it calls [`prepare_epoch`](api/methods.md#drifft.prepare_epoch), then
 `solve`. Preparation handles state restriction, source mass, and backend-specific
 coordinates, so the power algorithm can work with a single linear operator.
 
@@ -21,7 +21,7 @@ coordinates, so the power algorithm can work with a single linear operator.
 
 This example reproduces Sequential's forward calculation with an ordinary JAX
 loop. It is a starting point for implementing a method, not a faster replacement
-for `Sequential`. Run the blocks on this page in order.
+for [`Sequential`](api/methods.md#drifft.Sequential). Run the blocks on this page in order.
 
 ```python
 from typing import ClassVar, final
@@ -130,9 +130,9 @@ Pass the method through the same argument used for built-in algorithms:
 
 ```python
 history = drifft.Demography(pop_sizes=[64, 32], generations=[10])
+geometry = history.prepare(backend_factory=drifft.FFT)
 model = drifft.DemographicTransition(
-    history,
-    backend_factory=drifft.FFT,
+    geometry,
     frequency_map=drifft.Neutral(),
     method=method,
 )
@@ -144,13 +144,13 @@ changes the size to 32 and is handled by the boundary transition. Demographic
 holds call the method's `advance`, including an override if you supply one.
 Keep the inherited implementation unless the method needs custom orchestration.
 
-`DemographicTransition.expect` currently requires `Sequential`; implementing a
+[`DemographicTransition.expect`](api/demography.md#drifft.DemographicTransition.expect) currently requires [`Sequential`](api/methods.md#drifft.Sequential); implementing a
 custom `solve` does not enable demographic expectations, even for the repeated
 linear action above.
 
 ## Check a new method
 
-Compare forward results with `Sequential` using the same backend and frequency
+Compare forward results with [`Sequential`](api/methods.md#drifft.Sequential) using the same backend and frequency
 map. Include zero and one generation, full and segregating distributions, and
 source mass: these expose mistakes in exponents, state layout, and source timing.
 For methods that allow reduction, also exercise a reduced Jacobi problem.
@@ -165,4 +165,4 @@ if the method approximates the power.
 See the [method API](api/methods.md#drifft.AbstractEpochMethod) for the shared
 `validate`, `solve`, and `advance` contracts, and the
 [prepared-problem reference](api/methods.md#implementing-custom-methods) for
-`prepare_epoch` and `EpochProblem`.
+[`prepare_epoch`](api/methods.md#drifft.prepare_epoch) and [`EpochProblem`](api/methods.md#drifft.EpochProblem).

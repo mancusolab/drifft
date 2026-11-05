@@ -98,9 +98,9 @@ def test_epoch_zero_and_absorbing_inputs():
 def test_demography_uses_jacobi_method_with_singleton_input():
     """Respect source holds and destination-scaled singleton input on boundary steps."""
     model = drifft.DemographicTransition(
-        drifft.Demography([8, 5, 9], [7, 3]),
-        backend_factory=drifft.Jacobi,
-        boundary_backend_factory=drifft.FFT,
+        drifft.Demography([8, 5, 9], [7, 3]).prepare(
+            backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+        ),
         method=drifft.RationalKrylov(),
         frequency_map=drifft.Neutral(),
     )
@@ -293,9 +293,9 @@ def test_krylov_mass_and_source_mass_gradients():
 def test_demographic_full_state_krylov_and_expect_contract():
     """Forward adaptive histories agree with dense products and reject adjoints."""
     model = drifft.DemographicTransition(
-        drifft.Demography([8, 5], [20]),
-        backend_factory=drifft.Jacobi,
-        boundary_backend_factory=drifft.FFT,
+        drifft.Demography([8, 5], [20]).prepare(
+            backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+        ),
         method=drifft.RationalKrylov(),
         frequency_map=drifft.Underdominance(0.03),
     )

@@ -152,8 +152,9 @@ def test_tail_truncation_budget():
 def test_demographic_composition(backend):
     """Sampling composes with demographic expectations and source offsets."""
     model = drifft.DemographicTransition(
-        drifft.Demography(pop_sizes=[16, 12], generations=[3]),
-        backend_factory=backend,
+        drifft.Demography(pop_sizes=[16, 12], generations=[3]).prepare(
+            backend_factory=backend
+        ),
         method=drifft.Sequential(),
         frequency_map=drifft.Neutral(),
     )
