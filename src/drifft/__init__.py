@@ -11,6 +11,7 @@ from ._demography import (
 )
 from ._evolution.methods import (
     AbstractEpochMethod,
+    AbstractKrylovMethod,
     PolynomialKrylov,
     RationalKrylov,
     Sequential,
@@ -39,6 +40,7 @@ from ._solve import ExpectedVisitsResult, ExpectedVisitsStatus
 __all__ = [
     "AbstractEpochMethod",
     "AbstractFrequencyMap",
+    "AbstractKrylovMethod",
     "AbstractTransitionBackend",
     "AdditiveSelection",
     "Composition",

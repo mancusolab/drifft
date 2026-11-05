@@ -36,22 +36,10 @@ Replace `drifft.FFT` with `drifft.NUFFT` to change the representation without
 changing the selection model or state layout. Backends and `Demography` both
 accept diploid population sizes. A size of $N$ gives $2N+1$ allele-count states.
 
-When migrating from the previous diploid-size API, rename `diploid_size` to
-`pop_size`, `source_diploid_size` to `source_pop_size`, and `Demography(ne=...)`
-to `Demography(pop_sizes=...)`; their numeric values stay the same. The initial
-and final demographic sizes are `initial_pop_size` and `final_pop_size`, and
-interval diagnostics use `source_pop_size` and `dest_pop_size`.
-
-For older copy-count constructors, divide counts by two: `gene_copies=M`
-becomes `pop_size=M // 2`, and `source_gene_copies=M_s` becomes
-`source_pop_size=M_s // 2`. Both old counts must be even, and this conversion
-also applies to positional arguments. Custom demographic backend factories receive
-diploid sizes, and custom backends expose `pop_size`.
-
-Sampling now takes diploid sizes too: replace `population_gene_copies=M` and
-`sample_gene_copies=n` with `pop_size=M // 2` and `sample_size=n // 2`.
-This applies to positional arguments as well. Both old counts must be even;
-odd counts cannot be represented by the diploid-size API.
+`pop_size`, `source_pop_size`, and `Demography.pop_sizes` count diploid
+individuals. Backend factories receive diploid sizes. Hypergeometric sampling
+also uses diploid individuals for both `pop_size` and `sample_size`, with
+$2N+1$ population states and $2n+1$ sample states for sizes $N$ and $n$.
 
 Explicit `Transition(probabilities=...)` vectors represent complete diploid
 source grids: they require an odd number of entries, at least three. Entry $i$

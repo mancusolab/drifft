@@ -222,11 +222,12 @@ Avoid parallel guide pages that repeat the tour or examples.
 Use visible section headings for Getting started, Examples, API reference,
 Numerical guidance, Theory, and Development. Nest dropdowns only for coherent
 subgroups: Algorithms within Theory. Keep API reference pages directly under
-the section heading. Keep the page TOC integrated on the left. It includes public methods
-but excludes constructor headings (rendered at level 6 by the function template,
-below `toc_depth = 5`).
-Place prepared-problem helpers in the extension API, not the everyday method
-reference. Example-admonition titles are labels, not TOC headings. API member
+the section heading. Keep the page TOC integrated on the left, with `toc_depth = 4`.
+It includes classes and standalone functions but excludes method and constructor
+headings, rendered at levels 5 and 6.
+Place prepared-problem helpers under Implementing custom methods at the end of
+the evolution-methods API page. Keep the custom-method walkthrough in
+`extending.md`. Example-admonition titles are labels, not TOC headings. API member
 lists should select constructors and methods; attributes and properties are
 omitted by the shared attribute template.
 

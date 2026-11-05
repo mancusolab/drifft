@@ -46,7 +46,6 @@ nav = [
     ] },
     { "Development" = [
         "extending.md",
-        "api/extensions.md",
         "contributing.md",
         "benchmarks.md",
     ] },
@@ -84,7 +83,7 @@ generic = true
 [project.markdown_extensions.attr_list]
 [project.markdown_extensions.toc]
 permalink = "¤"
-toc_depth = 5
+toc_depth = 4
 
 [project.plugins.search]
 [project.plugins.autorefs]

@@ -85,6 +85,19 @@ class EpochProblem(Protocol):
     This protocol describes drifft's prepared PyTree; obtain instances through
     `prepare_epoch`. It is not a constructor or an interface for supplying
     arbitrary user-defined problem objects to built-in methods.
+
+    **Working inputs:**
+
+    - `operator`: Square Lineax operator acting on working vectors. Apply it with
+      `operator.mv(state)`; a dense matrix representation is not required.
+    - `initial`: One-dimensional float64 working vector. Its length may differ
+      from the population distribution because of reduction or immigration.
+    - `steps`: Nonnegative Python integer specifying the prepared power. Zero
+      steps means passing `initial` directly to `result`, not skipping reconstruction.
+
+    Treat these inputs as read-only. `reconstruct` converts working coordinates
+    to population mass; `error_norm` measures a working-state error; `result`
+    combines reconstruction with finite-output and convergence checks.
     """
 
     @property

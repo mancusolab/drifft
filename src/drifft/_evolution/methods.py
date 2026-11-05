@@ -181,6 +181,20 @@ def prepare_epoch(
 ) -> EpochProblem:
     r"""Prepare a method's working problem from population-space inputs.
 
+    Selects working coordinates using the method's representation declaration,
+    after validating the backend and frequency map. The returned operator
+    includes per-generation immigration when supplied; reconstruction restores
+    the requested population layout and any final source contribution.
+
+    !!! example "Example: Prepare and solve an interval"
+
+        ```python
+        # Split the preparation and solve stages of method.advance.
+        problem = drifft.prepare_epoch(method, backend, initial,
+            frequency_map=drifft.Neutral(), generations=10, segregating=True)
+        result = method.solve(problem)
+        ```
+
     **Arguments:**
 
     - `method`: Epoch algorithm whose representation requirement selects preparation.
@@ -307,8 +321,23 @@ No arguments. Supply geometry separately to `advance` or `DemographicTransition`
 """
 
 
-class _AbstractKrylovMethod(AbstractEpochMethod):
-    """Shared Krylov configuration, power orchestration, and sensitivities."""
+class AbstractKrylovMethod(AbstractEpochMethod):
+    r"""Shared interface for polynomial and rational Krylov power approximations.
+
+    Krylov methods approximate a prepared power $A^k z$ in a smaller subspace,
+    then reconstruct population mass. The concrete method determines how the
+    subspace is built; this class supplies configuration, compatibility checks,
+    convergence checks, and differentiation of the mathematical power action.
+
+    Backend reduction is permitted when available. Power-error estimates exclude
+    backend and representation errors. First-order operator sensitivities are
+    supported; higher-order operator sensitivities require `Sequential`.
+
+    Use `PolynomialKrylov` or `RationalKrylov` for evolution. For an independent
+    power algorithm, implement `AbstractEpochMethod`; this base shares the
+    built-in Krylov machinery rather than providing configurable basis builders
+    or shifted-solve strategies.
+    """
 
     allows_reduced_representation: ClassVar[bool] = True
     _polynomial: eqx.AbstractClassVar[bool]
@@ -418,7 +447,7 @@ class _AbstractKrylovMethod(AbstractEpochMethod):
 
 
 @final
-class RationalKrylov(_AbstractKrylovMethod):
+class RationalKrylov(AbstractKrylovMethod):
     r"""Approximate a prepared power action in a Krylov space built by shifted solves:
 
     $$
@@ -451,7 +480,7 @@ class RationalKrylov(_AbstractKrylovMethod):
 
 
 @final
-class PolynomialKrylov(_AbstractKrylovMethod):
+class PolynomialKrylov(AbstractKrylovMethod):
     r"""Approximate a prepared power action in a polynomial Krylov space:
 
     $$
@@ -493,5 +522,6 @@ Supply transition geometry separately.
 
 `ValueError` for invalid dimension or tolerances.
 """
+AbstractKrylovMethod.__init__.__doc__ = _krylov_init_doc
 RationalKrylov.__init__.__doc__ = _krylov_init_doc
 PolynomialKrylov.__init__.__doc__ = _krylov_init_doc
