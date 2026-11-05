@@ -302,11 +302,18 @@ class _DemographicAction(hijax.HiPrim):
     def vjp_bwd_retval(self, residuals, out_ct):
         """Use the opposite vector action and the shared parameter pairing."""
         primals, pullback, static_nzs = residuals
+        state_ct = out_ct[0] if self.params["diagnostics"] else out_ct
+        # Unused action outputs have structural zeros. Return without allocating
+        # zero arrays or invoking numerical pullbacks; diagnostic cotangents do
+        # not contribute. Numerical zeros must retain their higher derivatives.
+        if not _has_tangent(state_ct):
+            return jax.tree.map(
+                lambda aval: hijax.Zero(aval.to_tangent_aval()), self.in_avals
+            )
         nzs = static_nzs.value
         model, state, rate, *_ = eqx.combine(
             primals, cast(tuple, self.params["static"])
         )
-        state_ct = out_ct[0] if self.params["diagnostics"] else out_ct
         cotangent = jax.tree.map(hijax.instantiate_zeros, state_ct, is_leaf=_is_ad_leaf)
         model_grad = rate_grad = state_grad = None
         opposite_value = None

@@ -84,3 +84,26 @@ Additional approved optimizations (items 1 and 4) completed:
   details and raw outputs: .cache/demo_primitive_benchmark/EXPECT_REUSE.md.
 - No changes to symbolic-zero handling or backward-linearization caching
   (the other discussed options). All follow-up optimizations remain uncommitted.
+
+Symbolic-zero pullback optimization completed:
+- Inspect the action cotangent before reconstructing inputs or materializing
+  zeros. If all action cotangents are symbolic zeros, return symbolic input
+  zeros without invoking parameter or vector pullbacks; diagnostics contribute
+  no derivatives.
+- A regression test failed before the change because a numerical pullback was
+  invoked. Both orientations now pass, including nonzero diagnostic cotangents.
+- Dense-reference stationary-point tests confirm numerical zero gradients retain
+  nonzero curvature under JIT. No value-based zero detection was introduced.
+- All 41 demographic autodiff tests, Ruff lint/format, ty, and whitespace checks
+  pass. Direct review confirms the early return preserves the input PyTree and
+  tangent avals. Changes remain uncommitted.
+
+Symbolic-zero hygiene review:
+- No correctness defects found in the early-return condition, diagnostic
+  exclusion, or preservation of numerical-zero curvature.
+- Construct symbolic input zeros directly from the primitive's declared avals;
+  read the active-input mask only on the nonzero path.
+- Extend the skipped-work test to cached primal inputs in both orientations,
+  checking PyTree and tangent-type preservation for every input leaf.
+- All 43 demographic autodiff tests pass, as do lint, formatting, type and
+  whitespace checks. Changes remain uncommitted.
