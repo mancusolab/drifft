@@ -1,10 +1,10 @@
 """Mathematical demographic actions and their shared HiJAX differentiation rules."""
 
 # pattern: Functional Core
-from functools import partial
 from typing import cast
 
 import equinox as eqx
+import equinox.internal as eqxi
 import jax
 import jax.numpy as jnp
 from jax.core import ShapedArray
@@ -19,7 +19,7 @@ from ._evolution.autodiff import (
 )
 from ._evolution.methods import prepare_epoch
 from ._evolution.preparation import validate_domain
-from ._evolution.problem import _working_problem
+from ._evolution.problem import EvolutionStatus, _working_problem
 
 
 def _stop_arrays(tree):
@@ -39,8 +39,8 @@ def _expect_epoch(model, backend, values, generations, rate, segregating):
     zero = jnp.zeros_like(values)
     source = zero.at[0].set(2 * backend.pop_size * rate) if segregating else None
 
-    def prepare(mass):
-        return prepare_epoch(
+    def prepare_initial(mass):
+        problem = prepare_epoch(
             model.method,
             backend,
             mass,
@@ -49,11 +49,13 @@ def _expect_epoch(model, backend, values, generations, rate, segregating):
             segregating=segregating,
             source_mass=source,
         )
+        return problem.initial, problem
 
-    problem = prepare(zero)
-    # Differentiate only the linear coordinate maps, never an adaptive power.
-    # Their dependence on process parameters remains available to outer AD.
-    seed, encode_transpose = jax.vjp(lambda mass: prepare(mass).initial, zero)
+    # Return the prepared problem as auxiliary data so encoding and its
+    # transpose share one preparation. Outer process derivatives remain live.
+    seed, encode_transpose, problem = eqx.filter_vjp(
+        prepare_initial, zero, has_aux=True
+    )
     _, decode_transpose = jax.vjp(problem.decode, jnp.zeros_like(problem.initial))
     terminal = decode_transpose(values)[0]
     working = model.method.solve(
@@ -63,25 +65,14 @@ def _expect_epoch(model, backend, values, generations, rate, segregating):
     return encode_transpose(working)[0], offset
 
 
-def _evaluate(model, state, rate, *, segregating, transpose):
-    """Numerically apply the augmented history or its transpose.
+def _expect_history(model, state, rate, *, segregating):
+    """Apply (f, a) -> (H f, a + c.T f) by reversing the history.
 
-    Here H is the represented expectation operator. The flag refers to H:
-    transpose=True applies the augmented forward action
-    (v, h) -> (H.T v + c h, h); transpose=False applies its transpose
-    (f, a) -> (H f, a + c.T f). The scalar coordinate is arbitrary internally,
-    including in pullbacks; public advance/expect supply one/zero respectively.
-    Epoch power primitives supply mathematical power derivatives; adaptive
-    projection machinery is never differentiated by this composition.
+    The scalar coordinate is arbitrary in pullbacks; public expect supplies
+    zero. Epoch primitives provide mathematical derivatives without AD through
+    adaptive projection machinery.
     """
-    vector, scalar = state
-    if transpose:
-        result = model._advance(
-            vector, segregating=segregating, singleton_rate=rate * scalar, throw=True
-        )
-        return result.distribution, scalar
-
-    values, offset = vector, scalar
+    values, offset = state
     for backend in model.geometry._backends.values():
         values = validate_domain(
             backend,
@@ -118,56 +109,87 @@ def _evaluate(model, state, rate, *, segregating, transpose):
     return values, offset
 
 
-def _directional(model, state, rate, direction, *, segregating, transpose):
-    """Evaluate D(A(theta) x)[dtheta, dx] through mathematical epoch operations."""
-    action = partial(_evaluate, segregating=segregating, transpose=transpose)
-    primal, tangent = eqx.filter_jvp(action, (model, state, rate), direction)
+def _evaluate_with_aux(
+    model, state, rate, *, segregating, transpose, diagnostics, throw
+):
+    """Evaluate once and separate nondifferentiable numerical diagnostics."""
+    if transpose:
+        vector, scalar = state
+        result = model._advance(
+            vector, segregating=segregating, singleton_rate=rate * scalar, throw=throw
+        )
+        payload = (
+            (
+                result.status,
+                tuple(
+                    (item.error_estimate, item.status) for item in result.diagnostics
+                ),
+            )
+            if diagnostics
+            else None
+        )
+        return (result.distribution, scalar), _stop_arrays(payload)
+    return _expect_history(model, state, rate, segregating=segregating), None
+
+
+def _parameter_vjp(
+    model, seed, rate, mask, *, segregating, diagnostics=False, throw=True
+):
+    """Retain the forward scalar-pairing pullback and its numerical intermediates.
+
+    The forward action uses its original seed. For the backward action the
+    incoming cotangent becomes the seed and the original input becomes the
+    reward. Both orientations therefore differentiate the same pairing.
+    """
+    active, fixed = eqx.partition((model, rate), mask)
+
+    def forward(parameters):
+        current_model, current_rate = eqx.combine(parameters, fixed)
+        return _evaluate_with_aux(
+            current_model,
+            seed,
+            current_rate,
+            segregating=segregating,
+            transpose=True,
+            diagnostics=diagnostics,
+            throw=throw,
+        )
+
+    return eqx.filter_vjp(forward, active, has_aux=True)
+
+
+def _pack(state, auxiliary, diagnostics):
+    return (state, auxiliary) if diagnostics else state
+
+
+def _parameter_mask(nzs):
     return jax.tree.map(
-        lambda value, diff: jnp.zeros_like(value) if diff is None else diff,
-        primal,
-        tangent,
+        lambda active: False if active is None else active,
+        (nzs[0], nzs[2]),
         is_leaf=lambda x: x is None,
     )
 
 
-def _parameter_pullback(
-    model, state, rate, cotangent, templates, *, segregating, transpose
-):
-    """Differentiate y.T A(theta) x with state and cotangent fixed.
-
-    Swapping their roles handles the backward action with the same rule.
-    The mask selects only active process/rate leaves; geometry and method
-    configuration remain fixed. Epoch primitives evaluate the power pullbacks.
-    """
-    mask = jax.tree.map(
-        lambda value: isinstance(value, hijax.GradAccum),
-        templates,
-        is_leaf=lambda x: x is None or _is_ad_leaf(x),
-    )
-    active, fixed = eqx.partition((model, rate), mask)
-    # <a, A.T b> = <A a, b>: use the forward evaluator for both pairings.
-    seed, reward = (state, cotangent) if transpose else (cotangent, state)
-
-    def forward(parameters):
-        current_model, current_rate = eqx.combine(parameters, fixed)
-        return _evaluate(
-            current_model, seed, current_rate, segregating=segregating, transpose=True
+def _check_fixed(model_flags):
+    if any(jax.tree.leaves((model_flags.geometry, model_flags.method))):
+        raise TypeError(
+            "demographic geometry and numerical method configuration are nondifferentiable"
         )
-
-    _, pullback = eqx.filter_vjp(forward, active)
-    return pullback(reward)[0]
 
 
 class _DemographicAction(hijax.HiPrim):
-    """An oriented augmented history action with solver-independent AD semantics.
+    """An oriented history action that reuses its primal work in differentiation.
 
-    Cached values retain the checked primal and carry no derivative. The JVP
-    is attached to the original process, rate, and vector arguments. Geometry
-    and numerical method settings cannot participate in differentiation.
+    JVPs evaluate the primal and direction together. Forward parameter VJPs
+    retain the epoch linearization from that same primal evaluation; vector
+    cotangents invoke the opposite action. Cached outputs preserve this boundary
+    under higher derivatives without repeating the primal calculation.
     """
 
-    def __init__(self, avals, static, *, segregating, transpose, cached):
-        """Declare the orientation-dependent population grid and scalar coordinate."""
+    def __init__(
+        self, avals, static, *, segregating, transpose, diagnostics, throw, cached
+    ):
+        """Declare the population output and optional interval diagnostic payload."""
         self.in_avals = avals
         model = eqx.combine(avals[0], static[0])
         size = (
@@ -175,31 +197,52 @@ class _DemographicAction(hijax.HiPrim):
             if transpose
             else model.demography.initial_pop_size
         )
-        self.out_aval = (
+        state_aval = (
             ShapedArray((2 * size + (-1 if segregating else 1),), jnp.float64),
             ShapedArray((), jnp.float64),
         )
+        status_aval = jax.tree.map(jax.typeof, EvolutionStatus.successful)
+        auxiliary_aval = (
+            status_aval,
+            tuple(
+                (ShapedArray((), jnp.float64), status_aval)
+                for _ in model.demography.generations
+            ),
+        )
+        self.out_aval = _pack(state_aval, auxiliary_aval, diagnostics)
         self.params = dict(
-            static=static, segregating=segregating, orientation=transpose, cached=cached
+            static=static,
+            segregating=segregating,
+            orientation=transpose,
+            diagnostics=diagnostics,
+            throw=throw,
+            cached=cached,
         )
         super().__init__()
 
+    def _config(self):
+        return dict(
+            segregating=self.params["segregating"],
+            transpose=self.params["orientation"],
+            diagnostics=self.params["diagnostics"],
+            throw=self.params["throw"],
+        )
+
+    def _primal(self, model, state, rate, output):
+        return _bind_action(model, state, rate, output, **self._config())
+
     def expand(self, *args):
-        """Evaluate the operator using the configured numerical method."""
+        """Evaluate the checked action, or reuse an already computed primal."""
         model, state, rate, *cached = eqx.combine(
             args, cast(tuple, self.params["static"])
         )
         if self.params["cached"]:
             return cached[0]
-        return _evaluate(model, state, rate, **self._config())
-
-    def _config(self):
-        return dict(
-            segregating=self.params["segregating"], transpose=self.params["orientation"]
-        )
+        value, auxiliary = _evaluate_with_aux(model, state, rate, **self._config())
+        return _pack(value, auxiliary, self.params["diagnostics"])
 
     def jvp(self, primals, tangents):
-        """Attach the common derivative of A(theta) x, ignoring cached-value tangents."""
+        """Evaluate the common action derivative alongside its primal once."""
         model, state, rate, *_ = eqx.combine(
             primals, cast(tuple, self.params["static"])
         )
@@ -208,19 +251,116 @@ class _DemographicAction(hijax.HiPrim):
             raise TypeError(
                 "demographic geometry and numerical method configuration are nondifferentiable"
             )
-        direction = jax.tree.map(
+        directions = jax.tree.map(
             _tangent_or_none, (t_model, t_state, t_rate), is_leaf=_is_ad_leaf
         )
-        tangent = _bind_linearized(model, state, rate, direction, **self._config())
-        return self(*primals), tangent
+
+        def action(model, state, rate):
+            value, auxiliary = _evaluate_with_aux(model, state, rate, **self._config())
+            return _pack(value, auxiliary, self.params["diagnostics"])
+
+        value, tangent = eqx.filter_jvp(action, (model, state, rate), directions)
+        tangent = jax.tree.map(
+            lambda aval, diff: (
+                hijax.Zero(aval.to_tangent_aval()) if diff is None else diff
+            ),
+            self.out_aval,
+            tangent,
+            is_leaf=lambda x: x is None,
+        )
+        return self._primal(model, state, rate, value), tangent
 
     lin, linearized = hijax.linearize_from_jvp
-    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def vjp_fwd(self, nzs, *primals):
+        """Retain the forward parameter linearization instead of recomputing it."""
+        _check_fixed(nzs[0])
+        model, state, rate, *_ = eqx.combine(
+            primals, cast(tuple, self.params["static"])
+        )
+        mask = _parameter_mask(nzs)
+        pullback = None
+        if self.params["orientation"] and any(jax.tree.leaves(mask)):
+            value, pullback, auxiliary = _parameter_vjp(
+                model,
+                state,
+                rate,
+                mask,
+                segregating=self.params["segregating"],
+                diagnostics=self.params["diagnostics"],
+                throw=self.params["throw"],
+            )
+        else:
+            value, auxiliary = _evaluate_with_aux(model, state, rate, **self._config())
+        output = _pack(value, auxiliary, self.params["diagnostics"])
+        return self._primal(model, state, rate, output), (
+            primals,
+            pullback,
+            eqxi.Static(nzs),
+        )
+
+    def vjp_bwd_retval(self, residuals, out_ct):
+        """Use the opposite vector action and the shared parameter pairing."""
+        primals, pullback, static_nzs = residuals
+        nzs = static_nzs.value
+        model, state, rate, *_ = eqx.combine(
+            primals, cast(tuple, self.params["static"])
+        )
+        state_ct = out_ct[0] if self.params["diagnostics"] else out_ct
+        cotangent = jax.tree.map(hijax.instantiate_zeros, state_ct, is_leaf=_is_ad_leaf)
+        model_grad = rate_grad = state_grad = None
+        opposite_value = None
+        mask = _parameter_mask(nzs)
+        if any(jax.tree.leaves(mask)):
+            if self.params["orientation"]:
+                model_grad, rate_grad = pullback(cotangent)[0]
+            else:
+                opposite_value, backward_pairing, _ = _parameter_vjp(
+                    model,
+                    cotangent,
+                    rate,
+                    mask,
+                    segregating=self.params["segregating"],
+                )
+                model_grad, rate_grad = backward_pairing(state)[0]
+        if any(jax.tree.leaves(nzs[1])):
+            # For expect, the forward pairing already produced A @ cotangent.
+            # Keep the opposite primitive boundary for higher derivatives,
+            # using that value instead of evaluating the action a second time.
+            cached = () if opposite_value is None else (opposite_value,)
+            state_grad = _bind_action(
+                model,
+                cotangent,
+                rate,
+                *cached,
+                segregating=self.params["segregating"],
+                transpose=not self.params["orientation"],
+            )
+        # Return symbolic zeros for inactive dynamic leaves, including cached
+        # outputs and diagnostic-only dependencies. Static leaves remain None.
+        grads = (model_grad, state_grad, rate_grad, *([None] * (len(primals) - 3)))
+
+        def restore(primal, gradient):
+            if primal is None:
+                return None
+            if gradient is not None and eqx.is_array(primal):
+                return gradient
+            if gradient is None:
+                return jax.tree.map(
+                    lambda x: hijax.Zero(jax.typeof(x).to_tangent_aval()), primal
+                )
+            return jax.tree.map(restore, primal, gradient, is_leaf=lambda x: x is None)
+
+        return tuple(restore(p, g) for p, g in zip(primals, grads, strict=True))
 
     def transpose(self, out_ct, *args):
-        """Transpose the vector input by invoking the opposite history action."""
+        """Transpose the augmented vector through the opposite action."""
         model, state, rate, *_ = eqx.combine(args, cast(tuple, self.params["static"]))
-        if self.params["cached"] or _has_accum((model, rate)):
+        if (
+            self.params["cached"]
+            or self.params["diagnostics"]
+            or _has_accum((model, rate))
+        ):
             raise ValueError(
                 "demographic actions are linear only in the augmented vector"
             )
@@ -240,148 +380,69 @@ class _DemographicAction(hijax.HiPrim):
             )
 
     def batch_dim_rule(self, axis_data, dims):
-        """Map both output coordinates when any mathematical input is mapped."""
+        """Map the state and diagnostic outputs with mapped mathematical inputs."""
         dim = 0 if any(d is not None for d in jax.tree.leaves(dims)) else None
-        return dim, dim
+        return jax.tree.map(lambda _: dim, self.out_aval)
 
 
-class _DemographicLinearizedAction(hijax.HiPrim):
-    """Linearized history action with explicit vector and parameter pullbacks."""
-
-    def __init__(self, avals, static, *, segregating, transpose):
-        """Use the same oriented output grid as the primal action."""
-        self.in_avals = avals
-        action = _DemographicAction(
-            avals[:3],
-            static[:3],
-            segregating=segregating,
-            transpose=transpose,
-            cached=False,
-        )
-        self.out_aval = action.out_aval
-        self.params = dict(
-            static=static, segregating=segregating, orientation=transpose
-        )
-        super().__init__()
-
-    def _config(self):
-        return dict(
-            segregating=self.params["segregating"], transpose=self.params["orientation"]
-        )
-
-    def expand(self, *args):
-        """Evaluate the shared directional identity with epoch numerical kernels."""
-        model, state, rate, direction = eqx.combine(
-            args, cast(tuple, self.params["static"])
-        )
-        return _directional(model, state, rate, direction, **self._config())
-
-    def jvp(self, primals, tangents):
-        """Retain higher derivatives where the numerical sensitivity kernels support them."""
-        inputs = eqx.combine(primals, cast(tuple, self.params["static"]))
-        directions = jax.tree.map(_tangent_or_none, tangents, is_leaf=_is_ad_leaf)
-        primal, tangent = eqx.filter_jvp(
-            partial(_directional, **self._config()), inputs, directions
-        )
-        tangent = jax.tree.map(
-            lambda value, diff: jnp.zeros_like(value) if diff is None else diff,
-            primal,
-            tangent,
-            is_leaf=lambda x: x is None,
-        )
-        return primal, tangent
-
-    lin, linearized = hijax.linearize_from_jvp
-    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
-
-    def transpose(self, out_ct, *args):
-        """Apply A.T to vector cotangents and the shared pairing pullback to parameters."""
-        model, state, rate, direction = eqx.combine(
-            args, cast(tuple, self.params["static"])
-        )
-        if _has_accum((model, state, rate)):
-            raise ValueError(
-                "linearized demographic actions are linear only in their directions"
-            )
-        t_model, t_state, t_rate = direction
-        cotangent = jax.tree.map(hijax.instantiate_zeros, out_ct, is_leaf=_is_ad_leaf)
-        if _has_accum(t_state):
-            _accumulate(
-                t_state,
-                _bind_action(
-                    model,
-                    cotangent,
-                    rate,
-                    segregating=self.params["segregating"],
-                    transpose=not self.params["orientation"],
-                ),
-            )
-        if _has_accum((t_model, t_rate)):
-            gradients = _parameter_pullback(
-                model, state, rate, cotangent, (t_model, t_rate), **self._config()
-            )
-            _accumulate((t_model, t_rate), gradients)
-
-    def batch_dim_rule(self, axis_data, dims):
-        """Support parameter batching and tangent-only batching."""
-        dim = 0 if any(d is not None for d in jax.tree.leaves(dims)) else None
-        return dim, dim
-
-
-def _bind_action(model, state, rate, *cached, segregating, transpose):
-    """Bind an oriented action while retaining array leaves as dynamic inputs."""
+def _bind_action(
+    model, state, rate, *cached, segregating, transpose, diagnostics=False, throw=True
+):
+    """Bind the mathematical inputs and optional checked primal output."""
     dynamic, static = eqx.partition((model, state, rate, *cached), eqx.is_array)
     avals = jax.tree.map(jax.typeof, dynamic)
     return _DemographicAction(
-        avals, static, segregating=segregating, transpose=transpose, cached=bool(cached)
-    )(*dynamic)
-
-
-def _bind_linearized(model, state, rate, direction, *, segregating, transpose):
-    """Bind active directions separately so their transpose uses the shared pairing."""
-    dynamic, static = eqx.partition((model, state, rate, direction), eqx.is_array)
-    avals = jax.tree.map(jax.typeof, dynamic)
-    return _DemographicLinearizedAction(
-        avals, static, segregating=segregating, transpose=transpose
+        avals,
+        static,
+        segregating=segregating,
+        transpose=transpose,
+        diagnostics=diagnostics,
+        throw=throw,
+        cached=bool(cached),
     )(*dynamic)
 
 
 def _demographic_advance(model, distribution, *, segregating, singleton_rate, throw):
-    """Return forward diagnostics with the shared mathematical derivative attached."""
-    stopped_model, stopped_distribution, stopped_rate = _stop_arrays(
-        (model, distribution, singleton_rate)
-    )
-    result = stopped_model._advance(
-        stopped_distribution,
-        segregating=segregating,
-        singleton_rate=stopped_rate,
-        throw=throw,
-    )
-    one = jnp.asarray(1.0, dtype=jnp.float64)
-    mass, _ = _bind_action(
+    """Reconstruct public diagnostics from a single checked primitive evaluation."""
+    from ._demography import DemographicResult, IntervalDiagnostics
+
+    (mass, _), (status, intervals) = _bind_action(
         model,
-        (distribution, one),
+        (distribution, jnp.asarray(1.0, dtype=jnp.float64)),
         singleton_rate,
-        (result.distribution, one),
         segregating=segregating,
         transpose=True,
+        diagnostics=True,
+        throw=throw,
     )
-    return result._replace(distribution=mass)
+    diagnostics = tuple(
+        IntervalDiagnostics(
+            source,
+            destination,
+            duration,
+            error,
+            interval_status == EvolutionStatus.successful,
+            interval_status,
+        )
+        for source, destination, duration, (error, interval_status) in zip(
+            model.demography.pop_sizes[:-1],
+            model.demography.pop_sizes[1:],
+            model.demography.generations,
+            intervals,
+            strict=True,
+        )
+    )
+    return DemographicResult(
+        mass, status == EvolutionStatus.successful, status, diagnostics
+    )
 
 
 def _demographic_expect(model, values, *, segregating, singleton_rate):
-    """Return backward values and affine offset with the common derivative contract."""
-    state = (values, jnp.asarray(0.0, dtype=jnp.float64))
-    stopped_model, stopped_state, stopped_rate = _stop_arrays(
-        (model, state, singleton_rate)
-    )
-    result = _evaluate(
-        stopped_model,
-        stopped_state,
-        stopped_rate,
+    """Apply the backward action with zero initial source reward."""
+    return _bind_action(
+        model,
+        (values, jnp.asarray(0.0, dtype=jnp.float64)),
+        singleton_rate,
         segregating=segregating,
         transpose=False,
-    )
-    return _bind_action(
-        model, state, singleton_rate, result, segregating=segregating, transpose=False
     )

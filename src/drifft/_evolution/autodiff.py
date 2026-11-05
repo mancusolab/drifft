@@ -75,8 +75,8 @@ def _accumulate(accums, values):
     jax.tree.map(add, accums, values, is_leaf=lambda x: x is None or _is_ad_leaf(x))
 
 
-def _sequential_power_direction(operator, perturbation, initial, tangent, steps):
-    """Evaluate D(A**g x)[dA, dx] by the coupled mathematical recurrence."""
+def _sequential_power_pair(operator, perturbation, initial, tangent, steps):
+    """Evaluate A**g x and its joint derivative in one coupled recurrence."""
 
     def step(_, carry):
         state, direction = carry
@@ -84,7 +84,7 @@ def _sequential_power_direction(operator, perturbation, initial, tangent, steps)
             jnp.add, operator.mv(direction), perturbation.mv(state)
         )
 
-    return jax.lax.fori_loop(0, steps, step, (initial, tangent))[1]
+    return jax.lax.fori_loop(0, steps, step, (initial, tangent))
 
 
 class _PowerAction(hijax.HiPrim):
@@ -125,19 +125,23 @@ class _PowerAction(hijax.HiPrim):
         tangent_initial = jax.tree.map(
             hijax.instantiate_zeros, t_initial, is_leaf=_is_ad_leaf
         )
-        primal = self(*primals)
         if tangent_operator is None:
+            primal = self(*primals)
             tangent = _power_action(method, operator, tangent_initial, steps)
         elif isinstance(method, _KrylovConfig):
+            primal = self(*primals)
             # Numerical evaluation of the same power derivative by a projected
             # block action; its adaptive basis is never the differentiation target.
             tangent = _frechet_action(
                 method, operator, initial, operator_direction, tangent_initial, steps
             )
         else:
-            tangent = _sequential_power_direction(
+            value, tangent = _sequential_power_pair(
                 operator, tangent_operator, initial, tangent_initial, steps
             )
+            # Preserve the primitive boundary for higher derivatives while
+            # reusing the primal already produced by the coupled recurrence.
+            primal = _bind_power(operator, initial, steps, method, value)
         return primal, tangent
 
     lin, linearized = hijax.linearize_from_jvp

@@ -369,3 +369,98 @@ def test_geometry_is_not_a_differentiation_target(backward):
 
     with pytest.raises(TypeError, match="geometry.*nondifferentiable"):
         eqx.filter_grad(objective)(model)
+
+
+@pytest.mark.parametrize("backward", [False, True])
+def test_mixed_parameter_vector_derivatives_match_dense(backward):
+    """Retained pullback intermediates preserve mixed process/vector derivatives."""
+    geometry = drifft.Demography([3, 2, 4], [3, 2]).prepare(backend_factory=drifft.FFT)
+    parameters = jnp.array([0.03, 0.01, 0.02, 0.001])
+    vector = jnp.linspace(0.01, 0.2, 7 if backward else 5)
+    weights = jnp.cos(jnp.arange(6 if backward else 7))
+
+    def objective(parameters, vector):
+        s, u, v, rate = parameters
+        model = drifft.DemographicTransition(
+            geometry,
+            drifft.Composition(drifft.AdditiveSelection(s), drifft.Mutation(u, v)),
+        )
+        if backward:
+            result = model.expect(
+                vector, segregating=True, singleton_mutation_rate=rate
+            )
+            return (
+                jnp.concatenate((result.values, jnp.atleast_1d(result.offset)))
+                @ weights
+            )
+        return (
+            model.advance(
+                vector, segregating=True, singleton_mutation_rate=rate
+            ).distribution
+            @ weights
+        )
+
+    def oracle(parameters, vector):
+        return (
+            reference(parameters, vector, backward=backward, segregating=True) @ weights
+        )
+
+    actual = jax.jit(jax.jacfwd(jax.grad(objective, argnums=0), argnums=1))(
+        parameters, vector
+    )
+    expected = jax.jacfwd(jax.grad(oracle, argnums=0), argnums=1)(parameters, vector)
+    assert jnp.max(jnp.abs(expected)) > 1e-3
+    assert jnp.allclose(actual, expected, atol=2e-9, rtol=2e-8)
+
+
+def test_diagnostic_derivatives_are_zero_for_unconverged_primal():
+    """Status inspection must not trigger a sensitivity solve for a failed primal."""
+    geometry = drifft.Demography([40, 30], [101]).prepare(backend_factory=drifft.FFT)
+
+    def diagnostics(s):
+        model = drifft.DemographicTransition(
+            geometry,
+            drifft.AdditiveSelection(s),
+            method=drifft.PolynomialKrylov(dimension=2),
+        )
+        result = model.advance(jnp.eye(79)[0], segregating=True, throw=False)
+        return result.diagnostics[0].error_estimate
+
+    _, tangent = jax.jit(lambda s: jax.jvp(diagnostics, (s,), (jnp.ones_like(s),)))(
+        jnp.asarray(0.03)
+    )
+    gradient = eqx.filter_jit(jax.grad(diagnostics))(jnp.asarray(0.03))
+    assert tangent == 0
+    assert gradient == 0
+
+
+def test_joint_expect_pullback_retains_higher_derivatives():
+    """Joint parameter/value pullbacks keep all mixed derivatives of the source reward."""
+    geometry = drifft.Demography([3, 2, 4], [3, 2]).prepare(backend_factory=drifft.FFT)
+    parameters = jnp.array([0.03, 0.01, 0.02, 0.001])
+    values = jnp.cos(jnp.arange(7))
+    weights = jnp.sin(jnp.arange(6) + 0.3)
+
+    def objective(parameters, values):
+        s, u, v, rate = parameters
+        model = drifft.DemographicTransition(
+            geometry,
+            drifft.Composition(drifft.AdditiveSelection(s), drifft.Mutation(u, v)),
+        )
+        result = model.expect(values, segregating=True, singleton_mutation_rate=rate)
+        return jnp.concatenate((result.values, jnp.atleast_1d(result.offset))) @ weights
+
+    def oracle(parameters, values):
+        return reference(parameters, values, backward=True, segregating=True) @ weights
+
+    direction = (jnp.array([0.2, -0.1, 0.3, 0.01]), jnp.sin(values))
+    joint_gradient = jax.grad(objective, argnums=(0, 1))
+    dense_gradient = jax.grad(oracle, argnums=(0, 1))
+    actual = jax.jit(lambda p, f: jax.jvp(joint_gradient, (p, f), direction))(
+        parameters, values
+    )
+    expected = jax.jvp(dense_gradient, (parameters, values), direction)
+    for observed, target in zip(
+        jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True
+    ):
+        assert jnp.allclose(observed, target, atol=2e-9, rtol=2e-8)

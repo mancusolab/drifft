@@ -44,3 +44,43 @@ Hygiene review:
 - All 33 demographic autodiff tests pass; lint, format, type checks, strict
   documentation build, and diff whitespace checks pass. No numerical behavior
   change was needed. Changes remain uncommitted.
+
+Performance follow-up (in progress):
+- First-trial benchmarks identified ~31% Sequential JVP and ~43% Jacobi/
+  RationalKrylov gradient regressions relative to 18d4c3d.
+- A wrapper-bypass experiment isolated RationalKrylov overhead to the history
+  wrapper; the Sequential power JVP also discarded a reusable primal.
+- Fuse the Sequential power primal/tangent recurrence and move checked history
+  evaluation inside the primitive. Retain forward parameter-VJP residuals;
+  preserve the opposite vector action and shared forward parameter pairing.
+- Verify dense derivatives, higher/mixed derivatives, diagnostics, numerical
+  failures, and batching, then rerun the focused benchmark. No new commit yet.
+
+Performance follow-up completed:
+- The action now owns checked primal evaluation. Explicit VJP forward/backward
+  rules retain the original forward parameter pullback, replacing the separate
+  linearized-history primitive that reconstructed its primal work.
+- Sequential returns both outputs from its coupled recurrence while preserving
+  a cached primitive boundary for higher derivatives.
+- 244 relevant tests passed, including new mixed parameter/vector derivatives
+  and diagnostic-only derivatives for an unconverged primal. Lint, formatting,
+  type and whitespace checks pass. Direct review found no remaining correctness
+  issues within this scope.
+- All 18 benchmark outputs match the parent bit-for-bit; compiler temporary
+  memory matches exactly. Fresh parent controls demonstrate timing drift;
+  detailed results are in .cache/demo_primitive_benchmark/OPTIMIZATION.md.
+- Optimization changes remain uncommitted; the earlier refactor is f9457fa.
+
+Additional approved optimizations (items 1 and 4) completed:
+- Joint expect parameter/vector pullbacks reuse the forward pairing value,
+  retaining the opposite-action primitive boundary for higher derivatives.
+- Backward epoch preparation returns its prepared problem as VJP auxiliary
+  data, avoiding a second preparation while retaining process dependence.
+- Removed the unused forward branch and renamed the backward history evaluator.
+- 100 targeted tests passed, including a new dense-reference JVP of the joint
+  expect gradient. Lint, formatting, type and whitespace checks pass.
+- Focused joint-expect timing: Sequential 8.717 -> 7.929 ms; RationalKrylov
+  31.254 -> 24.438 ms, with reduced compiler temporary memory. Single-trial
+  details and raw outputs: .cache/demo_primitive_benchmark/EXPECT_REUSE.md.
+- No changes to symbolic-zero handling or backward-linearization caching
+  (the other discussed options). All follow-up optimizations remain uncommitted.
