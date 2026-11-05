@@ -39,7 +39,8 @@ accept diploid population sizes. A size of $N$ gives $2N+1$ allele-count states.
 `pop_size`, `source_pop_size`, and `Demography.pop_sizes` count diploid
 individuals. Backend factories receive diploid sizes. Hypergeometric sampling
 also uses diploid individuals for both `pop_size` and `sample_size`, with
-$2N+1$ population states and $2n+1$ sample states for sizes $N$ and $n$.
+$2N+1$ population states and $2m+1$ sample states for diploid sizes $N$ and $m$.
+The sampling theory uses $n=2m$ for the number of sampled copies.
 
 Explicit `Transition(probabilities=...)` vectors represent complete diploid
 source grids: they require an odd number of entries, at least three. Entry $i$

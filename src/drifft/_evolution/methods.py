@@ -79,8 +79,10 @@ class AbstractEpochMethod(eqx.Module):
         **Raises:**
 
         Runtime errors for numerical failure with `throw=True`. A failed batch
-        member may fail the entire call. Krylov sensitivity failures raise even
-        with `throw=False`; higher-order operator sensitivities are unsupported.
+        member may fail the entire call. For the built-in Krylov methods,
+        sensitivity failures raise even with `throw=False`, and higher-order
+        operator sensitivities are unsupported. Custom methods define their own
+        differentiation and batching behavior.
         """
         ...
 

@@ -16,7 +16,7 @@ transitions. The matrix orientation fixes how propagation and expectation relate
 | --- | --- |
 | Diploid effective population size | $N_e$ |
 | Population gene-copy count | $M=2N_e$; $M_s,M_d$ for source and destination |
-| Sample gene-copy count | $n$ |
+| Diploid sample size and sample gene-copy count | $m$; $n=2m$ |
 | Source and destination allele counts | $i,j$ |
 | Allele frequency | $x$, with $x_i=i/M_s$ |
 | Offspring frequency after the full frequency map | $q_\theta(x)$; omit the subscript when parameters are implicit |
