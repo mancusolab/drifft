@@ -13,7 +13,7 @@ jax.config.update("jax_enable_x64", True)
 
 
 def test_modular_selected_history_and_diagnostics():
-    """Preserve selected chronology, immigration and per-interval diagnostics."""
+    """Preserve selected chronology, singleton input and per-interval diagnostics."""
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5, 9], [7, 3]),
         backend_factory=drifft.Jacobi,
@@ -151,7 +151,7 @@ def test_method_configuration_has_no_geometry_arrays():
 
 
 def test_composed_jacobi_history_gradients_match_dense_recurrence():
-    """Differentiate selection, initial mass and immigration through size changes."""
+    """Differentiate selection, initial mass and singleton input through size changes."""
     model = drifft.DemographicTransition(
         drifft.Demography([4, 3, 5], [4, 3]),
         backend_factory=drifft.Jacobi,
@@ -240,7 +240,7 @@ def test_public_prepared_problem_reconstructs_interior_source(method, generation
         frequency_map=frequency_map,
         generations=generations,
         segregating=True,
-        immigration=source,
+        source_mass=source,
     )
     reference = initial
     matrix = dense_transition(copies // 2, copies // 2, 0)[1:-1, 1:-1]

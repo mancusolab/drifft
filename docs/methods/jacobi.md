@@ -52,7 +52,7 @@ Only the outer maps act on count-space vectors; the intervening power stays
 in reduced coordinates. Forward mass propagation uses the transpose of this
 factorization: encode once, evolve the reduced state, and decode once.
 See [Krylov methods](jacobi_krylov.md) for the power approximation and
-immigration recurrence.
+source mass recurrence.
 
 Gauss–Jacobi quadrature with $n_{\mathrm{quad}}=r+32$ nodes and truncated,
 normalized binomial stencils constructs the coefficient transform. For

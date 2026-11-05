@@ -214,7 +214,7 @@ def test_sequential_mutation_boundary_sensitivity_matches_dense_reference():
         (drifft.Jacobi, drifft.RationalKrylov),
     ],
 )
-def test_zero_immigration_sensitivity(backend_type, method_type):
+def test_zero_source_mass_sensitivity(backend_type, method_type):
     """The affine auxiliary coordinate must not hide a zero physical seed."""
     backend = backend_type(6)
     method = method_type(dimension=20)
@@ -228,7 +228,7 @@ def test_zero_immigration_sensitivity(backend_type, method_type):
             frequency_map=drifft.Neutral(),
             generations=7,
             segregating=True,
-            immigration=source,
+            source_mass=source,
             throw=False,
         ).distribution.sum()
 
@@ -245,7 +245,7 @@ def test_zero_immigration_sensitivity(backend_type, method_type):
                 frequency_map=drifft.Neutral(),
                 generations=7,
                 segregating=True,
-                immigration=mass.at[0].set(rate),
+                source_mass=mass.at[0].set(rate),
             )
             .distribution.sum()
         )

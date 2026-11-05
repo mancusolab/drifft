@@ -59,7 +59,7 @@ records the CPU measurements and numerical tradeoffs for the filtered option,
 including matched-degree and larger-degree derivative experiments.
 
 Use `benchmarks/compare_demography.py` to compare Sequential FFT with Jacobi and
-RationalKrylov on a neutral history with singleton immigration. Its
+RationalKrylov on a neutral history with singleton mutation input. Its
 [report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RATIONAL_KRYLOV.md)
 includes a rerun after the backend/method API separation; check each
 measurement's recorded revision and workload.

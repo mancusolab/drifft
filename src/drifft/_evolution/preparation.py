@@ -33,7 +33,7 @@ def validate_domain(backend, distribution, frequency_map, *, reduced):
 
 @singledispatch
 def _prepare_epoch(
-    backend, distribution, frequency_map, generations, segregating, immigration
+    backend, distribution, frequency_map, generations, segregating, source_mass
 ):
     """Prepare a representation without requiring algorithm methods on every backend."""
     raise TypeError("unsupported epoch backend")
@@ -45,14 +45,14 @@ def _identity(value):
 
 @_prepare_epoch.register(AbstractTransitionBackend)
 def _prepare_transition(
-    backend, distribution, frequency_map, generations, segregating, immigration
+    backend, distribution, frequency_map, generations, segregating, source_mass
 ):
     distribution, source = _epoch_inputs(
-        distribution, immigration, backend._gene_copies, generations, segregating
+        distribution, source_mass, backend._gene_copies, generations, segregating
     )
     transition = Transition(backend, frequency_map)
     operation = partial(transition.advance, segregating=segregating)
-    augmented = immigration is not None and generations > 0
+    augmented = source_mass is not None and generations > 0
     initial = (
         jnp.concatenate((distribution, jnp.ones(1))) if augmented else distribution
     )
@@ -83,11 +83,11 @@ def _prepare_transition(
 
 @_prepare_epoch.register(Jacobi)
 def _prepare_jacobi(
-    backend, distribution, frequency_map, generations, segregating, immigration
+    backend, distribution, frequency_map, generations, segregating, source_mass
 ):
     """Encode the reduced action and affine forcing without choosing a power algorithm."""
     distribution, source = _epoch_inputs(
-        distribution, immigration, backend._gene_copies, generations, segregating
+        distribution, source_mass, backend._gene_copies, generations, segregating
     )
     distribution = backend._validate_parameters(distribution, frequency_map)
     if generations == 0:
@@ -115,7 +115,7 @@ def _prepare_jacobi(
         return _PowerProblem(operator, seed, 0, decode, source, False, jnp.asarray(1.0))
     matrix = backend._reduced_expectation(frequency_map, segregating=segregating)
     matrix = matrix.T
-    augmented = immigration is not None
+    augmented = source_mass is not None
     if augmented:
         # Earlier source events must pass through the next encoding step. The
         # final event has no subsequent transition and is added in physical

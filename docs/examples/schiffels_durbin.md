@@ -166,7 +166,7 @@ The observation of five derived copies is illustrative. The plot uses
 sample-segregating ascertainment and requires an identified derived allele.
 The full population distribution retains endpoint mass and permits re-entry
 through recurrent mutation. This is a finite-allele likelihood, not an
-infinite-sites spectrum with singleton immigration or MSMC's likelihood for
+infinite-sites spectrum with singleton mutation input or MSMC's likelihood for
 inferring demography. Multisite composite-likelihood uncertainty requires
 separate treatment of linkage and ascertainment.
 

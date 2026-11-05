@@ -27,10 +27,13 @@ def test_direct_methods_compile_once_for_dynamic_inputs(
         return frequencies**2
 
     transition = drifft.Transition(backend_type(16), drifft.FrequencyMap(selection))
+    # Construction traces the map to validate its output shape and dtype.
+    traces.clear()
     method = getattr(transition, method_name)
     size = 31 if segregating else 33
     vector = jnp.linspace(0.1, 0.9, size)
     first = method(vector, segregating=segregating).block_until_ready()
+    assert len(traces) == 1
     second = method(2 * vector, segregating=segregating).block_until_ready()
     assert len(traces) == 1
     np.testing.assert_allclose(second, 2 * first, atol=1e-12)

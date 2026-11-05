@@ -44,7 +44,7 @@ def test_reduced_power_action_and_derivatives(steps):
 
 @pytest.mark.parametrize("backend_type", [drifft.FFT, drifft.NUFFT, drifft.Jacobi])
 @pytest.mark.parametrize("segregating", [False, True])
-def test_polynomial_matches_dense_with_immigration(backend_type, segregating):
+def test_polynomial_matches_dense_with_source_mass(backend_type, segregating):
     """Match selected powers with signed mass and a source after every generation."""
     backend = backend_type(6)
     size = 11 if segregating else 13
@@ -62,7 +62,7 @@ def test_polynomial_matches_dense_with_immigration(backend_type, segregating):
         frequency_map=drifft.Underdominance(0.04),
         generations=19,
         segregating=segregating,
-        immigration=source,
+        source_mass=source,
     )
     assert result.converged
     assert jnp.allclose(result.distribution, expected, atol=2e-10, rtol=2e-9)
@@ -133,7 +133,7 @@ def test_polynomial_nonconvergence_and_nonfinite_status():
 
 @pytest.mark.parametrize("backend_type", [drifft.FFT, drifft.NUFFT, drifft.Jacobi])
 def test_polynomial_demography_and_gradients(backend_type):
-    """Differentiate selected demographic evolution, mass and immigration."""
+    """Differentiate selected demographic evolution, mass and singleton input."""
     model = drifft.DemographicTransition(
         drifft.Demography([4, 3, 5], [4, 3]),
         backend_factory=backend_type,
@@ -248,8 +248,8 @@ def test_truncated_polynomial_power_and_jvp(lower, converged):
 
 @pytest.mark.parametrize("backend_type", [drifft.FFT, drifft.NUFFT, drifft.Jacobi])
 @pytest.mark.parametrize("generations", [0, 1, 7])
-def test_zero_initial_mass_with_immigration(backend_type, generations):
-    """Immigration starts an empty population and is omitted for zero generations."""
+def test_zero_initial_mass_with_source_mass(backend_type, generations):
+    """Source mass starts an empty spectrum and is omitted for zero generations."""
     mass = jnp.zeros(11)
     source = mass.at[0].set(1e-3)
     matrix = dense_transition(6, 6, 0)[1:-1, 1:-1]
@@ -262,7 +262,7 @@ def test_zero_initial_mass_with_immigration(backend_type, generations):
         frequency_map=drifft.Neutral(),
         generations=generations,
         segregating=True,
-        immigration=source,
+        source_mass=source,
     )
     assert result.converged
     assert jnp.allclose(result.distribution, expected, atol=1e-12)

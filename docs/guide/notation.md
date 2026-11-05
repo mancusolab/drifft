@@ -31,7 +31,7 @@ transitions. The matrix orientation fixes how propagation and expectation relate
 | Generation index and interval duration | $t,g$ |
 | Exact and represented interior transitions | $Q,\widetilde Q$ |
 | Expected-visits vector | $u$ |
-| Immigration/source vector | $b$ |
+| Source mass vector | $b$ |
 
 Rows of $P$ index source states; columns index destination states. Vectors
 are columns unless transposed. The [model chapter](model.md) develops the

@@ -17,8 +17,8 @@ jax.config.update("jax_enable_x64", True)
 # Identity, one-step and repeated affine actions; long/truncated powers have
 # dedicated convergence and accuracy tests below.
 @pytest.mark.parametrize("generations", [0, 1, 7])
-def test_epoch_matches_dense_with_immigration(kind, segregating, generations):
-    """Include immigration after every generation, including the final one."""
+def test_epoch_matches_dense_with_source_mass(kind, segregating, generations):
+    """Include source mass after every generation, including the final one."""
     backend = drifft.FFT(8) if kind == "sequential" else drifft.Jacobi(8)
     method = (
         drifft.Sequential()
@@ -40,7 +40,7 @@ def test_epoch_matches_dense_with_immigration(kind, segregating, generations):
         frequency_map=drifft.Underdominance(0.07),
         generations=generations,
         segregating=segregating,
-        immigration=source,
+        source_mass=source,
     )
     assert result.converged
     assert jnp.allclose(result.distribution, expected, atol=2e-10, rtol=0)
@@ -96,7 +96,7 @@ def test_epoch_zero_and_absorbing_inputs():
 
 
 def test_demography_uses_jacobi_method_with_singleton_input():
-    """Respect source holds and destination-sized immigration on boundary steps."""
+    """Respect source holds and destination-scaled singleton input on boundary steps."""
     model = drifft.DemographicTransition(
         drifft.Demography([8, 5, 9], [7, 3]),
         backend_factory=drifft.Jacobi,
@@ -143,7 +143,7 @@ def test_truncated_krylov_matches_dense_long_epoch():
         frequency_map=drifft.Underdominance(0.03),
         generations=250,
         segregating=True,
-        immigration=source,
+        source_mass=source,
     )
     matrix = dense_transition(64, 64, 0.03)[1:-1, 1:-1].T
     expected = initial
@@ -229,13 +229,13 @@ def test_epoch_runtime_and_shape_validation():
         method.advance(
             backend, jnp.ones(16), frequency_map=drifft.Neutral(), generations=2
         )
-    with pytest.raises(ValueError, match="immigration"):
+    with pytest.raises(ValueError, match="source_mass"):
         method.advance(
             backend,
             jnp.ones(17),
             frequency_map=drifft.Neutral(),
             generations=2,
-            immigration=jnp.ones(16),
+            source_mass=jnp.ones(16),
         )
     with pytest.raises(eqx.EquinoxRuntimeError, match="selection strength"):
         method.advance(
@@ -254,12 +254,12 @@ def test_epoch_runtime_and_shape_validation():
     assert not result.converged
 
 
-def test_krylov_mass_and_immigration_gradients():
+def test_krylov_mass_and_source_mass_gradients():
     """Differentiate through a truncated basis, not only its selection matrix."""
     backend = drifft.Jacobi(32)
     method = drifft.RationalKrylov(dimension=32)
     mass = jnp.linspace(0.01, 0.05, 63)
-    immigration = jnp.linspace(0.0001, 0.0002, 63)
+    source_mass = jnp.linspace(0.0001, 0.0002, 63)
     values = jnp.cos(jnp.arange(63) / 10)
     matrix = dense_transition(32, 32, 0.02)[1:-1, 1:-1].T
 
@@ -272,7 +272,7 @@ def test_krylov_mass_and_immigration_gradients():
                 frequency_map=drifft.Underdominance(0.02),
                 generations=30,
                 segregating=True,
-                immigration=source,
+                source_mass=source,
             ).distribution
             @ values
         )
@@ -284,8 +284,8 @@ def test_krylov_mass_and_immigration_gradients():
         )
         return result @ values
 
-    actual = jax.grad(objective, argnums=(0, 1))(mass, immigration)
-    expected = jax.grad(reference, argnums=(0, 1))(mass, immigration)
+    actual = jax.grad(objective, argnums=(0, 1))(mass, source_mass)
+    expected = jax.grad(reference, argnums=(0, 1))(mass, source_mass)
     for observed, target in zip(actual, expected, strict=True):
         assert jnp.allclose(observed, target, atol=2e-8, rtol=2e-8)
 

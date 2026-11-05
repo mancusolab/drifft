@@ -53,7 +53,9 @@ def diagnostics(backend, strength):
 
     @jax.jit
     def row(q):
-        return drifft.Transition(backend, probabilities=q[None]).advance(jnp.ones(1))
+        # Sample individual rows through the backend; Transition requires a
+        # complete diploid source grid.
+        return backend.advance(q[None], jnp.ones(1))
 
     derivative = jax.jit(lambda q: jax.jvp(row, (q,), (jnp.ones_like(q),))[1])
     counts = np.arange(size + 1)

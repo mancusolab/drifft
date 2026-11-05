@@ -14,7 +14,7 @@ A custom method subclasses `AbstractEpochMethod` and implements two methods:
   `EpochResult` using `problem.result(...)`.
 
 The inherited `advance` connects these methods: it calls `prepare_epoch`, then
-`solve`. Preparation handles state restriction, immigration, and backend-specific
+`solve`. Preparation handles state restriction, source mass, and backend-specific
 coordinates, so the power algorithm can work with a single linear operator.
 
 ## Implement repeated propagation
@@ -90,11 +90,11 @@ problem for every backend. The validation method must also accept the
 backend/map combinations that the chosen representation supports; the example
 reuses Sequential's validation because it requests population coordinates.
 
-Even with population coordinates, immigration can append an auxiliary
+Even with population coordinates, source mass can append an auxiliary
 coordinate to turn an affine recurrence into a linear action. With reduced
 coordinates, encoding can incorporate the first generation, leaving
 `problem.steps` smaller than the requested generation count. Reconstruction
-can also add a final immigration event. Consequently:
+can also add a final source contribution. Consequently:
 
 - Use `problem.initial.shape` for working-vector allocations.
 - Use `problem.steps` for the exponent, including when it is zero.
@@ -103,7 +103,7 @@ can also add a final immigration event. Consequently:
 
 Calling `problem.reconstruct(state)` alone converts coordinates but does not
 check convergence. Do not normalize the reconstructed mass: segregating mass
-can decrease, immigration can increase it, and signed inputs are supported.
+can decrease, source mass can increase it, and signed inputs are supported.
 
 ## Report approximation error
 
@@ -152,7 +152,7 @@ linear action above.
 
 Compare forward results with `Sequential` using the same backend and frequency
 map. Include zero and one generation, full and segregating distributions, and
-immigration: these expose mistakes in exponents, state layout, and source timing.
+source mass: these expose mistakes in exponents, state layout, and source timing.
 For methods that allow reduction, also exercise a reduced Jacobi problem.
 
 Custom methods own their differentiation and batching behavior. The example

@@ -54,7 +54,7 @@ working-state size), and at most 100 restart cycles per solve. A recomputed
 residual checks the result. These internal tolerances are independent of
 the outer power tolerances.
 
-For constant immigration $b$ with Jacobi, initialize $z_0=D^Tv_0$ and use
+For constant source mass $b$ with Jacobi, initialize $z_0=D^Tv_0$ and use
 
 $$
 z_{t+1}=H_{\mathrm J}^Tz_t+D^Tb,\qquad v_g\approx E^Tz_{g-1}+b.

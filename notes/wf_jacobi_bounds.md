@@ -22,7 +22,7 @@ The relevant basis is Jacobi with parameters $(1,1)$, equivalently Gegenbauer wi
 
 This note derives the ideal projection bound used by the current rank selector, gives separate bounds for sampled coefficients and padded assembly, and explains their implications for repeated transitions. The resulting sufficient rank is $O(\sqrt{M\log(M/\varepsilon)})$, capped at the exact finite dimension. A bound with a dimension-independent Gaussian prefactor is **not established here**. The larger sufficient rank is a limitation of the certificate, not a proof that the Jacobi approximation needs that many modes.
 
-The implementation discussed is [src/drifft/_jacobi.py](../src/drifft/_jacobi.py), specifically `Jacobi`, `_choose_rank`, `_JacobiGeometry`, and `_assemble`. Sections 5–6 analyze neutral evolution and symmetric underdominance without recurrent mutation. Section 8 describes the extension to diploid selection composed with mutation and its separate assembly bound. Immigration is a separate affine forcing. All mathematical certificates below are in exact arithmetic unless an additional numerical error is stated explicitly.
+The implementation discussed is [src/drifft/_jacobi.py](../src/drifft/_jacobi.py), specifically `Jacobi`, `_choose_rank`, `_JacobiGeometry`, and `_assemble`. Sections 5–6 analyze neutral evolution and symmetric underdominance without recurrent mutation. Section 8 describes the extension to diploid selection composed with mutation and its separate assembly bound. Source mass is a separate affine forcing. All mathematical certificates below are in exact arithmetic unless an additional numerical error is stated explicitly.
 
 ## 1. Setup and notation
 
@@ -468,7 +468,7 @@ $$
 
 The sum is empty when $t=0$. This bound can be pessimistic, but exposes the missing factors. For example, an $r\times r$ Frobenius bound converts to a maximum-norm bound with a factor at most $\sqrt r$; the full reduced matrix also includes the forcing column. Neither eigenvalues nor an unweighted coefficient residual alone control these amplification factors.
 
-A rational Krylov approximation introduces an additional power-action error. For forward propagation, that error must be measured after decoding, or bounded using a decoder norm. Immigration introduces a sum of propagated source terms. Neither extension is automatically covered by a one-step rank tolerance. Parameter-derivative and relative rare-event errors likewise need separate analyses.
+A rational Krylov approximation introduces an additional power-action error. For forward propagation, that error must be measured after decoding, or bounded using a decoder norm. Source mass introduces a sum of propagated source terms. Neither extension is automatically covered by a one-step rank tolerance. Parameter-derivative and relative rare-event errors likewise need separate analyses.
 
 ## 7. Comparison with the filtered Chebyshev result
 
@@ -627,11 +627,11 @@ $$
 where the first two coordinates are the endpoint interpolant. This correction
 uses the sampled coefficient transform and adds its quadrature and stencil
 errors. It does not inherit the ideal full-state padding bound without those
-additional terms. Mutation remains a frequency transformation; immigration is
+additional terms. Mutation remains a frequency transformation; source mass is
 still a separate source added after each generation.
 
 Tests compare both composition orders, full-state and killed-interior powers,
-immigration, endpoint seeds at mutation rates down to $10^{-8}$, parameter
+source mass, endpoint seeds at mutation rates down to $10^{-8}$, parameter
 JVPs/VJPs and batching, and changing-size histories with independent dense
 binomial transitions. A separately truncated case compares the rational
 assembly with the sampled $ED$ construction. These checks do not certify

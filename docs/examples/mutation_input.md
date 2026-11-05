@@ -74,5 +74,9 @@ assert jnp.allclose(expected_total, expected_counts.sum(), rtol=1e-10, atol=1e-1
 
 Here the initial contribution is zero, so `expectation.offset` equals the
 expected terminal segregating mass. Demographic expectations require Sequential.
-For arbitrary immigration vectors, use [`AbstractEpochMethod.advance`](../api/methods.md#drifft.AbstractEpochMethod.advance).
+For a constant-size interval with an arbitrary source vector, pass `source_mass`
+to [`AbstractEpochMethod.advance`](../api/methods.md#drifft.AbstractEpochMethod.advance).
+This vector supplies the mass to add each generation directly;
+`singleton_mutation_rate` supplies a per-copy rate that the demographic model
+scales by the destination population size.
 Validate the spectrum under tighter settings using the [accuracy checks](../guide/numerics.md).

@@ -75,7 +75,7 @@ $\widetilde P=DE$, evolution instead powers the smaller matrix
 $H_{\mathrm J}^T=(ED)^T$ between encoding and reconstruction.
 
 We use $A$ only for this **working-coordinate operator**, with the following
-explicit correspondence for an interval without immigration:
+explicit correspondence for an interval without source mass:
 
 | Coordinates | Operator $A$ | Input $z$ | Exponent $k$ | Population output |
 | --- | --- | --- | --- | --- |
@@ -352,7 +352,7 @@ $$
 $$
 
 Thus $z=D^Tv_0$, $A=H_{\mathrm J}^T$, $k=g-1$, $R=E^T$, and $c=0$
-without immigration. Their variations include
+without source mass. Their variations include
 
 $$
 \dot z=\dot D^Tv_0+D^T\dot v_0,\quad
@@ -366,7 +366,7 @@ uses $z=v_0$, $A=\widetilde P^T$, $k=g$, and $R=I$.
 ### Affine sources
 
 A constant source can be included in a linear power by adding a constant
-coordinate. This preserves the post-transition timing of immigration and
+coordinate. This preserves the post-transition timing of source mass and
 allows source sensitivities to use the same power rule.
 
 $$

@@ -404,11 +404,11 @@ class DemographicTransition(eqx.Module):
         ):
             # The final generation belongs to the rectangular boundary action.
             # Holding for duration instead would add an extra generation and,
-            # in segregating mode, an extra immigration event at the source size.
+            # in segregating mode, an extra source contribution at the source size.
             error = jnp.asarray(0.0)
             interval_status = EvolutionStatus.successful
             if duration > 1:
-                immigration = (
+                source_mass = (
                     jnp.zeros_like(distribution).at[0].set(2 * source * singleton_rate)
                     if segregating
                     else None
@@ -419,7 +419,7 @@ class DemographicTransition(eqx.Module):
                     frequency_map=self.frequency_map,
                     generations=duration - 1,
                     segregating=segregating,
-                    immigration=immigration,
+                    source_mass=source_mass,
                     throw=False,
                 )
                 distribution, error, interval_status = (

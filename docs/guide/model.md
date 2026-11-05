@@ -126,6 +126,9 @@ No initial equilibrium or extra resampling operation is implicit.
 
 Singleton input makes forward evolution affine. For one step,
 $v_{t+1}=P^Tv_t+b$, where $b$ is the new mass added after reproduction.
+Constant-size evolution methods accept this vector as `source_mass`.
+Demographic calls accept `singleton_mutation_rate`, adding
+`2 * dest_pop_size * singleton_mutation_rate` at count one after each generation.
 Backward propagation carries both values $f$ and a scalar offset $c$:
 
 $$

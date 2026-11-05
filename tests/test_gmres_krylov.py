@@ -19,7 +19,7 @@ jax.config.update("jax_enable_x64", True)
 @pytest.mark.parametrize("backend_type", [drifft.FFT, drifft.NUFFT])
 @pytest.mark.parametrize("segregating", [False, True])
 def test_gmres_rational_matches_dense(backend_type, segregating):
-    """Match selected dense recurrence including immigration and signed inputs."""
+    """Match selected dense recurrence including source mass and signed inputs."""
     n = 11 if segregating else 13
     mass = jnp.linspace(-0.01, 0.03, n)
     source = jnp.zeros(n).at[1].set(1e-3)
@@ -35,7 +35,7 @@ def test_gmres_rational_matches_dense(backend_type, segregating):
         frequency_map=drifft.Underdominance(0.3),
         generations=25,
         segregating=segregating,
-        immigration=source,
+        source_mass=source,
     )
     assert result.converged
     assert jnp.allclose(result.distribution, expected, atol=2e-10, rtol=2e-9)
@@ -43,7 +43,7 @@ def test_gmres_rational_matches_dense(backend_type, segregating):
 
 @pytest.mark.parametrize("backend_type", [drifft.FFT, drifft.NUFFT])
 @pytest.mark.parametrize("generations", [0, 1, 15])
-def test_gmres_zero_mass_and_immigration(backend_type, generations):
+def test_gmres_zero_mass_and_source_mass(backend_type, generations):
     """Zero right-hand sides and source-only histories remain valid."""
     backend = backend_type(6)
     for source in (None, jnp.eye(11)[0] * 1e-3):
@@ -51,7 +51,7 @@ def test_gmres_zero_mass_and_immigration(backend_type, generations):
             frequency_map=drifft.Neutral(),
             generations=generations,
             segregating=True,
-            immigration=source,
+            source_mass=source,
         )
         mass = jnp.zeros(11)
         reference = drifft.Sequential().advance(backend, mass, **kwargs)

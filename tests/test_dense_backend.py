@@ -76,7 +76,7 @@ def test_dense_shape_validation_and_empty_probability_rows():
 
 
 @pytest.mark.parametrize("segregating", [False, True])
-def test_dense_demography_with_mutation_selection_and_immigration(segregating):
+def test_dense_demography_with_mutation_selection_and_source_mass(segregating):
     """Support changing sizes, matched expectations, and shared frequency parameters."""
     history = drifft.Demography([5, 3, 4], [3, 2])
     rule = drifft.Composition(

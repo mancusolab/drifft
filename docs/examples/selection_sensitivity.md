@@ -3,7 +3,7 @@
 How much does selection change the probability that a new allele is lost within
 20 generations? Differentiate that finite-time loss probability, then compare
 the derivative with central finite differences. The population has 32 diploid
-individuals, starts with one derived copy, and has no mutation or immigration.
+individuals, starts with one derived copy, and has no mutation or added source mass.
 
 ![Loss probability and its derivative as selection changes](../_static/examples/selection_sensitivity.svg)
 

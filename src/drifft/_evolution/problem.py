@@ -80,7 +80,7 @@ class EpochProblem(Protocol):
     then use `result` to reconstruct population mass and check convergence.
     `steps` is the prepared exponent; reduced representations may absorb an
     initial generation into encoding. Use this exponent rather than the original
-    requested generation count. Immigration may add an auxiliary coordinate.
+    requested generation count. A source term may add an auxiliary coordinate.
 
     This protocol describes drifft's prepared PyTree; obtain instances through
     `prepare_epoch`. It is not a constructor or an interface for supplying
@@ -91,7 +91,7 @@ class EpochProblem(Protocol):
     - `operator`: Square Lineax operator acting on working vectors. Apply it with
       `operator.mv(state)`; a dense matrix representation is not required.
     - `initial`: One-dimensional float64 working vector. Its length may differ
-      from the population distribution because of reduction or immigration.
+      from the population distribution because of reduction or a source term.
     - `steps`: Nonnegative Python integer specifying the prepared power. Zero
       steps means passing `initial` directly to `result`, not skipping reconstruction.
 
@@ -191,7 +191,7 @@ class _PowerProblem(eqx.Module):
         return self.output_map(state[:-1] if self.augmented else state)
 
     def reconstruct(self, state: jax.Array) -> jax.Array:
-        """Recover final population mass, including the last immigration event."""
+        """Recover final population mass, including the final source contribution."""
         return self.decode(state) + self.output_offset
 
     def error_norm(self, delta: jax.Array) -> jax.Array:
@@ -225,7 +225,7 @@ class _PowerProblem(eqx.Module):
         return _epoch_result(self.reconstruct(state), error_estimate, tolerance, throw)
 
 
-def _epoch_inputs(distribution, immigration, gene_copies, generations, segregating):
+def _epoch_inputs(distribution, source_mass, gene_copies, generations, segregating):
     """Normalize shared inputs and enforce static shape contracts."""
     if (
         isinstance(generations, bool)
@@ -239,14 +239,14 @@ def _epoch_inputs(distribution, immigration, gene_copies, generations, segregati
     size = gene_copies - 1 if segregating else gene_copies + 1
     if distribution.shape != (size,):
         raise ValueError(f"distribution must have {size} entries")
-    immigration = (
+    source_mass = (
         jnp.zeros_like(distribution)
-        if immigration is None
-        else jnp.asarray(immigration, dtype=jnp.float64)
+        if source_mass is None
+        else jnp.asarray(source_mass, dtype=jnp.float64)
     )
-    if immigration.shape != distribution.shape:
-        raise ValueError("immigration must have the same shape as distribution")
-    return distribution, immigration
+    if source_mass.shape != distribution.shape:
+        raise ValueError("source_mass must have the same shape as distribution")
+    return distribution, source_mass
 
 
 def _epoch_result(distribution, error, tolerance, throw, solve_success=True):

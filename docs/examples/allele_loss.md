@@ -3,7 +3,7 @@
 How does selection change the fate of a new allele? Start with one copy in a
 population of 32 diploid individuals and follow its loss and fixation
 probabilities for 80 generations. Compare neutrality with two additive fitness
-penalties. Population size is constant, and there is no mutation or immigration.
+penalties. Population size is constant, with no mutation or added source mass.
 
 ![Loss and fixation probabilities under three selection strengths](../_static/examples/allele_loss.svg)
 

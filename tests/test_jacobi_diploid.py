@@ -49,7 +49,7 @@ def composed_map(parameters, mutation_first=True):
 @pytest.mark.parametrize("segregating", [False, True])
 @pytest.mark.parametrize("generations", [1, 9])
 def test_composed_epochs_match_dense(mutation_first, segregating, generations):
-    """Endpoint return, asymmetric selection, killing and immigration use one sampling step."""
+    """Combine endpoint return, asymmetric selection, killing and source mass."""
     copies = 16
     parameters = jnp.array([-0.035, 0.08, 0.012, 0.027])
     matrix = dense_diploid(copies, parameters, mutation_first)
@@ -67,7 +67,7 @@ def test_composed_epochs_match_dense(mutation_first, segregating, generations):
         frequency_map=composed_map(parameters, mutation_first),
         generations=generations,
         segregating=segregating,
-        immigration=source,
+        source_mass=source,
     )
     assert result.converged
     np.testing.assert_allclose(result.distribution, expected, atol=2e-12, rtol=2e-10)

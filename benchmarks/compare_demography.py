@@ -93,7 +93,7 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
             sizes[:-1], sizes[1:], durations, strict=True
         ):
             tick = time.perf_counter()
-            immigration = (
+            source_mass = (
                 jnp.zeros(2 * source - 1).at[0].set(2 * source * mutation_rate)
             )
             result = method.advance(
@@ -102,7 +102,7 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
                 frequency_map=frequency_map,
                 generations=duration - 1,
                 segregating=True,
-                immigration=immigration,
+                source_mass=source_mass,
                 throw=False,
             )
             jax.block_until_ready(result)

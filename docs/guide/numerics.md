@@ -86,7 +86,7 @@ it; see [Krylov controls](../methods/jacobi_krylov.md#accuracy-and-controls).
 
 ## Differentiating biological parameters
 
-Selection and mutation parameters, initial mass, and immigration can be
+Selection and mutation parameters, initial mass, and source mass can be
 array-valued inputs to a differentiated function. Population sizes, durations,
 and numerical dimensions are fixed configuration. Construct backends outside
 the function, then create or update the frequency map inside it; the

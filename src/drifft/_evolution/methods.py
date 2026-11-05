@@ -95,12 +95,12 @@ class AbstractEpochMethod(eqx.Module):
         frequency_map: AbstractFrequencyMap,
         generations: int,
         segregating: bool = False,
-        immigration: jax.Array | None = None,
+        source_mass: jax.Array | None = None,
         throw: bool = True,
     ) -> EpochResult:
         r"""Bind geometry and evolve a constant-size interval.
 
-        !!! example "Example: Evolve with immigration"
+        !!! example "Example: Evolve with singleton mutation input"
 
             ```python
             import jax
@@ -113,7 +113,7 @@ class AbstractEpochMethod(eqx.Module):
             source = jnp.zeros_like(initial).at[0].set(128 * 1e-8)
             result = drifft.RationalKrylov(dimension=40).advance(
                 backend, initial, frequency_map=drifft.Neutral(),
-                generations=250, segregating=True, immigration=source,
+                generations=250, segregating=True, source_mass=source,
             )
             final = result.distribution
             ```
@@ -131,15 +131,16 @@ class AbstractEpochMethod(eqx.Module):
         - `frequency_map`: Process shared by every generation.
         - `generations`: Nonnegative Python integer, static under JIT.
         - `segregating`: Discard endpoint mass at each generation.
-        - `immigration`: Mass added after every generation, matching the input
-          shape; `None` means no source. In segregating mode it is added after
-          endpoint mass is discarded.
+        - `source_mass`: Source mass added after every generation, including the
+          last, matching the input shape; `None` means no source. This can
+          represent new mutations by placing mass at count one, as in the example.
+          In segregating mode it is added after endpoint mass is discarded.
         - `throw`: Raise on numerical failure; under vmap this may fail the whole batch.
 
         **Returns:**
 
         An `EpochResult` in population coordinates; zero generations preserves
-        the input without immigration. Sequential reports zero power-approximation
+        the input without adding source mass. Sequential reports zero power-approximation
         error; Krylov estimates exclude backend and representation errors.
         Check `converged` with `throw=False`.
 
@@ -166,7 +167,7 @@ class AbstractEpochMethod(eqx.Module):
             frequency_map=frequency_map,
             generations=generations,
             segregating=segregating,
-            immigration=immigration,
+            source_mass=source_mass,
         )
         return self.solve(problem, throw=throw)
 
@@ -179,13 +180,13 @@ def prepare_epoch(
     frequency_map: AbstractFrequencyMap,
     generations: int,
     segregating: bool = False,
-    immigration: jax.Array | None = None,
+    source_mass: jax.Array | None = None,
 ) -> EpochProblem:
     r"""Prepare a method's working problem from population-space inputs.
 
     Selects working coordinates using the method's representation declaration,
     after validating the backend and frequency map. The returned operator
-    includes per-generation immigration when supplied; reconstruction restores
+    includes per-generation source mass when supplied; reconstruction restores
     the requested population layout and any final source contribution.
 
     !!! example "Example: Prepare and solve an interval"
@@ -202,7 +203,7 @@ def prepare_epoch(
     - `method`: Epoch algorithm whose representation requirement selects preparation.
     - `backend`: Prepared geometry, constructed outside JIT.
     - `distribution`: Full or interior mass, as in `AbstractEpochMethod.advance`.
-    - `frequency_map`, `generations`, `segregating`, `immigration`: Process, static
+    - `frequency_map`, `generations`, `segregating`, `source_mass`: Process, static
       duration, state layout and per-generation source as in that interface.
 
     **Returns:**
@@ -223,10 +224,10 @@ def prepare_epoch(
     method.validate(backend, frequency_map)
     if not method.allows_reduced_representation:
         return _prepare_transition(
-            backend, distribution, frequency_map, generations, segregating, immigration
+            backend, distribution, frequency_map, generations, segregating, source_mass
         )
     return _prepare_epoch(
-        backend, distribution, frequency_map, generations, segregating, immigration
+        backend, distribution, frequency_map, generations, segregating, source_mass
     )
 
 
@@ -242,7 +243,7 @@ class Sequential(AbstractEpochMethod):
        =(\widetilde P^T)^g v_0.$$
 
     Rows of $\widetilde P$ index source counts and columns index destination
-    counts, so forward propagation uses its transpose. With immigration $b$,
+    counts, so forward propagation uses its transpose. With source mass $b$,
     each step instead computes $v_{t+1}=\widetilde P^T v_t+b$; segregating
     evolution uses the interior restriction $\widetilde Q$.
 
