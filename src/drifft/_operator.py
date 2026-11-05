@@ -26,15 +26,14 @@ class Transition(eqx.Module):
     The backend controls how $P$ is represented and evaluated.
 
     Segregating operations restrict the kernel to interior allele counts and
-    discard endpoint mass. They require complete, ordered allele-count grids;
-    sampled probability rows are for full-state operations.
+    discard endpoint mass. Source and destination states each form a complete,
+    ordered diploid allele-count grid.
     """
 
     backend: AbstractTransitionBackend
     frequency_map: AbstractFrequencyMap | None
     _probabilities: jax.Array | None
-    source_pop_size: int | None = eqx.field(static=True)
-    _source_gene_copies: int = eqx.field(static=True)
+    source_pop_size: int = eqx.field(static=True)
 
     def __init__(
         self,
@@ -58,16 +57,18 @@ class Transition(eqx.Module):
         - `frequency_map`: `AbstractFrequencyMap`; mutually exclusive with `probabilities`.
         - `source_pop_size`: Positive integer diploid source size. Defaults to
           `backend.pop_size` for a map. For explicit rows, inferred as
-          `(len(probabilities) - 1) // 2` when the length is odd and at least three;
-          otherwise remains `None`. If supplied, requires `2 * source_pop_size + 1` rows.
-        - `probabilities`: Optional nonempty vector of source probabilities in `[0, 1]`;
-          converted to float64. Rows may be arbitrary sampled probabilities for
-          full-state operations; segregating operations require ordered count grids.
+          `(len(probabilities) - 1) // 2`. If supplied, requires
+          `2 * source_pop_size + 1` rows.
+        - `probabilities`: Optional vector of offspring allele probabilities in
+          `[0, 1]`, with odd length at least three; converted to float64. Entry
+          $i$ corresponds to source allele count $i$. Probabilities need not be
+          monotone, and endpoint probabilities need not be zero and one.
 
         **Raises:**
 
         `ValueError` for ambiguous configuration or invalid source dimensions or
-        probability shape; `TypeError` for an invalid backend or frequency-map type.
+        probability shape or map-output structure, shape, or dtype;
+        `TypeError` for an invalid backend or frequency-map type.
 
         Finiteness and probability ranges are caller preconditions, not checked
         here. Enable JAX x64 before preparing the backend. For derivatives through
@@ -75,6 +76,14 @@ class Transition(eqx.Module):
         """
         if not isinstance(backend, AbstractTransitionBackend):
             raise TypeError("backend must be an AbstractTransitionBackend")
+        if (frequency_map is None) == (probabilities is None):
+            raise ValueError("Provide exactly one of frequency_map or probabilities")
+        if frequency_map is not None and not isinstance(
+            frequency_map, AbstractFrequencyMap
+        ):
+            raise TypeError(
+                "frequency_map must be an AbstractFrequencyMap; wrap functions in FrequencyMap"
+            )
         self.backend = backend
         self.frequency_map = frequency_map
         self._probabilities = (
@@ -82,6 +91,14 @@ class Transition(eqx.Module):
             if probabilities is None
             else jnp.asarray(probabilities, dtype=jnp.float64)
         )
+        if self._probabilities is not None and (
+            self._probabilities.ndim != 1
+            or self._probabilities.size < 3
+            or self._probabilities.size % 2 == 0
+        ):
+            raise ValueError(
+                "probabilities must be a vector of odd length at least three"
+            )
         if source_pop_size is not None and (
             isinstance(source_pop_size, bool)
             or not isinstance(source_pop_size, int)
@@ -92,35 +109,27 @@ class Transition(eqx.Module):
             self.source_pop_size = (
                 backend.pop_size if source_pop_size is None else source_pop_size
             )
-            self._source_gene_copies = 2 * self.source_pop_size
-        else:
-            self._source_gene_copies = self._probabilities.size - 1
-            inferred = (
-                self._source_gene_copies // 2
-                if self._source_gene_copies >= 2 and self._source_gene_copies % 2 == 0
-                else None
+            spec = jax.ShapeDtypeStruct((self.source_size(),), jnp.float64)
+            output = eqx.filter_eval_shape(
+                lambda mapping, frequencies: mapping.apply(frequencies),
+                frequency_map,
+                spec,
             )
-            self.source_pop_size = (
-                inferred if source_pop_size is None else source_pop_size
-            )
-            if (
-                source_pop_size is not None
-                and 2 * source_pop_size != self._source_gene_copies
-            ):
-                raise ValueError("source_pop_size must match the probability vector")
-
-    def __check_init__(self) -> None:
-        """Validate static dimensions and mutually exclusive construction modes."""
-        if (self.frequency_map is None) == (self._probabilities is None):
-            raise ValueError("Provide exactly one of frequency_map or probabilities")
-        if self.frequency_map is not None:
-            if not isinstance(self.frequency_map, AbstractFrequencyMap):
-                raise TypeError(
-                    "frequency_map must be an AbstractFrequencyMap; wrap functions in FrequencyMap"
+            if not isinstance(output, jax.ShapeDtypeStruct):
+                raise ValueError("frequency_map must return a single float64 array")
+            if output.shape != spec.shape:
+                raise ValueError(
+                    "frequency_map must return one probability per source frequency"
                 )
-        elif self._probabilities is not None:
-            if self._probabilities.ndim != 1 or self._probabilities.size == 0:
-                raise ValueError("probabilities must be a nonempty vector")
+            if output.dtype != spec.dtype:
+                raise ValueError("frequency_map must return float64 probabilities")
+        else:
+            rows = self._probabilities.size
+            self.source_pop_size = (
+                (rows - 1) // 2 if source_pop_size is None else source_pop_size
+            )
+            if source_pop_size is not None and 2 * source_pop_size + 1 != rows:
+                raise ValueError("source_pop_size must match the probability vector")
 
     def dest_size(self) -> int:
         r"""Number of destination states (columns of the transition matrix $P$).
@@ -135,7 +144,7 @@ class Transition(eqx.Module):
 
         **Returns:**
 
-        The Python integer `2 * backend.pop_size + 1`.
+        The number of columns in $P$, as a Python integer.
         """
         return self.backend._gene_copies + 1
 
@@ -152,10 +161,9 @@ class Transition(eqx.Module):
 
         **Returns:**
 
-        The Python integer `2 * source_pop_size + 1` for a frequency map,
-        or the number of supplied rows for explicit probabilities.
+        The number of rows in $P$, as a Python integer.
         """
-        return self._source_gene_copies + 1
+        return 2 * self.source_pop_size + 1
 
     @property
     def probabilities(self) -> jax.Array:
@@ -163,23 +171,13 @@ class Transition(eqx.Module):
 
         Evaluates the bound map on each access, or returns the explicit rows
         with their supplied length.
-        Raises `ValueError` if the map returns an incompatible shape.
         """
         if self._probabilities is not None:
             return self._probabilities
         assert self.frequency_map is not None
-        frequencies = (
-            jnp.arange(self._source_gene_copies + 1, dtype=jnp.float64)
-            / self._source_gene_copies
-        )
-        probabilities = jnp.asarray(
-            self.frequency_map.apply(frequencies), dtype=jnp.float64
-        )
-        if probabilities.shape != frequencies.shape:
-            raise ValueError(
-                "frequency_map must return one probability per source frequency"
-            )
-        return probabilities
+        size = self.source_size()
+        frequencies = jnp.arange(size, dtype=jnp.float64) / (size - 1)
+        return self.frequency_map.apply(frequencies)
 
     @eqx.filter_jit
     def expect(self, values: jax.Array, *, segregating: bool = False) -> jax.Array:
@@ -215,15 +213,13 @@ class Transition(eqx.Module):
 
         **Raises:**
 
-        `ValueError` for incompatible input/map-output shapes or a nonboolean flag.
+        `ValueError` for incompatible input shapes or a nonboolean flag.
         """
         if not isinstance(segregating, bool):
             raise ValueError("segregating must be a Python bool")
         values = jnp.asarray(values, dtype=jnp.float64)
         if segregating:
-            if self.source_pop_size is None or values.shape != (
-                self.backend._gene_copies - 1,
-            ):
+            if values.shape != (self.dest_size() - 2,):
                 raise ValueError(
                     "segregating values must match the destination interior"
                 )
@@ -269,17 +265,15 @@ class Transition(eqx.Module):
 
         **Raises:**
 
-        `ValueError` for incompatible input/map-output shapes or a nonboolean flag.
+        `ValueError` for incompatible input shapes or a nonboolean flag.
         """
         distribution = jnp.asarray(distribution, dtype=jnp.float64)
         if not isinstance(segregating, bool):
             raise ValueError("segregating must be a Python bool")
-        offset = -1 if segregating else 1
-        if segregating and self.source_pop_size is None:
-            raise ValueError("segregating distribution requires source interior states")
-        if distribution.shape != (self._source_gene_copies + offset,):
+        size = self.source_size() - (2 if segregating else 0)
+        if distribution.shape != (size,):
             raise ValueError(
-                f"distribution must have {self._source_gene_copies + offset} entries "
+                f"distribution must have {size} entries "
                 f"for the {'interior' if segregating else 'full'} source grid"
             )
         if segregating:
@@ -308,7 +302,7 @@ class Transition(eqx.Module):
 
         **Raises:**
 
-        `ValueError` for incompatible dimensions/map-output shape or a nonboolean flag.
+        `ValueError` for incompatible dimensions or a nonboolean flag.
         """
         if not isinstance(segregating, bool):
             raise ValueError("segregating must be a Python bool")
@@ -370,7 +364,7 @@ class Transition(eqx.Module):
 
         **Raises:**
 
-        `ValueError` for a nonsquare transition, invalid solver controls, or map shape.
+        `ValueError` for a nonsquare transition or invalid solver controls.
         Runtime errors for failed solves, nonfinite output, or rejected residuals
         with `throw=True`.
 

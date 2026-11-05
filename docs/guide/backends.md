@@ -53,6 +53,13 @@ Sampling now takes diploid sizes too: replace `population_gene_copies=M` and
 This applies to positional arguments as well. Both old counts must be even;
 odd counts cannot be represented by the diploid-size API.
 
+Explicit `Transition(probabilities=...)` vectors represent complete diploid
+source grids: they require an odd number of entries, at least three. Entry $i$
+is the offspring allele probability from source count $i$; the probabilities
+need not be monotone or have absorbing endpoints. For arbitrary evaluation
+points, use `backend.expect(probabilities, values)` or
+`backend.advance(probabilities, distribution)` directly.
+
 !!! warning "Jacobi reduced Krylov restrictions"
 
     All backends support arbitrary valid frequency maps for one-generation

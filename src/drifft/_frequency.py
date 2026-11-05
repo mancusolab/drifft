@@ -21,9 +21,18 @@ class AbstractFrequencyMap(eqx.Module):
     r"""Interface for transforming source frequencies into offspring probabilities.
 
     A map takes allele frequencies $x$ to offspring probabilities $q(x)$,
-    preserving the input shape. Concrete maps implement `apply`; `__call__`
+    preserving the input shape and returning a float64 array for float64 inputs.
+    Concrete maps implement `apply`; `__call__`
     provides shorthand. Implementations must be pure and JAX-compatible;
     differentiable parameters are stored as array leaves.
+
+    !!! example "Example: Offspring allele probabilities"
+
+        ```python
+        # Convert parental frequencies to offspring allele probabilities.
+        probabilities = frequency_map.apply(frequencies)
+        probabilities = frequency_map(frequencies)  # Equivalent call syntax.
+        ```
     """
 
     @abc.abstractmethod
@@ -36,7 +45,7 @@ class AbstractFrequencyMap(eqx.Module):
 
         **Returns:**
 
-        An array of finite probabilities in `[0, 1]` with the same shape as
+        A float64 array of finite probabilities in `[0, 1]` with the same shape as
         `frequencies`.
 
         !!! note "Input domain"
@@ -64,8 +73,9 @@ class AbstractFrequencyMap(eqx.Module):
 class FrequencyMap(AbstractFrequencyMap):
     r"""Wrap a custom JAX-compatible function in the frequency-map interface.
 
-    The wrapped function must be pure, preserve shape, and return finite
-    probabilities in `[0, 1]`. Its parameters stay connected to differentiation;
+    The wrapped function must be pure, preserve shape, and return a float64 array
+    of finite probabilities in `[0, 1]` for float64 inputs.
+    Its parameters stay connected to differentiation;
     its output is returned without conversion, clipping, or normalization.
 
     !!! example "Example: Custom offspring probabilities"

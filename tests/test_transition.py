@@ -80,17 +80,28 @@ def test_selection_model_and_both_transition_directions():
 
 
 def test_explicit_probabilities_preserve_rectangular_transitions():
-    """Allow sampled source rows with a different destination dimension."""
+    """Preserve rectangular diploid grids and nonabsorbing endpoint probabilities."""
     backend = drifft.NUFFT(4)
-    p = jnp.array([0.0, 0.15, 0.7, 1.0])
+    p = jnp.array([0.05, 0.7, 0.4, 0.8, 0.95])
     transition = drifft.Transition(backend, probabilities=p)
     matrix = binom.pmf(np.arange(9)[None, :], 8, np.asarray(p)[:, None])
     values = jnp.arange(9, dtype=jnp.float64)
-    mass = jnp.array([0.1, 0.2, 0.3, 0.4])
+    mass = jnp.array([0.1, 0.2, 0.3, 0.25, 0.15])
+    assert transition.source_pop_size == 2
     np.testing.assert_allclose(transition.expect(values), matrix @ values, atol=1e-12)
     np.testing.assert_allclose(transition.advance(mass), matrix.T @ mass, atol=1e-12)
     assert transition.as_lineax().in_structure().shape == (9,)
-    assert transition.as_lineax().out_structure().shape == (4,)
+    assert transition.as_lineax().out_structure().shape == (5,)
+    np.testing.assert_allclose(
+        transition.expect(values[1:-1], segregating=True),
+        matrix[1:-1, 1:-1] @ values[1:-1],
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        transition.advance(mass[1:-1], segregating=True),
+        matrix[1:-1, 1:-1].T @ mass[1:-1],
+        atol=1e-12,
+    )
     with pytest.raises(ValueError, match="square"):
         transition.expected_visits()
 
@@ -108,6 +119,22 @@ def test_custom_selection_and_rectangular_source_size():
         transition.expect(jnp.arange(9, dtype=jnp.float64)),
         8 * (np.arange(5) / 4) ** 2,
         atol=1e-12,
+    )
+
+
+def test_explicit_probability_gradients_preserve_population_grid():
+    """Differentiate a rectangular transition's offspring mean through explicit rows."""
+    backend = drifft.Dense(4)
+    mass = jnp.array([0.1, 0.2, 0.3, 0.25, 0.15])
+
+    def mean_count(probabilities):
+        """Average the offspring allele count over source states."""
+        transition = drifft.Transition(backend, probabilities=probabilities)
+        return transition.advance(mass) @ jnp.arange(transition.dest_size())
+
+    probabilities = jnp.array([0.05, 0.7, 0.4, 0.8, 0.95])
+    np.testing.assert_allclose(
+        jax.jit(jax.grad(mean_count))(probabilities), 8 * mass, atol=1e-12
     )
 
 
@@ -211,14 +238,71 @@ def test_transition_shape_errors_are_explicit():
         model.advance(jnp.ones(16))
     with pytest.raises(ValueError, match="interior"):
         model.advance(jnp.ones(16), segregating=True)
-    with pytest.raises(ValueError, match="probability"):
-        drifft.Transition(
-            backend, frequency_map=drifft.FrequencyMap(lambda x: jnp.asarray(0.5))
-        ).expect(jnp.ones(17))
     with pytest.raises(ValueError, match="exactly one"):
         drifft.Transition(
             backend, drifft.Underdominance(0.0), probabilities=jnp.linspace(0, 1, 17)
         )
+
+
+@pytest.mark.parametrize("compiled", [False, True])
+@pytest.mark.parametrize("shape", [(), (4,), (5, 1)])
+def test_map_shape_is_checked_at_construction(compiled, shape):
+    """Reject invalid map outputs without applying the constructed transition."""
+    backend = drifft.Dense(4)
+
+    def construct():
+        """Require one map output for each of the five source states."""
+        return drifft.Transition(
+            backend,
+            drifft.FrequencyMap(lambda x: jnp.full(shape, 0.5)),
+            source_pop_size=2,
+        )
+
+    run_construct = eqx.filter_jit(construct) if compiled else construct
+    with pytest.raises(ValueError, match="one probability per source frequency"):
+        run_construct()
+
+
+@pytest.mark.parametrize("compiled", [False, True])
+@pytest.mark.parametrize("dtype", [jnp.float32, jnp.int32, jnp.bool_, jnp.complex128])
+def test_map_dtype_is_checked_at_construction(compiled, dtype):
+    """Reject incompatible map dtypes instead of silently converting the output."""
+    backend = drifft.Dense(2)
+
+    def construct():
+        """Return the correct grid shape with an incompatible dtype."""
+        return drifft.Transition(
+            backend, drifft.FrequencyMap(lambda x: x.astype(dtype))
+        )
+
+    run_construct = eqx.filter_jit(construct) if compiled else construct
+    with pytest.raises(ValueError, match="float64 probabilities"):
+        run_construct()
+
+
+@pytest.mark.parametrize("compiled", [False, True])
+@pytest.mark.parametrize("kind", ["list", "tuple", "dict", "none"])
+def test_map_output_must_be_one_array(compiled, kind):
+    """Reject structured outputs even when their leaves have valid dtypes."""
+    backend = drifft.Dense(2)
+
+    def mapping(x):
+        """Produce a non-array output for constructor validation."""
+        if kind == "list":
+            return list(x)
+        if kind == "tuple":
+            return (x,)
+        if kind == "dict":
+            return {"probabilities": x}
+        return None
+
+    def construct():
+        """Bind the malformed map without applying the transition."""
+        return drifft.Transition(backend, drifft.FrequencyMap(mapping))
+
+    run_construct = eqx.filter_jit(construct) if compiled else construct
+    with pytest.raises(ValueError, match="single float64 array"):
+        run_construct()
 
 
 @pytest.mark.parametrize("size", [0, -1, True, 2.5])
@@ -228,24 +312,31 @@ def test_invalid_source_pop_size(size):
         drifft.Transition(drifft.Dense(3), drifft.Neutral(), source_pop_size=size)
 
 
-def test_explicit_rows_infer_pop_size_only_for_complete_grid_lengths():
-    """Sampled rows retain arbitrary lengths without inventing fractional sizes."""
+@pytest.mark.parametrize("compiled", [False, True])
+@pytest.mark.parametrize("length", [0, 1, 2, 4, 6])
+def test_explicit_rows_require_complete_grid_lengths(compiled, length):
+    """Reject row counts that cannot describe a positive diploid population."""
     backend = drifft.Dense(pop_size=3)
-    for length in (1, 2, 4):
-        transition = drifft.Transition(
-            backend, probabilities=jnp.linspace(0, 1, length)
-        )
-        assert transition.source_pop_size is None
-        assert transition.dest_size() == 7
-        assert transition.source_size() == length
-        assert transition.dest_size() == transition.as_lineax().in_size()
-        assert transition.source_size() == transition.as_lineax().out_size()
-        assert transition.expect(jnp.ones(7)).shape == (length,)
-        assert transition.advance(jnp.ones(length)).shape == (7,)
-        with pytest.raises(ValueError, match="interior"):
-            transition.expect(jnp.ones(5), segregating=True)
+
+    def construct(probabilities):
+        """Construct from explicit probabilities without applying the operator."""
+        return drifft.Transition(backend, probabilities=probabilities)
+
+    run_construct = eqx.filter_jit(construct) if compiled else construct
+    with pytest.raises(ValueError, match="odd length at least three"):
+        run_construct(jnp.linspace(0, 1, length))
+
+
+def test_explicit_rows_infer_and_validate_pop_size():
+    """Infer the source population or require the supplied size to agree."""
+    backend = drifft.Dense(pop_size=3)
     transition = drifft.Transition(backend, probabilities=jnp.linspace(0, 1, 5))
     assert transition.source_pop_size == 2
+    assert transition.source_size() == 5
+    explicit = drifft.Transition(
+        backend, probabilities=jnp.linspace(0, 1, 3), source_pop_size=1
+    )
+    assert explicit.source_size() == 3
     with pytest.raises(ValueError, match="match the probability vector"):
         drifft.Transition(
             backend, probabilities=jnp.linspace(0, 1, 5), source_pop_size=3

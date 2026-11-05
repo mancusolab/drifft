@@ -399,7 +399,7 @@ class HypergeometricSampling(eqx.Module):
 
         **Returns:**
 
-        The Python integer `2 * pop_size + 1`.
+        The number of rows in $S$, as a Python integer.
         """
         return self._population_copies + 1
 
@@ -415,7 +415,7 @@ class HypergeometricSampling(eqx.Module):
 
         **Returns:**
 
-        The Python integer `2 * sample_size + 1`.
+        The number of columns in $S$, as a Python integer.
         """
         return self._sample_copies + 1
 

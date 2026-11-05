@@ -87,8 +87,9 @@ def test_sampled_kernel_coefficients_and_negative_mass():
     M = 4096
     backend = wf.NUFFT(M // 2)
     p = jnp.array([0.0, 1e-8, 0.01, 0.25, 0.5, 0.9, 1 - 1e-8, 1.0])
-    transition = wf.Transition(backend, probabilities=p)
-    actual = np.asarray(jax.jit(jax.vmap(transition.advance))(jnp.eye(len(p))))
+    actual = np.asarray(
+        jax.jit(jax.vmap(lambda mass: backend.advance(p, mass)))(jnp.eye(len(p)))
+    )
     exact = binom.pmf(np.arange(M + 1)[None, :], M, np.asarray(p)[:, None])
     error = np.sum(np.abs(actual - exact), axis=1).max()
     negative_mass = np.sum(np.maximum(-actual, 0), axis=1).max()
