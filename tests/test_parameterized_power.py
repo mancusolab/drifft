@@ -351,3 +351,136 @@ def test_partial_parameter_batches_and_zero_jvp():
         jnp.array(0.02), initial
     )
     assert jnp.allclose(observed, expected, rtol=1e-9, atol=1e-11)
+
+
+@pytest.mark.parametrize(
+    "process,segregating,expected_leaves",
+    [
+        (drifft.Neutral(), True, 0),
+        (drifft.Underdominance(0.02), True, 0),
+        (drifft.Mutation(0.01, 0.02), False, 0),
+        (drifft.Mutation(0.01, 0.02), True, 1),
+    ],
+)
+def test_operator_keeps_only_assembly_geometry(process, segregating, expected_leaves):
+    """Encoding tables must not become residuals of the reduced power itself."""
+    backend = drifft.Jacobi(4)
+    op = _JacobiOperator(backend, process, None, segregating)
+    opaque = _pack(op, op.as_matrix())
+    assert len(opaque.geometry) == expected_leaves
+    if expected_leaves:
+        assert jnp.array_equal(
+            opaque.geometry[0], backend._geometry.endpoint_correction
+        )
+
+
+def test_parameter_batch_keeps_geometry_unmapped():
+    """A batch of processes returns one shared endpoint correction array."""
+    from drifft._evolution.parameterized import _unpack
+
+    backend = drifft.Jacobi(4)
+
+    def geometry(rate):
+        op = _JacobiOperator(backend, drifft.Mutation(rate, 0.02), None, True)
+        return _unpack(_pack(op, op.as_matrix())).geometry
+
+    actual = jax.jit(jax.vmap(geometry, out_axes=None))(jnp.array([0.01, 0.02, 0.03]))
+    assert len(actual) == 1
+    assert jnp.array_equal(actual[0], backend._geometry.endpoint_correction)
+
+
+@pytest.mark.parametrize("geometry_outer", [False, True])
+def test_nested_batches_with_shared_and_mapped_geometry(geometry_outer):
+    """Nested maps can independently batch processes and fixed geometry."""
+    backend = drifft.Jacobi(3)
+    method = drifft.PolynomialKrylov(dimension=8)
+    initial = jnp.linspace(0.1, 0.3, backend.rank)
+    corrections = jnp.stack(
+        (
+            backend._geometry.endpoint_correction,
+            backend._geometry.endpoint_correction * 0.8,
+        ),
+        axis=1,
+    )
+    rates = jnp.array([0.01, 0.02, 0.03])
+
+    def objective(rate, correction, x, *, native):
+        geometry = eqx.tree_at(
+            lambda b: b._geometry.endpoint_correction, backend, correction
+        )
+        op = _JacobiOperator(geometry, drifft.Mutation(rate, 0.02), None, True, True)
+        matrix = op.as_matrix()
+        value = (
+            _power(_pack(op, jax.lax.stop_gradient(matrix)), x, method, 2)
+            if native
+            else matrix @ matrix @ x
+        )
+        return jnp.arange(x.size) @ value
+
+    def evaluate(native):
+        fn = jax.value_and_grad(
+            lambda p, g, x: objective(p, g, x, native=native), argnums=(0, 2)
+        )
+        # Use a nonleading input axis for geometry, and exercise both nesting
+        # orders: each outer map shifts different axes of the opaque payload.
+        axes = ((0, None, None), (None, 1, None))
+        inner, outer = axes if geometry_outer else axes[::-1]
+        return jax.jit(jax.vmap(jax.vmap(fn, in_axes=inner), in_axes=outer))(
+            rates, corrections, initial
+        )
+
+    observed, expected = evaluate(True), evaluate(False)
+    for a, b in zip(jax.tree.leaves(observed), jax.tree.leaves(expected), strict=True):
+        assert jnp.allclose(a, b, rtol=1e-9, atol=1e-11)
+
+
+def test_retained_unbatched_vjp_with_minimal_geometry():
+    """A separately compiled pullback remains callable after its forward pass."""
+    backend = drifft.Jacobi(4)
+    method = drifft.PolynomialKrylov(dimension=8)
+    initial = jnp.linspace(0.1, 0.3, backend.rank)
+
+    def action(rate, *, native):
+        op = _JacobiOperator(backend, drifft.Mutation(rate, 0.02), None, True)
+        matrix = op.as_matrix()
+        return (
+            _power(_pack(op, jax.lax.stop_gradient(matrix)), initial, method, 2)
+            if native
+            else matrix @ matrix @ initial
+        )
+
+    rate = jnp.array(0.01)
+    value, pullback = jax.jit(lambda p: jax.vjp(lambda q: action(q, native=True), p))(
+        rate
+    )
+    actual = jax.jit(pullback)(jnp.arange(value.size, dtype=value.dtype))[0]
+    expected = jax.grad(lambda p: jnp.arange(value.size) @ action(p, native=False))(
+        rate
+    )
+    assert jnp.allclose(actual, expected, rtol=1e-9, atol=1e-11)
+
+
+def test_batched_scan_with_shared_geometry():
+    """Forward scans compose with shared geometry and parameter batches."""
+    backend = drifft.Jacobi(3)
+    method = drifft.PolynomialKrylov(dimension=8)
+    initial = jnp.linspace(0.1, 0.3, backend.rank)
+
+    def objective(rates, *, native):
+        def step(x, rate):
+            op = _JacobiOperator(backend, drifft.Mutation(rate, 0.02), None, True)
+            matrix = op.as_matrix()
+            value = (
+                _power(_pack(op, jax.lax.stop_gradient(matrix)), x, method, 2)
+                if native
+                else matrix @ matrix @ x
+            )
+            return value, None
+
+        final, _ = jax.lax.scan(step, initial, rates)
+        return jnp.arange(initial.size) @ final
+
+    rates = jnp.array([[0.01, 0.02], [0.03, 0.04]])
+    actual = jax.jit(jax.vmap(lambda p: objective(p, native=True)))(rates)
+    expected = jax.vmap(lambda p: objective(p, native=False))(rates)
+    assert jnp.allclose(actual, expected, rtol=1e-9, atol=1e-11)

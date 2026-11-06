@@ -251,3 +251,38 @@ Active-coordinate adoption decision (2026-11-06):
   43.014 -> 33.193 s; compilation 55.602 -> 63.366 s; compiler temporaries
   2.784 -> 3.151 GiB; peak RSS 4.836 -> 4.692 GiB. Relative selection-gradient
   difference 2.18e-11. Report: /tmp/drifft-active-selection-sd/REPORT.md.
+
+Minimal operator geometry and batch sharing (2026-11-06):
+- User authorized review item 2. Reduced operator assembly now receives static
+  shape configuration plus only the endpoint correction where needed; encoding
+  tables are no longer retained in the opaque operator. Neutral/Underdominance
+  and full-state operators require no runtime geometry payload.
+- HiJAX mappings distinguish shared geometry from batched parameters/matrices.
+  Component-wise axis adjustments preserve independent nested geometry maps.
+- Added regressions for minimal payloads, sharing, independent nested mapping
+  orders, retained unbatched VJPs, and batched forward scans against dense powers.
+- Probe at Jacobi(100, rank=16): returned unbatched VJP buffers 65,864 -> 4,776
+  bytes; geometry in a materialized three-process batch 92,400 -> 256 bytes.
+  Values and gradients identical. These are retained-buffer counts, not peak RSS
+  or SD timing claims; fully fused gradients may already eliminate unused tables.
+  Artifacts: /tmp/drifft-shared-geometry/REPORT.md and before/after.json.
+- A separately staged batched VJP fails on both 6e8a96f and the working version:
+  HiJAX uses the opaque primal mapping for its ordinary array cotangent. Deferred
+  as a pre-existing issue; end-to-end batched gradients remain covered. Equinox
+  filtering of opaque values in returned pullbacks is another existing limitation.
+- No commit or push requested. User-owned demo.tsv remains untouched.
+- Attempting reverse AD through a batched lax.scan of these private powers
+  also raises StoreException on both baseline and candidate. Forward scan
+  composition is tested; scan-gradient support remains a separate limitation.
+- Final verification: 32 parameterized-operator tests pass (30 in the main run,
+  then the retained-VJP and forward-scan tests after correcting the test cotangent
+  dtype and separating the baseline scan-AD limitation). All 218 broader affected
+  regressions pass. Ruff lint/format, ty and whitespace checks pass. Direct review
+  found no additional introduced issues. Changes remain uncommitted.
+- User-requested smaller-half SD rerun (selection only, one execution, no repeats):
+  prior result reused from the active-coordinate benchmark, compared with current
+  geometry changes. Execution 33.193 -> 34.117 s; compile 63.366 -> 63.126 s;
+  compiler temporaries unchanged at 3.151 GiB; peak RSS 4.692 -> 4.294 GiB.
+  Likelihood and gradient exactly match previous recorded values. One run cannot
+  establish a timing change or attribute RSS differences solely to geometry.
+  Report: /tmp/drifft-shared-geometry/sd/REPORT.md.

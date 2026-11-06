@@ -17,7 +17,7 @@ import lineax as lx
 from jax.experimental import hijax
 from jax.flatten_util import ravel_pytree
 
-from .._backend.jacobi import Jacobi
+from .._backend.jacobi import Jacobi, _assemble_reduced
 from .._frequency import AbstractFrequencyMap
 from .problem import _KrylovConfig
 from .sensitivity import _frechet_adjoint_factors, _frechet_power
@@ -34,14 +34,13 @@ class _JacobiOperator(lx.AbstractLinearOperator):
 
     def as_matrix(self):
         """Materialize the differentiable mathematical operator for custom solvers."""
-        matrix = self.backend._reduced_expectation(
-            self.frequency_map, segregating=self.segregating
-        ).T
-        if self.source is not None:
-            n = matrix.shape[0]
-            matrix = jnp.pad(matrix, ((0, 1), (0, 1)))
-            matrix = matrix.at[:n, n].set(self.source).at[n, n].set(1)
-        return matrix.T if self.transposed else matrix
+        return _forward_matrix(
+            self.backend._reduced_expectation(
+                self.frequency_map, segregating=self.segregating
+            ),
+            self.source,
+            self.transposed,
+        )
 
     def mv(self, vector):
         """Apply the represented operator with ordinary JAX differentiation."""
@@ -88,25 +87,43 @@ def _conj(operator):
     return operator
 
 
+def _forward_matrix(expectation, source, transposed):
+    """Orient the reduced expectation and include a constant source column."""
+    matrix = expectation.T
+    if source is not None:
+        n = matrix.shape[0]
+        matrix = jnp.pad(matrix, ((0, 1), (0, 1)))
+        matrix = matrix.at[:n, n].set(source).at[n, n].set(1)
+    return matrix.T if transposed else matrix
+
+
 @dataclass(frozen=True)
 class _Spec:
     """Static reconstruction recipe; runtime geometry stays in the payload."""
 
     static: tuple
     unravel: Callable
-    geometry_tree: jax.tree_util.PyTreeDef
+    copies: int
+    rank: int
+    padded_rank: int
+    diploid_padded_rank: int
+    segregating: bool
     process_size: int
     augmented: bool
     transposed: bool
 
     def assemble(self, parameters, geometry):
-        dynamic = self.geometry_tree.unflatten(geometry)
-        backend, frequency_map, source, segregating = eqx.combine(
-            (dynamic, *self.unravel(parameters)), self.static
+        frequency_map, source = eqx.combine(self.unravel(parameters), self.static)
+        expectation = _assemble_reduced(
+            frequency_map,
+            self.copies,
+            self.rank,
+            self.padded_rank,
+            self.diploid_padded_rank,
+            geometry[0] if geometry else None,
+            segregating=self.segregating,
         )
-        return _JacobiOperator(
-            backend, frequency_map, source, segregating, self.transposed
-        ).as_matrix()
+        return _forward_matrix(expectation, source, self.transposed)
 
 
 @dataclass(frozen=True)
@@ -120,21 +137,64 @@ class _Operator:
 
 
 @dataclass(frozen=True)
+class _AxisShift:
+    """Component-wise offsets used by HiJAX's nested mapping adjustment."""
+
+    axis: int
+    geometry: tuple[int, ...] | None
+
+
+@dataclass(frozen=True)
 class _Axis(hijax.MappingSpec):
-    """Map the same payload axis, including HiJAX's nested-vmap axis shifts."""
+    """Map parameters/matrix together while allowing shared geometry leaves."""
 
     axis: int = 0
+    geometry: tuple[int | None, ...] | None = None
 
-    # VmapOf adjusts mapping positions with comparisons and integer offsets.
-    # Preserve the mapping-spec type when it moves an existing mapped axis.
+    def geometry_axes(self, count):
+        # None is the uniform leading-axis contract used when scan stacks an
+        # entire value. An explicit tuple can leave individual leaves shared.
+        return (self.axis,) * count if self.geometry is None else self.geometry
+
+    # VmapOf adjusts mappings with d - (other < d) and d + (other < d).
+    # Geometry can have different mapped axes from the parameter payload, so
+    # those comparisons and shifts must be component-wise as well.
     def __lt__(self, other):
-        return self.axis < other.axis
+        if self.geometry is None and other.geometry is None:
+            geometry = None
+        else:
+            count = len(self.geometry if self.geometry is not None else other.geometry)
+            geometry = tuple(
+                int(a < b) if a is not None and b is not None else 0
+                for a, b in zip(
+                    self.geometry_axes(count), other.geometry_axes(count), strict=True
+                )
+            )
+        return _AxisShift(int(self.axis < other.axis), geometry)
+
+    def _shift(self, offset, sign):
+        if not isinstance(offset, _AxisShift):
+            offset = _AxisShift(int(offset), None)
+        if self.geometry is None and offset.geometry is None:
+            geometry = None
+        else:
+            reference = self.geometry if self.geometry is not None else offset.geometry
+            assert reference is not None
+            count = len(reference)
+            shifts = (
+                (offset.axis,) * count if offset.geometry is None else offset.geometry
+            )
+            geometry = tuple(
+                None if axis is None else axis + sign * shift
+                for axis, shift in zip(self.geometry_axes(count), shifts, strict=True)
+            )
+        return _Axis(self.axis + sign * offset.axis, geometry)
 
     def __sub__(self, offset):
-        return _Axis(self.axis - offset)
+        return self._shift(offset, -1)
 
     def __add__(self, offset):
-        return _Axis(self.axis + offset)
+        return self._shift(offset, 1)
 
 
 @dataclass(frozen=True)
@@ -165,7 +225,12 @@ class _OperatorType(hijax.HiType):
         assert isinstance(spec, _Axis)
         return _OperatorType(
             self.parameters.inc_rank(size, spec.axis),
-            tuple(a.inc_rank(size, spec.axis) for a in self.geometry),
+            tuple(
+                a if axis is None else a.inc_rank(size, axis)
+                for a, axis in zip(
+                    self.geometry, spec.geometry_axes(len(self.geometry)), strict=True
+                )
+            ),
             self.matrix.inc_rank(size, spec.axis),
             self.spec,
         )
@@ -176,7 +241,12 @@ class _OperatorType(hijax.HiType):
         assert isinstance(spec, _Axis)
         return _OperatorType(
             self.parameters.dec_rank(size, spec.axis),
-            tuple(a.dec_rank(size, spec.axis) for a in self.geometry),
+            tuple(
+                a if axis is None else a.dec_rank(size, axis)
+                for a, axis in zip(
+                    self.geometry, spec.geometry_axes(len(self.geometry)), strict=True
+                )
+            ),
             self.matrix.dec_rank(size, spec.axis),
             self.spec,
         )
@@ -230,34 +300,43 @@ class _Pack(hijax.HiPrim):
                 else jnp.moveaxis(x, axis, 0)
             )
 
-        args = jax.tree.map(leading, args, dims)
+        parameters, geometry, matrix = args
+        parameter_dim, geometry_dims, matrix_dim = dims
+        geometry = tuple(
+            leaf if dim is None else jnp.moveaxis(leaf, dim, 0)
+            for leaf, dim in zip(geometry, geometry_dims, strict=True)
+        )
+        args = leading(parameters, parameter_dim), geometry, leading(matrix, matrix_dim)
+        mapping = _Axis(0, tuple(None if dim is None else 0 for dim in geometry_dims))
         return _Pack(jax.tree.map(jax.typeof, args), self.params["spec"])(
             *args
-        ), _Axis()
+        ), mapping
 
 
 def _pack(operator, matrix):
     dynamic, static = eqx.partition(
-        (
-            operator.backend,
-            operator.frequency_map,
-            operator.source,
-            operator.segregating,
-        ),
-        eqx.is_array,
+        (operator.frequency_map, operator.source), eqx.is_array
     )
-    parameters, unravel = ravel_pytree(dynamic[1:])
-    geometry, geometry_tree = jax.tree.flatten(dynamic[0])
-    process_size = sum(x.size for x in jax.tree.leaves(dynamic[1]))
+    parameters, unravel = ravel_pytree(dynamic)
+    backend = operator.backend
+    correction = backend._reduced_correction(
+        operator.frequency_map, segregating=operator.segregating
+    )
+    geometry = () if correction is None else (correction,)
+    process_size = sum(x.size for x in jax.tree.leaves(dynamic[0]))
     spec = _Spec(
         static,
         unravel,
-        geometry_tree,
+        backend._gene_copies,
+        backend.rank,
+        backend.padded_rank,
+        backend._diploid_padded_rank,
+        operator.segregating,
         process_size,
         operator.source is not None,
         operator.transposed,
     )
-    args = parameters, tuple(geometry), matrix
+    args = parameters, geometry, matrix
     return _Pack(jax.tree.map(jax.typeof, args), spec)(*args)
 
 
@@ -277,9 +356,9 @@ class _Unpack(hijax.HiPrim):
     def batch(self, axis_data, args, dims):
         (operator,), (dim,) = args, dims
         result = _Unpack(jax.typeof(operator))(operator)
-        return result, jax.tree.map(
-            lambda _: None if dim is None else dim.axis, self.out_aval
-        )
+        if dim is None:
+            return result, jax.tree.map(lambda _: None, self.out_aval)
+        return result, (dim.axis, dim.geometry_axes(len(self.out_aval[1])), dim.axis)
 
 
 def _unpack(operator):

@@ -225,6 +225,44 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     return matrix.at[:, 2:].set((1 - 1 / copies) * columns.T)
 
 
+def _assemble_reduced(
+    frequency_map,
+    copies,
+    rank,
+    padded_rank,
+    diploid_padded_rank,
+    endpoint_correction,
+    *,
+    segregating,
+):
+    """Assemble ED from shape configuration and only required runtime geometry."""
+    if isinstance(frequency_map, (Neutral, Underdominance)):
+        strength = (
+            jnp.asarray(0.0)
+            if isinstance(frequency_map, Neutral)
+            else frequency_map.strength
+        )
+        matrix, forcing = _assemble(strength, copies, rank, padded_rank)
+        if not segregating:
+            extended = jnp.zeros((rank + 2, rank + 2))
+            extended = extended.at[:2, :2].set(jnp.eye(2))
+            extended = extended.at[2:, 1].set(forcing)
+            matrix = extended.at[2:, 2:].set(matrix)
+    else:
+        matrix = _assemble_diploid(
+            frequency_map,
+            copies,
+            rank,
+            diploid_padded_rank,
+        )
+        if segregating:
+            # Recurrent mutation can produce nonzero endpoint coefficients.
+            # Fold their interior contribution into E_int D_int before discarding
+            # endpoints; simply slicing the full operator would lose that term.
+            matrix = matrix[2:, 2:] + endpoint_correction @ matrix[:2, 2:]
+    return matrix
+
+
 def _choose_rank(copies: int, tolerance: float) -> int:
     """Bound the ideal one-step polynomial tail, excluding quadrature and roundoff."""
     # Counts/tolerance are host configuration; math computes a concrete rank
@@ -673,35 +711,21 @@ class Jacobi(AbstractTransitionBackend):
         selection-family dispatch, padding, and endpoint corrections here so
         evolution code need not know the representation's assembly details.
         """
-        if isinstance(frequency_map, (Neutral, Underdominance)):
-            strength = (
-                jnp.asarray(0.0)
-                if isinstance(frequency_map, Neutral)
-                else frequency_map.strength
-            )
-            matrix, forcing = _assemble(
-                strength, self._gene_copies, self.rank, self.padded_rank
-            )
-            if not segregating:
-                extended = jnp.zeros((self.rank + 2, self.rank + 2))
-                extended = extended.at[:2, :2].set(jnp.eye(2))
-                extended = extended.at[2:, 1].set(forcing)
-                matrix = extended.at[2:, 2:].set(matrix)
-        else:
-            matrix = _assemble_diploid(
-                frequency_map,
-                self._gene_copies,
-                self.rank,
-                self._diploid_padded_rank,
-            )
-            if segregating:
-                # Recurrent mutation can produce nonzero endpoint coefficients.
-                # Fold their interior contribution into E_int D_int before discarding
-                # endpoints; simply slicing the full operator would lose that term.
-                matrix = (
-                    matrix[2:, 2:] + self._geometry.endpoint_correction @ matrix[:2, 2:]
-                )
-        return matrix
+        return _assemble_reduced(
+            frequency_map,
+            self._gene_copies,
+            self.rank,
+            self.padded_rank,
+            self._diploid_padded_rank,
+            self._reduced_correction(frequency_map, segregating=segregating),
+            segregating=segregating,
+        )
+
+    def _reduced_correction(self, frequency_map, *, segregating):
+        """Select the sole runtime geometry array needed by reduced assembly."""
+        if segregating and not isinstance(frequency_map, (Neutral, Underdominance)):
+            return self._geometry.endpoint_correction
+        return None
 
     def _validate_parameters(
         self, distribution: jax.Array, frequency_map: AbstractFrequencyMap
