@@ -285,3 +285,63 @@ def test_cached_power_uses_operator_rule_and_ignores_value_tangent():
     assert jnp.array_equal(
         jax.jacrev(action, argnums=1)(state, cache), jnp.zeros((2, 2))
     )
+
+
+@pytest.mark.parametrize("reuse_primal", [False, True])
+def test_power_uses_method_linearization_capability(reuse_primal):
+    """An independent evaluator supplies sensitivities without a solver-family tag."""
+    calls = []
+
+    class DirectPower(eqx.Module):
+        """Exercise the private power contract with ordinary dense differentiation.
+
+        This evaluator has no Krylov configuration or Sequential inheritance.
+        It may return its computed primal or leave primal evaluation to the
+        binding, while supplying the same mathematical joint direction.
+        """
+
+        def _power_action(self, operator, initial, steps):
+            """Evaluate a dense power independently of the recurrence kernels."""
+            return jnp.linalg.matrix_power(operator.as_matrix(), steps) @ initial
+
+        def _linearize_power(
+            self, operator, initial, operator_direction, tangent, steps
+        ):
+            """Supply the joint direction and optionally reuse the computed value."""
+            calls.append(True)
+            value, direction = jax.jvp(
+                lambda a, x: jnp.linalg.matrix_power(a, steps) @ x,
+                (operator.matrix, initial),
+                (operator_direction.matrix, tangent),
+            )
+            return (value if reuse_primal else None), direction
+
+    matrix = jnp.array([[0.9, 0.1], [-0.02, 0.8]])
+    initial = jnp.array([0.3, -0.2])
+    directions = (jnp.ones_like(matrix) * 0.01, -initial)
+
+    def action(a, x):
+        return _power_action(DirectPower(), lx.MatrixLinearOperator(a), x, 5)
+
+    expected = jax.jvp(lambda a, x: reference(a, x, 5), (matrix, initial), directions)
+    actual = jax.jit(lambda a, x: jax.jvp(action, (a, x), directions))(matrix, initial)
+    assert calls
+    for result, target in zip(actual, expected, strict=True):
+        assert jnp.allclose(result, target, atol=1e-12)
+
+    # The supplied linearization must also support the mathematical pullback.
+    cotangent = jnp.array([0.4, -0.7])
+    actual = jax.jit(jax.grad(lambda a, x: cotangent @ action(a, x), argnums=(0, 1)))(
+        matrix, initial
+    )
+    expected = jax.grad(lambda a, x: cotangent @ reference(a, x, 5), argnums=(0, 1))(
+        matrix, initial
+    )
+    for result, target in zip(actual, expected, strict=True):
+        assert jnp.allclose(result, target, atol=1e-12)
+
+    calls.clear()
+    # State-only directions should bypass operator-sensitivity evaluation.
+    actual = jax.jvp(lambda x: action(matrix, x), (initial,), (-initial,))[1]
+    assert not calls
+    assert jnp.allclose(actual, reference(matrix, -initial, 5), atol=1e-12)

@@ -15,18 +15,18 @@ the active parameter coordinates. These identities apply to either orientation
 and to operators augmented with a source coordinate.
 
 The HiJAX primitives here define the JAX transformation contracts for those
-operations. [`Sequential`][drifft.Sequential] uses a coupled recurrence;
-Krylov methods approximate the Frechet action and adjoint using the kernels in
-`sensitivity.py`. The identity is shared, but the power JVP currently selects
-between these numerical-method families. It does not differentiate adaptive
-Krylov basis construction. A cached primal can supply the value without adding
-its numerical computation as a second derivative path.
+operations. Private method capabilities in `methods.py` select how to evaluate
+these identities, using numerical kernels in `sensitivity.py`. The power JVP
+has no solver-family dispatch. Projected sensitivities retain an explicit
+mathematical transpose rather than differentiating adaptive basis construction.
+A cached primal can supply the value without adding its numerical computation
+as a second derivative path.
 
 Operator parameterization is a separate concern: `operators.py` provides
 generic action derivatives, while `parameterized.py` supplies Jacobi's
 parameter-space representation and contractions. Ordinary operator PyTrees
 and opaque HiTypes need separate bindings because their tangent and batching
-structures differ; they share the checked numerical sensitivity kernels.
+structures differ; they share the method's checked sensitivity capabilities.
 Preparation and reconstruction remain outside the power boundary, so their
 parameter dependence is included by the enclosing history chain rule in
 `_demographic_action.py`.
@@ -58,17 +58,33 @@ from .parameterized import (
     _transpose,
     _unpack,
 )
-from .problem import _KrylovConfig
-from .sensitivity import _frechet_adjoint_factors, _frechet_power
 
 
 class _PowerMethod[State](Protocol):
-    """Numerical power evaluation consumed by the shared HiJAX rule."""
+    """Private evaluation capabilities consumed by the shared power rule.
+
+    Built-in methods choose numerical evaluation without changing the power
+    derivative. This protocol is separate from the public epoch-method contract:
+    custom methods may differentiate their own implementation of `solve`.
+    """
 
     def _power_action(
         self, operator: lx.AbstractLinearOperator, initial: State, steps: int
     ) -> State:
         """Evaluate a checked working-coordinate power."""
+        ...
+
+    def _linearize_power(
+        self, operator, initial: State, operator_direction, tangent: State, steps: int
+    ) -> tuple[State | None, State]:
+        """Return an optional reusable primal followed by the joint direction.
+
+        The first result is None when evaluation should retain the existing
+        primal binding; a fused evaluator may supply its computed primal.
+        `operator_direction` is a filtered operator PyTree with inactive leaves
+        set to None. The second result is D(A**k x)[operator_direction, tangent]
+        and must preserve the method's supported AD contracts.
+        """
         ...
 
 
@@ -112,18 +128,6 @@ def _accumulate(accums, values):
             accum.accum(value)
 
     jax.tree.map(add, accums, values, is_leaf=lambda x: x is None or _is_ad_leaf(x))
-
-
-def _sequential_power_pair(operator, perturbation, initial, tangent, steps):
-    """Evaluate A**g x and its joint derivative in one coupled recurrence."""
-
-    def step(_, carry):
-        state, direction = carry
-        return operator.mv(state), jax.tree.map(
-            jnp.add, operator.mv(direction), perturbation.mv(state)
-        )
-
-    return jax.lax.fori_loop(0, steps, step, (initial, tangent))
 
 
 class _PowerAction(hijax.HiPrim):
@@ -170,31 +174,23 @@ class _PowerAction(hijax.HiPrim):
                 "power-action method configuration and exponent are nondifferentiable"
             )
         operator_direction = _operator_tangent(t_operator)
-        tangent_operator = (
-            _operator_pushforward(operator, operator_direction)
-            if _has_tangent(t_operator)
-            else None
-        )
         tangent_initial = jax.tree.map(
             hijax.instantiate_zeros, t_initial, is_leaf=_is_ad_leaf
         )
-        if tangent_operator is None:
+        if not _has_tangent(t_operator):
             primal = self(*primals)
             tangent = _power_action(method, operator, tangent_initial, steps)
-        elif isinstance(method, _KrylovConfig):
-            primal = self(*primals)
-            # Numerical evaluation of the same power derivative by a projected
-            # block action; its adaptive basis is never the differentiation target.
-            tangent = _frechet_action(
-                method, operator, initial, operator_direction, tangent_initial, steps
-            )
         else:
-            value, tangent = _sequential_power_pair(
-                operator, tangent_operator, initial, tangent_initial, steps
+            value, tangent = method._linearize_power(
+                operator, initial, operator_direction, tangent_initial, steps
             )
-            # Preserve the primitive boundary for higher derivatives while
-            # reusing the primal already produced by the coupled recurrence.
-            primal = _bind_power(operator, initial, steps, method, value)
+            # A fused evaluator may also produce the primal. Rebind that value
+            # to preserve higher derivatives without repeating the computation.
+            primal = (
+                self(*primals)
+                if value is None
+                else _bind_power(operator, initial, steps, method, value)
+            )
         return primal, tangent
 
     lin, linearized = hijax.linearize_from_jvp
@@ -256,29 +252,6 @@ def _cached_parameterized_power(
     )
 
 
-def _checked_frechet_action(method, operator, perturbation, initial, tangent, steps):
-    """Evaluate the shared power derivative and enforce its convergence contract."""
-    result = _frechet_power(method, operator, perturbation, initial, tangent, steps)
-    return eqx.error_if(
-        result.distribution,
-        ~result.converged,
-        "Krylov sensitivity action did not converge; increase dimension or use Sequential",
-    )
-
-
-def _checked_adjoint_factors(method, operator, initial, cotangent, steps):
-    """Keep numerical factor evaluation inside the derivative primitive boundary."""
-    left, right, _, converged = _frechet_adjoint_factors(
-        method, operator, initial, cotangent, steps
-    )
-    left = eqx.error_if(
-        left,
-        ~converged,
-        "Krylov operator pullback did not converge; increase dimension or use Sequential",
-    )
-    return left, right
-
-
 class _FrechetAction(hijax.HiPrim):
     r"""Represent the linearized power in ordinary operator coordinates.
 
@@ -309,8 +282,7 @@ class _FrechetAction(hijax.HiPrim):
         operator, initial, t_operator, t_initial, steps, method = eqx.combine(
             args, cast(tuple, self.params["static"])
         )
-        return _checked_frechet_action(
-            method,
+        return method._sensitivity_action(
             operator,
             _operator_pushforward(operator, t_operator),
             initial,
@@ -352,8 +324,8 @@ class _FrechetAction(hijax.HiPrim):
                 t_operator,
                 is_leaf=_is_ad_leaf,
             )
-            left, right = _checked_adjoint_factors(
-                method, operator, initial, cotangent, steps
+            left, right = method._sensitivity_adjoint_factors(
+                operator, initial, cotangent, steps
             )
             operator_ct = _contract_operator_factors(operator, template, left, right)
             _accumulate(t_operator, operator_ct)
@@ -366,9 +338,7 @@ class _FrechetAction(hijax.HiPrim):
         return jax.tree.map(lambda _: dim, self.out_aval)
 
 
-def _frechet_action(
-    method: _KrylovConfig, operator, initial, t_operator, t_initial, steps
-):
+def _frechet_action(method, operator, initial, t_operator, t_initial, steps):
     """Bind the linearized power with an explicit adjoint."""
     dynamic, static = eqx.partition(
         (operator, initial, t_operator, t_initial, steps, method), eqx.is_array
@@ -494,8 +464,7 @@ class _Sensitivity(hijax.HiPrim):
     def expand(self, *args):
         operator, initial, dp, dx = args
         operator = _unpack(operator)
-        return _checked_frechet_action(
-            self.params["method"],
+        return cast(Any, self.params["method"])._sensitivity_action(
             lx.MatrixLinearOperator(operator.matrix),
             _parameter_pushforward(operator, dp),
             initial,
@@ -579,8 +548,7 @@ class _Pullback(hijax.HiPrim):
     def expand(self, *args):
         operator, initial, cotangent = args
         operator = _unpack(operator)
-        left, right = _checked_adjoint_factors(
-            self.params["method"],
+        left, right = cast(Any, self.params["method"])._sensitivity_adjoint_factors(
             lx.MatrixLinearOperator(operator.matrix),
             initial,
             cotangent,

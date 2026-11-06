@@ -12,23 +12,25 @@ A^k\dot x+\sum_{j=0}^{k-1}A^{k-1-j}EA^j x\\ A^k x
 \end{pmatrix}.
 $$
 
-This module evaluates the upper block using Krylov projection. For an output
-cotangent $g$, the operator adjoint is
+This module evaluates the coupled recurrence directly or approximates the
+upper block using Krylov projection. For an output cotangent $g$, the operator
+adjoint is
 $G=\sum_{j=0}^{k-1}(A^T)^{k-1-j}g\,(A^j x)^T$.
 Separate projected spaces seeded by $g$ and $x$ approximate it as $LR^T$,
 avoiding construction of the full matrix cotangent. Operator-specific code can
 then contract these fixed factors into parameter coordinates.
 
-These are numerical kernels, not definitions of JAX derivative rules. Their
-bases can depend on the state, cotangent or perturbation direction. Calling them
-inside the primitives in `autodiff.py` lets us approximate the mathematical
-power derivative without differentiating the basis-selection algorithm.
+These kernels accept explicit projection settings and tolerances, without
+requiring an evolution-method object. They do not define JAX derivative rules.
+Projected bases can depend on the state, cotangent or perturbation direction.
+Calling these kernels inside the primitives in `autodiff.py` approximates the
+mathematical power derivative without differentiating the basis-selection algorithm.
 `projection.py` supplies the shared projection machinery; `operators.py` and
 `parameterized.py` supply parameter contractions after factor evaluation.
 
 Nested-space comparisons and recurrence defects estimate sensitivity error;
 they are not certified bounds and exclude backend representation error. The
-power bindings enforce convergence separately from the primal solve. Further
+method capabilities enforce convergence separately from the primal solve. Further
 Krylov operator sensitivities are not obtained by applying AD to these kernels.
 """
 
@@ -36,7 +38,7 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 
-from .problem import EpochResult, _epoch_result, _KrylovConfig, _working_problem
+from .problem import EpochResult, _epoch_result, _working_problem
 from .projection import (
     _dense_shifted_solve,
     _matrix_power_matvec,
@@ -46,37 +48,62 @@ from .projection import (
 )
 
 
+def _sequential_power_pair(operator, perturbation, initial, tangent, steps):
+    """Evaluate A**g x and its joint derivative in one coupled recurrence."""
+
+    def step(_, carry):
+        state, direction = carry
+        return operator.mv(state), jax.tree.map(
+            jnp.add, operator.mv(direction), perturbation.mv(state)
+        )
+
+    return jax.lax.fori_loop(0, steps, step, (initial, tangent))
+
+
 def _sensitivity_projection(
-    method: _KrylovConfig,
     operator,
     initial,
     steps,
     *,
-    dimension=None,
+    dimension,
+    polynomial,
     shifted_solve=None,
 ):
-    """Reuse the method's Arnoldi space, retaining its basis for adjoint factors."""
+    """Build the requested Arnoldi space, retaining its basis for adjoint factors."""
     problem = _working_problem(operator, initial, steps)
-    dimension = method.dimension if dimension is None else dimension
     return project(
         problem,
         dimension,
-        polynomial=method._polynomial,
+        polynomial=polynomial,
         return_basis=True,
         shifted_solve=shifted_solve,
     )
 
 
 def _frechet_power(
-    method: _KrylovConfig, operator, perturbation, initial, tangent_initial, steps
+    operator,
+    perturbation,
+    initial,
+    tangent_initial,
+    steps,
+    *,
+    dimension,
+    rtol,
+    atol,
+    polynomial,
 ):
     """Approximate the power sensitivity by a coupled block operator action.
 
     This numerical kernel is not a custom JVP: its adaptive space can depend on
     the supplied direction. AD integration requires a dedicated tangent primitive.
+
+    `dimension` is the single-state projection budget; the coupled block uses
+    twice that budget. `polynomial` selects polynomial rather than rational
+    projection. Both output blocks must satisfy their own `atol + rtol * L1`
+    tolerance, so a large primal cannot mask an inaccurate tangent.
     """
     if steps == 0:
-        return _epoch_result(tangent_initial, jnp.asarray(0.0), method.atol, False)
+        return _epoch_result(tangent_initial, jnp.asarray(0.0), atol, False)
     size = initial.size
     shifted_solve = None
     if isinstance(operator, lx.MatrixLinearOperator):
@@ -85,7 +112,7 @@ def _frechet_power(
         # upper block. This computes the mathematical directional derivative
         # without differentiating how Arnoldi chose its basis.
         block = lx.MatrixLinearOperator(jnp.block([[a, e], [jnp.zeros_like(a), a]]))
-        if not method._polynomial:
+        if not polynomial:
             shift = _rational_shift(steps)
             solve = _dense_shifted_solve(a, steps)
 
@@ -111,19 +138,19 @@ def _frechet_power(
         )
     seed = jnp.concatenate((tangent_initial, initial))
     projection = _sensitivity_projection(
-        method,
         block,
         seed,
         steps,
-        dimension=2 * method.dimension,
+        dimension=2 * dimension,
+        polynomial=polynomial,
         shifted_solve=shifted_solve,
     )
     fine = projection.fine
     # Require the combined error to satisfy each output block's tolerance. A large
     # primal must not mask an inaccurate, small sensitivity. This remains an estimate.
     tolerance = jnp.minimum(
-        method.atol + method.rtol * jnp.sum(jnp.abs(fine[:size])),
-        method.atol + method.rtol * jnp.sum(jnp.abs(fine[size:])),
+        atol + rtol * jnp.sum(jnp.abs(fine[:size])),
+        atol + rtol * jnp.sum(jnp.abs(fine[size:])),
     )
     result = _projected_result(
         _working_problem(block, seed, steps),
@@ -157,26 +184,35 @@ def _frechet_core(left_matrix, right_matrix, left_seed, right_seed, steps):
 
 
 def _frechet_adjoint_factors(
-    method: _KrylovConfig, operator, initial, cotangent, steps
+    operator, initial, cotangent, steps, *, dimension, rtol, atol, polynomial
 ):
     """Approximate the operator pullback as left @ right.T without forming it.
 
     The two spaces use A.T and A, seeded by the output cotangent and input state.
     Nested-space differences and intermediate recurrence defects estimate
     Frobenius error; they are not certificates.
+
+    Each space uses the supplied `dimension` and `polynomial` mode. Acceptance
+    compares the error estimate with `atol + rtol * norm(core)`, where `core`
+    is the projected adjoint and the norm is Frobenius. Return the two factors,
+    error estimate, and convergence flag; callers decide how to handle failure.
     """
     if steps == 0:
         empty = jnp.zeros((initial.size, 0), dtype=initial.dtype)
         return empty, empty, jnp.asarray(0.0), jnp.asarray(True)
-    left_projection = _sensitivity_projection(method, operator.T, cotangent, steps)
-    right_projection = _sensitivity_projection(method, operator, initial, steps)
+    left_projection = _sensitivity_projection(
+        operator.T, cotangent, steps, dimension=dimension, polynomial=polynomial
+    )
+    right_projection = _sensitivity_projection(
+        operator, initial, steps, dimension=dimension, polynomial=polynomial
+    )
     u, v = left_projection.basis, right_projection.basis
     assert u is not None and v is not None
     h, j = left_projection.projected, right_projection.projected
     c, x = left_projection.coordinates, right_projection.coordinates
     core = _frechet_core(h, j, c, x, steps)
     full = u.shape[1] == initial.size and v.shape[1] == initial.size
-    exact_polynomial = method._polynomial and min(u.shape[1], v.shape[1]) >= steps
+    exact_polynomial = polynomial and min(u.shape[1], v.shape[1]) >= steps
     if full or exact_polynomial:
         error = jnp.asarray(0.0)
     else:
@@ -236,6 +272,6 @@ def _frechet_adjoint_factors(
         left_projection.success
         & right_projection.success
         & finite
-        & (error <= method.atol + method.rtol * jnp.linalg.norm(core))
+        & (error <= atol + rtol * jnp.linalg.norm(core))
     )
     return left, v, error, converged

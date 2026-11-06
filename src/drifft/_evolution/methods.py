@@ -16,13 +16,15 @@ or repeating the primal projection.
 
 Numerical representation selection is delegated to `operators.py`; cached AD
 binding is delegated to `autodiff.py`, which distinguishes ordinary operator
-PyTrees from Jacobi parameter-space values. The power JVP in `autodiff.py`
-selects coupled-recurrence or Krylov sensitivity evaluation from the method
-family. Custom methods define their own differentiation behavior through the
-prepared-problem interface.
+PyTrees from Jacobi parameter-space values. Private method capabilities here
+select coupled-recurrence or projected sensitivity evaluation and enforce its
+numerical acceptance policy. The primitives retain the mathematical derivative
+and transpose contracts. Custom methods define their own differentiation
+behavior through the prepared-problem interface; these private capabilities
+are not additional requirements on `AbstractEpochMethod`.
 
 Thus numerical power evaluation lives here and in `projection.py`, mathematical
-power transformation rules in `autodiff.py`, and Krylov sensitivity calculations
+power transformation rules in `autodiff.py`, and sensitivity calculations
 in `sensitivity.py`. Parameter-dependent preparation and reconstruction remain
 outside the power primitive and retain their derivatives in the full epoch.
 """
@@ -38,8 +40,8 @@ import jax.numpy as jnp
 
 from .._backend import AbstractTransitionBackend
 from .._frequency import AbstractFrequencyMap
-from .autodiff import _cached_power_action, _power_action
-from .operators import _numerical_operator
+from .autodiff import _cached_power_action, _frechet_action, _power_action
+from .operators import _numerical_operator, _operator_pushforward
 from .preparation import _prepare_epoch, _prepare_transition, validate_representation
 from .problem import (
     EpochProblem,
@@ -49,6 +51,11 @@ from .problem import (
     _working_problem,
 )
 from .projection import _projected_result, project
+from .sensitivity import (
+    _frechet_adjoint_factors,
+    _frechet_power,
+    _sequential_power_pair,
+)
 
 
 class AbstractEpochMethod(eqx.Module):
@@ -323,6 +330,16 @@ class Sequential(AbstractEpochMethod):
         """Apply repeated operator actions in working coordinates."""
         return jax.lax.fori_loop(0, steps, lambda _, state: operator.mv(state), initial)
 
+    def _linearize_power(self, operator, initial, operator_direction, tangent, steps):
+        """Fuse primal and tangent recurrence while retaining ordinary higher AD."""
+        return _sequential_power_pair(
+            operator,
+            _operator_pushforward(operator, operator_direction),
+            initial,
+            tangent,
+            steps,
+        )
+
 
 Sequential.__init__.__doc__ = r"""Configure repeated one-generation evolution.
 
@@ -398,6 +415,50 @@ class AbstractKrylovMethod(AbstractEpochMethod):
     def _power_action(self, operator, initial, steps):
         """Evaluate an unencoded power and require its numerical checks to pass."""
         return self.solve(_working_problem(operator, initial, steps)).distribution
+
+    def _linearize_power(self, operator, initial, operator_direction, tangent, steps):
+        """Retain the cached primal and bind a mathematically transposable direction."""
+        return None, _frechet_action(
+            self, operator, initial, operator_direction, tangent, steps
+        )
+
+    def _sensitivity_action(self, operator, perturbation, initial, tangent, steps):
+        """Evaluate the projected power direction and require sensitivity convergence."""
+        result = _frechet_power(
+            operator,
+            perturbation,
+            initial,
+            tangent,
+            steps,
+            dimension=self.dimension,
+            rtol=self.rtol,
+            atol=self.atol,
+            polynomial=self._polynomial,
+        )
+        return eqx.error_if(
+            result.distribution,
+            ~result.converged,
+            "Krylov sensitivity action did not converge; increase dimension or use Sequential",
+        )
+
+    def _sensitivity_adjoint_factors(self, operator, initial, cotangent, steps):
+        """Return checked operator-adjoint factors for representation-side contraction."""
+        left, right, _, converged = _frechet_adjoint_factors(
+            operator,
+            initial,
+            cotangent,
+            steps,
+            dimension=self.dimension,
+            rtol=self.rtol,
+            atol=self.atol,
+            polynomial=self._polynomial,
+        )
+        left = eqx.error_if(
+            left,
+            ~converged,
+            "Krylov operator pullback did not converge; increase dimension or use Sequential",
+        )
+        return left, right
 
     def solve(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
         r"""Approximate a prepared power and attach its mathematical sensitivities.
