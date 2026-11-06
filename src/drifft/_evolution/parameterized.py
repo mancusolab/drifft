@@ -535,14 +535,30 @@ def _transpose(operator):
     return _Transpose(jax.typeof(operator))(operator)
 
 
-class _Pullback(_Sensitivity):
-    """Contract power-adjoint factors without constructing a matrix cotangent."""
+class _Pullback(hijax.HiPrim):
+    """Contract power-adjoint factors; further AD and transposition are unsupported."""
 
     def __init__(self, avals, method, steps, *, active_process=None):
         self.in_avals = avals
         self.out_aval = avals[0].to_ct_aval()
         self.params = dict(method=method, steps=steps, active_process=active_process)
-        hijax.HiPrim.__init__(self)
+        super().__init__()
+
+    def jvp(self, primals, tangents):
+        raise NotImplementedError(
+            "Higher-order Krylov sensitivities are not implemented; use Sequential"
+        )
+
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def transpose(self, out_ct, *args):
+        raise NotImplementedError(
+            "Higher-order Krylov sensitivities are not implemented; use Sequential"
+        )
+
+    def batch_dim_rule(self, axis_data, dims):
+        return 0 if any(d is not None for d in jax.tree.leaves(dims)) else None
 
     def expand(self, *args):
         operator, initial, cotangent = args

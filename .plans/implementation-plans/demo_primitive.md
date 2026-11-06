@@ -286,3 +286,17 @@ Minimal operator geometry and batch sharing (2026-11-06):
   Likelihood and gradient exactly match previous recorded values. One run cannot
   establish a timing change or attribute RSS differences solely to geometry.
   Report: /tmp/drifft-shared-geometry/sd/REPORT.md.
+
+Pullback inheritance hygiene (2026-11-06):
+- User authorized review item 4. _Pullback now derives directly from HiPrim and
+  declares its own batching and differentiation contracts. Numerical expansion
+  is unchanged; it no longer inherits the incompatible four-input transpose
+  rule from _Sensitivity.
+- Regression reproduced ValueError (expected 4 arguments, got 3) via standalone
+  linear_transpose. JVP, evaluated VJP and standalone transpose now explicitly
+  reject unsupported further differentiation with the existing Sequential advice.
+- First-order/batched parameterized-power and Krylov Frechet regressions running.
+  No benchmark, commit or push requested. User-owned demo.tsv remains untouched.
+- Verification complete: all 77 parameterized-power and Krylov Frechet tests
+  passed in 110.02 s, including the three new transform-boundary cases. Ruff
+  lint/format, ty and whitespace checks pass. Changes remain uncommitted.

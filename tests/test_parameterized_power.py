@@ -484,3 +484,33 @@ def test_batched_scan_with_shared_geometry():
     actual = jax.jit(jax.vmap(lambda p: objective(p, native=True)))(rates)
     expected = jax.vmap(lambda p: objective(p, native=False))(rates)
     assert jnp.allclose(actual, expected, rtol=1e-9, atol=1e-11)
+
+
+@pytest.mark.parametrize("transform", ["jvp", "vjp", "transpose"])
+def test_pullback_rejects_unsupported_derivative_transforms(transform):
+    """The parameter pullback reports its AD boundary without argument errors."""
+    from drifft._evolution.parameterized import _Pullback
+
+    backend = drifft.Jacobi(3)
+    op = _JacobiOperator(backend, drifft.Mutation(0.01, 0.02), None, True)
+    opaque = _pack(op, op.as_matrix())
+    initial = jnp.linspace(0.1, 0.3, backend.rank)
+    cotangent = jnp.ones_like(initial)
+    args = opaque, initial, cotangent
+    primitive = _Pullback(
+        jax.tree.map(jax.typeof, args), drifft.PolynomialKrylov(dimension=8), 2
+    )
+
+    def action(ct):
+        return primitive(opaque, initial, ct)
+
+    with pytest.raises(NotImplementedError, match="Higher-order Krylov.*Sequential"):
+        if transform == "jvp":
+            jax.jvp(action, (cotangent,), (cotangent,))
+        elif transform == "vjp":
+            _, pullback = jax.vjp(action, cotangent)
+            pullback(jnp.ones_like(opaque.parameters))
+        else:
+            # Standalone transposition bypasses the JVP rejection and must not
+            # inherit the four-input sensitivity rule for this three-input op.
+            jax.linear_transpose(action, cotangent)(jnp.ones_like(opaque.parameters))
