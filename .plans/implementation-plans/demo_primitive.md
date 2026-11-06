@@ -212,3 +212,42 @@ Final verification for the parameterized operator experiment:
 Adoption decision (2026-11-06):
 - User accepted the measured storage/runtime tradeoff and requested committing
   the implementation on demo_primitive. Preserve the benchmark limitations above.
+
+Active process coordinates (2026-11-06, in progress):
+- User authorized item 1 from the fresh-context review: omit inactive process
+  derivative assemblies. No new commit or push requested.
+- A runtime-instrumented JIT regression failed on 7ca8943: a selection-only
+  pullback executed all three process directions. Preserve original parameter
+  leaves alongside the opaque operator until linearization; use their symbolic
+  zeros to select process coordinates, then scatter back into the same compact
+  cotangent space. The opaque primal remains live for mixed vector/process AD.
+- Expanded checks verify one/two/three/no active process coordinates, both
+  orientations, sources at zero rate, joint source/process derivatives, nested
+  partial-gradient batches, zero JVP directions, and mixed vector/process AD.
+  All 13 new cases passed; the initial 62-test power/history run also passed.
+- Small expectation benchmark (same [128,64,128] history as the previous study),
+  two fresh serial before/after pairs with reversed order and 30 samples:
+  selection-only 25.697 -> 17.815 ms and 24.373 -> 17.311 ms (29–31% faster).
+  Compiler temporaries rise from 2,533,608 to 2,951,984 bytes (~0.40 MiB).
+  All-parameter control 24.945 -> 26.483 ms then 24.568 -> 24.642 ms; no
+  consistent timing conclusion. Its memory estimate is essentially unchanged.
+  Partial outputs agree within 1.6e-15 scaled error; full outputs are identical.
+- Artifacts: /tmp/drifft-active-parameters/REPORT.md. No new large SD benchmark.
+  Broader affected regression tests are running; final outcome follows below.
+
+Active-coordinate final verification:
+- 211 affected tests passed in 269.26 s (parameterized powers, demographic AD,
+  generic powers, Krylov derivatives, epochs, symbolic zeros, polynomial Krylov).
+- Ruff lint/format, ty, strict documentation build, and whitespace checks pass.
+- Direct review checked active-coordinate ordering, sparse cotangent scatter,
+  shared parameter aliases, geometry exclusion, zero handling, and preservation
+  of the opaque primal for mixed vector/process differentiation.
+- Changes are uncommitted. No new large benchmark, commit or push was performed;
+  user-owned demo.tsv remains untouched.
+
+Active-coordinate adoption decision (2026-11-06):
+- User accepted the selection-only smaller-half SD comparison and requested
+  committing the optimization. One execution per variant, no warmups/repeats:
+  43.014 -> 33.193 s; compilation 55.602 -> 63.366 s; compiler temporaries
+  2.784 -> 3.151 GiB; peak RSS 4.836 -> 4.692 GiB. Relative selection-gradient
+  difference 2.18e-11. Report: /tmp/drifft-active-selection-sd/REPORT.md.

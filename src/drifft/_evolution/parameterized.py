@@ -290,14 +290,21 @@ def _unpack(operator):
 class _Power(hijax.HiPrim):
     """Apply a mathematical power or attach its rule to a cached primal."""
 
-    def __init__(self, avals, method, steps, cached):
+    def __init__(self, avals, method, steps, cached, *, with_parameter_leaves=False):
         self.in_avals = avals
         self.out_aval = avals[1]
-        self.params = dict(method=method, steps=steps, cached=cached)
+        self.params = dict(
+            method=method,
+            steps=steps,
+            cached=cached,
+            with_parameter_leaves=with_parameter_leaves,
+        )
         super().__init__()
 
     def expand(self, *args):
         operator, initial, *value = args
+        if self.params["with_parameter_leaves"]:
+            _, *value = value
         operator = _unpack(operator)
         if self.params["cached"]:
             return value[0]
@@ -308,13 +315,33 @@ class _Power(hijax.HiPrim):
     def jvp(self, primals, tangents):
         operator, initial, *_ = primals
         dp, dx, *_ = tangents
+        active_process = None
+        if self.params["with_parameter_leaves"]:
+            # These leaves alias the opaque payload, but retain structural zeros
+            # until this boundary. They own the parameter tangent here; using
+            # the opaque tangent as well would count that contribution twice.
+            leaves, directions = primals[2], tangents[2]
+            active = []
+            offset = 0
+            n = jax.typeof(operator).spec.process_size
+            for leaf, direction in zip(leaves, directions, strict=True):
+                if not isinstance(direction, hijax.Zero):
+                    active.extend(range(offset, min(offset + leaf.size, n)))
+                offset += leaf.size
+            active_process = tuple(active)
+            if all(isinstance(t, hijax.Zero) for t in directions):
+                dp = hijax.Zero(jax.typeof(operator).to_tangent_aval())
+            else:
+                dp, _ = ravel_pytree(tuple(map(hijax.instantiate_zeros, directions)))
         if isinstance(dp, hijax.Zero):
             tangent = _power(operator, hijax.instantiate_zeros(dx), **self._settings())
         else:
             args = operator, initial, dp, hijax.instantiate_zeros(dx)
-            tangent = _Sensitivity(jax.tree.map(jax.typeof, args), **self._settings())(
-                *args
-            )
+            tangent = _Sensitivity(
+                jax.tree.map(jax.typeof, args),
+                active_process=active_process,
+                **self._settings(),
+            )(*args)
         return self(*primals), tangent
 
     def _settings(self):
@@ -344,8 +371,11 @@ class _Power(hijax.HiPrim):
 class _Sensitivity(_Power):
     """Linearized power with direct parameter-space adjoint contraction."""
 
-    def __init__(self, avals, method, steps):
-        super().__init__(avals, method, steps, False)
+    def __init__(self, avals, method, steps, *, active_process=None):
+        self.in_avals = avals
+        self.out_aval = avals[1]
+        self.params = dict(method=method, steps=steps, active_process=active_process)
+        hijax.HiPrim.__init__(self)
 
     def expand(self, *args):
         operator, initial, dp, dx = args
@@ -385,7 +415,11 @@ class _Sensitivity(_Power):
         if isinstance(dp, hijax.GradAccum):
             args = operator, initial, cotangent
             dp.accum(
-                _Pullback(jax.tree.map(jax.typeof, args), **self._settings())(*args)
+                _Pullback(
+                    jax.tree.map(jax.typeof, args),
+                    active_process=self.params["active_process"],
+                    **self._settings(),
+                )(*args)
             )
         if isinstance(dx, hijax.GradAccum):
             dx.accum(_power(_transpose(operator), cotangent, **self._settings()))
@@ -425,10 +459,10 @@ def _transpose(operator):
 class _Pullback(_Sensitivity):
     """Contract power-adjoint factors without constructing a matrix cotangent."""
 
-    def __init__(self, avals, method, steps):
+    def __init__(self, avals, method, steps, *, active_process=None):
         self.in_avals = avals
         self.out_aval = avals[0].to_ct_aval()
-        self.params = dict(method=method, steps=steps)
+        self.params = dict(method=method, steps=steps, active_process=active_process)
         hijax.HiPrim.__init__(self)
 
     def expand(self, *args):
@@ -460,11 +494,20 @@ class _Pullback(_Sensitivity):
             )
             return jnp.sum(left * (derivative @ right))
 
-        process_ct = (
-            jax.lax.map(contract, jnp.arange(n))
-            if n
-            else jnp.empty(0, parameters.dtype)
-        )
+        active = self.params["active_process"]
+        indices = tuple(range(n)) if active is None else cast(tuple[int, ...], active)
+        if indices:
+            selected = jax.lax.map(contract, jnp.asarray(indices))
+            if indices == tuple(range(n)):
+                process_ct = selected
+            else:
+                process_ct = (
+                    jnp.zeros(n, parameters.dtype)
+                    .at[jnp.asarray(indices)]
+                    .set(selected)
+                )
+        else:
+            process_ct = jnp.zeros(n, parameters.dtype)
         if operator.spec.augmented:
             left_source, right_source = (
                 (right, left) if operator.spec.transposed else (left, right)
@@ -481,4 +524,12 @@ def _power(operator, initial, method, steps, *value):
 
 def parameterized_power(method, operator, initial, steps, value, matrix):
     """Attach a parameter-space mathematical rule to a stopped numerical cache."""
-    return _power(_pack(operator, matrix), initial, method, steps, value)
+    leaves = tuple(
+        jax.tree.leaves(
+            eqx.filter((operator.frequency_map, operator.source), eqx.is_array)
+        )
+    )
+    args = _pack(operator, matrix), initial, leaves, value
+    return _Power(
+        jax.tree.map(jax.typeof, args), method, steps, True, with_parameter_leaves=True
+    )(*args)

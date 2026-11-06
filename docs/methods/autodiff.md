@@ -132,7 +132,7 @@ the reverse pass; it does not store the full history operator.
 For reduced [`Jacobi`](../api/backends.md#drifft.Jacobi) powers, the private
 operator representation carries process and source parameters alongside a
 numerical matrix cache. Its pullback returns parameter cotangents directly,
-recomputing assembly directions instead of retaining the assembly's reverse
+recomputing active process directions instead of retaining the assembly's reverse
 intermediates. This trades recomputation for lower storage; dense matrices and
 other history residuals still contribute to memory use.
 

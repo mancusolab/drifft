@@ -237,3 +237,117 @@ def test_nested_parameter_batches():
         jax.vmap(jax.grad(lambda p: jnp.sum(action(p, native=False))))
     )(parameters)
     assert jnp.allclose(actual_gradient, expected_gradient, rtol=1e-9, atol=1e-11)
+
+
+@pytest.mark.parametrize("active", [(0,), (1,), (0, 2), (0, 1, 2), (3,), (0, 3)])
+@pytest.mark.parametrize("transposed", [False, True])
+def test_partial_gradient_assembles_only_active_process(
+    monkeypatch, active, transposed
+):
+    """Execute only requested process directions, including with zero source rate."""
+    from drifft._evolution.parameterized import _Spec, parameterized_power
+
+    backend = drifft.Jacobi(3)
+    method = drifft.PolynomialKrylov(dimension=8)
+    initial = jnp.concatenate((jnp.linspace(0.1, 0.3, backend.rank), jnp.ones(1)))
+    visits = []
+    assemble = _Spec.assemble
+
+    def counted(spec, parameters, geometry):
+        # Count executed directional assemblies, including iterations inside a
+        # compiled scan. This checks skipped work rather than a private mask.
+        jax.debug.callback(lambda: visits.append(1))
+        return assemble(spec, parameters, geometry)
+
+    monkeypatch.setattr(_Spec, "assemble", counted)
+
+    def objective(s, u, v, rate, *, native):
+        process = drifft.Composition(drifft.AdditiveSelection(s), drifft.Mutation(u, v))
+        source = rate * jnp.linspace(0.1, 0.2, backend.rank)
+        op = _JacobiOperator(backend, process, source, True, transposed)
+        matrix = op.as_matrix()
+        value = matrix @ matrix @ initial
+        if native:
+            value = parameterized_power(
+                method,
+                op,
+                initial,
+                2,
+                jax.lax.stop_gradient(value),
+                jax.lax.stop_gradient(matrix),
+            )
+        return jnp.arange(initial.size) @ value
+
+    inputs = tuple(map(jnp.asarray, (0.0, 0.01, 0.02, 0.0)))
+    result = jax.jit(
+        jax.grad(lambda *args: objective(*args, native=True), argnums=active)
+    )(*inputs)
+    jax.block_until_ready(result)
+    jax.effects_barrier()
+    assert len(visits) == sum(i < 3 for i in active)
+    expected = jax.grad(lambda *args: objective(*args, native=False), argnums=active)(
+        *inputs
+    )
+    for actual, reference in zip(result, expected, strict=True):
+        assert jnp.allclose(actual, reference, rtol=1e-9, atol=1e-11)
+
+
+def test_partial_parameter_batches_and_zero_jvp():
+    """Partial gradients compose with batching and numerical zero JVP directions."""
+    from drifft._evolution.parameterized import parameterized_power
+
+    backend = drifft.Jacobi(3)
+    method = drifft.PolynomialKrylov(dimension=8)
+    initial = jnp.linspace(0.1, 0.3, backend.rank)
+
+    def objective(s, x, *, native):
+        process = drifft.Composition(
+            drifft.AdditiveSelection(s), drifft.Mutation(0.01, 0.02)
+        )
+        op = _JacobiOperator(backend, process, None, True)
+        matrix = op.as_matrix()
+        value = matrix @ matrix @ x
+        if native:
+            value = parameterized_power(
+                method,
+                op,
+                x,
+                2,
+                jax.lax.stop_gradient(value),
+                jax.lax.stop_gradient(matrix),
+            )
+        return jnp.arange(initial.size) @ value
+
+    def actual(s, x):
+        return objective(s, x, native=True)
+
+    def reference(s, x):
+        return objective(s, x, native=False)
+
+    inputs = jnp.array([[0.0, 0.01], [0.02, 0.03]])
+    for fn in (actual, reference):
+        result = jax.jit(
+            jax.vmap(jax.vmap(jax.grad(fn), in_axes=(0, None)), in_axes=(0, None))
+        )(inputs, initial)
+        if fn is actual:
+            observed = result
+        else:
+            assert jnp.allclose(observed, result, rtol=1e-9, atol=1e-11)
+    for direction in (0.0, 0.1):
+        observed = jax.jit(
+            lambda s, ds: jax.jvp(lambda q: actual(q, initial), (s,), (ds,))
+        )(jnp.array(0.0), jnp.array(direction))
+        expected = jax.jvp(
+            lambda q: reference(q, initial), (jnp.array(0.0),), (jnp.array(direction),)
+        )
+        for a, b in zip(observed, expected, strict=True):
+            assert jnp.allclose(a, b, rtol=1e-9, atol=1e-11)
+    # Keeping the opaque primal live also preserves the derivative of a vector
+    # pullback with respect to the process; stopping that payload would lose it.
+    observed = jax.jit(jax.jacfwd(jax.grad(actual, argnums=1), argnums=0))(
+        jnp.array(0.02), initial
+    )
+    expected = jax.jacfwd(jax.grad(reference, argnums=1), argnums=0)(
+        jnp.array(0.02), initial
+    )
+    assert jnp.allclose(observed, expected, rtol=1e-9, atol=1e-11)
