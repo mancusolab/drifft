@@ -41,7 +41,17 @@ def test_frechet_power_matches_joint_dense_jvp(method_type, steps, implicit):
         else lx.MatrixLinearOperator(e)
     )
     method = method_type(dimension=12, rtol=1e-10, atol=1e-12)
-    actual = eqx.filter_jit(_frechet_power)(method, op, perturbation, x, h, steps)
+    actual = eqx.filter_jit(_frechet_power)(
+        op,
+        perturbation,
+        x,
+        h,
+        steps,
+        dimension=method.dimension,
+        rtol=method.rtol,
+        atol=method.atol,
+        polynomial=method._polynomial,
+    )
     expected = jax.jvp(lambda a, x: dense_action(a, x, steps), (a, x), (e, h))[1]
     assert actual.converged
     assert jnp.allclose(actual.distribution, expected, atol=2e-11, rtol=2e-10)
@@ -59,7 +69,14 @@ def test_low_rank_frechet_adjoint_matches_dense_pullback(method_type, steps):
     x, c = jnp.array([0.3, -0.2, 0.4]), jnp.array([-0.1, 0.3, 0.2])
     method = method_type(dimension=8, rtol=1e-10, atol=1e-12)
     left, right, error, converged = eqx.filter_jit(_frechet_adjoint_factors)(
-        method, lx.MatrixLinearOperator(a), x, c, steps
+        lx.MatrixLinearOperator(a),
+        x,
+        c,
+        steps,
+        dimension=method.dimension,
+        rtol=method.rtol,
+        atol=method.atol,
+        polynomial=method._polynomial,
     )
     expected = jax.grad(lambda a: c @ dense_action(a, x, steps))(a)
     assert converged
@@ -82,11 +99,26 @@ def test_frechet_actions_cover_zero_and_invariant_seeds(method_type, zero_state)
     c = jnp.array([0.2, -0.3, 0.7])
     method = method_type(dimension=12, rtol=1e-10, atol=1e-12)
     actual = _frechet_power(
-        method, lx.MatrixLinearOperator(a), lx.MatrixLinearOperator(e), x, h, 7
+        lx.MatrixLinearOperator(a),
+        lx.MatrixLinearOperator(e),
+        x,
+        h,
+        7,
+        dimension=method.dimension,
+        rtol=method.rtol,
+        atol=method.atol,
+        polynomial=method._polynomial,
     )
     expected = jax.jvp(lambda a, x: dense_action(a, x, 7), (a, x), (e, h))[1]
     left, right, _, converged = _frechet_adjoint_factors(
-        method, lx.MatrixLinearOperator(a), x, c, 7
+        lx.MatrixLinearOperator(a),
+        x,
+        c,
+        7,
+        dimension=method.dimension,
+        rtol=method.rtol,
+        atol=method.atol,
+        polynomial=method._polynomial,
     )
     expected_g = jax.grad(lambda a: c @ dense_action(a, x, 7))(a)
     assert actual.converged & converged
@@ -119,7 +151,14 @@ def test_operator_pullback_preserves_filtered_parameter_tree(method_type):
     x, c = jnp.cos(jnp.arange(n)), jnp.sin(jnp.arange(n))
     method = method_type(dimension=12, rtol=1e-10, atol=1e-12)
     left, right, error, converged = eqx.filter_jit(_frechet_adjoint_factors)(
-        method, operator, x, c, steps
+        operator,
+        x,
+        c,
+        steps,
+        dimension=method.dimension,
+        rtol=method.rtol,
+        atol=method.atol,
+        polynomial=method._polynomial,
     )
     actual = eqx.filter_jit(_contract_operator_factors)(operator, template, left, right)
     _, pullback = eqx.filter_vjp(make_operator, parameters)
@@ -167,10 +206,25 @@ def test_truncated_frechet_actions_and_adjoint_pairing(
     c = jnp.sin(jnp.arange(size) * 0.4)
     method = method_type(dimension=dimension, rtol=1e-8, atol=1e-11)
     actual = eqx.filter_jit(_frechet_power)(
-        method, lx.MatrixLinearOperator(a), lx.MatrixLinearOperator(e), x, h, steps
+        lx.MatrixLinearOperator(a),
+        lx.MatrixLinearOperator(e),
+        x,
+        h,
+        steps,
+        dimension=method.dimension,
+        rtol=method.rtol,
+        atol=method.atol,
+        polynomial=method._polynomial,
     )
     left, right, _, converged = eqx.filter_jit(_frechet_adjoint_factors)(
-        method, lx.MatrixLinearOperator(a), x, c, steps
+        lx.MatrixLinearOperator(a),
+        x,
+        c,
+        steps,
+        dimension=method.dimension,
+        rtol=method.rtol,
+        atol=method.atol,
+        polynomial=method._polynomial,
     )
     assert bool(actual.converged) == accepted
     assert bool(converged) == accepted
@@ -320,7 +374,14 @@ def test_adjoint_estimate_detects_delayed_propagation(method_type, dimension, ac
     )(jnp.asarray(0.0))
     assert expected == 1.0
     left, right, error, converged = eqx.filter_jit(_frechet_adjoint_factors)(
-        method, operator, initial, cotangent, steps
+        operator,
+        initial,
+        cotangent,
+        steps,
+        dimension=method.dimension,
+        rtol=method.rtol,
+        atol=method.atol,
+        polynomial=method._polynomial,
     )
     assert bool(converged) == accepted
     if accepted:
