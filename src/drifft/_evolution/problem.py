@@ -1,4 +1,23 @@
-"""Prepared power problems and numerical outcome contracts."""
+r"""Carry prepared power problems and distinguish numerical outcomes from AD targets.
+
+A prepared epoch separates population coordinates from the working state used
+by a solver. Its reconstruction has the form $p_{\mathrm{out}}=R A^k z_0+e$:
+$A$ acts on the working state, $z_0$ is the prepared seed, $R$ decodes it and $e$
+is an affine output offset. If the state is augmented for source input, decoding
+removes its homogeneous coordinate before returning population mass.
+
+This contract lets a method evaluate a power without knowing how a backend
+encoded the population. It also exposes the encoding/reconstruction dependence
+to the enclosing chain rule, rather than requiring each solver to reproduce it.
+`preparation.py` constructs these problems; `methods.py` evaluates them.
+
+Result and status objects distinguish nonfinite output, inner-solve failure and
+power-approximation error. Error norms account for decoded population errors
+and, when present, the auxiliary coordinate. These diagnostics describe the
+numerical calculation; the action primitives differentiate its mathematical
+state output, not status or error estimates. A successful primal calculation
+alone does not establish the accuracy of a sensitivity calculation.
+"""
 
 from collections.abc import Callable
 from typing import ClassVar, NamedTuple, Protocol, final, runtime_checkable

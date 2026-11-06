@@ -145,7 +145,21 @@ def _interpolate_counts(
 
 
 class _CountInterpolation(hijax.HiPrim):
-    """Fixed interpolation with a streaming matched transpose for AD."""
+    r"""Apply fixed count-grid interpolation or its matched mass transpose.
+
+    For prepared knots and barycentric weights, let $I$ interpolate knot values
+    onto every population count. The two orientations compute $Iv$ and $I^T p$.
+    Hypergeometric expectation and mass propagation can therefore share the
+    same represented interpolation map instead of approximating their transposes
+    independently.
+
+    Knots and barycentric weights are fixed geometry, and their active tangents
+    are rejected. Value JVPs apply the same linear action; the explicit transpose
+    regenerates weights in streaming batches. Reverse rules are derived from
+    the linearization so they retain geometry without needing input values or
+    per-batch interpolation intermediates. This boundary controls memory while
+    preserving the adjoint of the actual interpolation used by the primal.
+    """
 
     def __init__(
         self, knots, barycentric, values, *, population, batch_size, transposed

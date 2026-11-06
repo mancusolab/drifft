@@ -1,14 +1,40 @@
-"""HiJAX power actions with mathematical sensitivities and explicit adjoints.
+r"""Differentiate working-coordinate powers through mathematical action rules.
 
-Preparation, reconstruction, and diagnostics remain outside these primitives.
-[`Sequential`][drifft.Sequential] uses an exact coupled recurrence. Krylov methods
-approximate the Frechet action and its operator pullback without differentiating
-Arnoldi bases.
+For a represented operator $A(\theta)$, initial state $x$ and fixed nonnegative
+integer $k$, the target is $F(\theta,x)=A(\theta)^k x$. With
+$E=\mathrm D A(\theta)[\dot\theta]$, its directional derivative is
 
-Ordinary operator PyTrees and parameter-space HiTypes have distinct bindings,
-sharing the checked sensitivity kernels. Operator-coordinate pushforwards and
-factor contractions live in operators.py and parameterized.py; this module owns
-power differentiation and selects cached bindings from prepared operator types.
+$$
+\dot F=A^k\dot x+
+\sum_{j=0}^{k-1} A^{k-1-j} E A^j x,
+$$
+
+where the sum is empty for $k=0$. Reverse mode applies $(A^T)^k$ to the output
+cotangent for the state contribution and contracts the operator adjoint into
+the active parameter coordinates. These identities apply to either orientation
+and to operators augmented with a source coordinate.
+
+The HiJAX primitives here define the JAX transformation contracts for those
+operations. [`Sequential`][drifft.Sequential] uses a coupled recurrence;
+Krylov methods approximate the Frechet action and adjoint using the kernels in
+`sensitivity.py`. The identity is shared, but the power JVP currently selects
+between these numerical-method families. It does not differentiate adaptive
+Krylov basis construction. A cached primal can supply the value without adding
+its numerical computation as a second derivative path.
+
+Operator parameterization is a separate concern: `operators.py` provides
+generic action derivatives, while `parameterized.py` supplies Jacobi's
+parameter-space representation and contractions. Ordinary operator PyTrees
+and opaque HiTypes need separate bindings because their tangent and batching
+structures differ; they share the checked numerical sensitivity kernels.
+Preparation and reconstruction remain outside the power boundary, so their
+parameter dependence is included by the enclosing history chain rule in
+`_demographic_action.py`.
+
+Sequential supports higher derivatives where the underlying operations do.
+Further differentiation through Krylov sensitivity/pullback primitives is
+explicitly unsupported; this does not preclude supported mixed state/parameter
+derivatives. Primal convergence does not certify sensitivity convergence.
 """
 
 # pattern: Functional Core
@@ -34,37 +60,6 @@ from .parameterized import (
 )
 from .problem import _KrylovConfig
 from .sensitivity import _frechet_adjoint_factors, _frechet_power
-
-# Autodiff design: differentiate the represented mathematical operation, not the
-# algorithm used to approximate it. At the history level, advance applies H.T to
-# mass (plus accumulated sources), while expect applies H to terminal values and
-# returns the source reward. Their vector pullbacks use the opposite orientation.
-# History composition includes parameter-dependent encoding, reconstruction,
-# boundaries and sources; differentiating a reduced matrix alone is insufficient.
-#
-# This module supplies the epoch power rule for y = A(theta)**k @ x. Its JVP is
-# A**k @ dx + D(A**k)[dA] @ x; its VJP combines (A.T)**k @ output_ct with a
-# contraction of the operator adjoint into theta. The derivative identity is
-# shared. Sequential evaluates a coupled recurrence; Krylov approximates the
-# Frechet action/adjoint without differentiating adaptive projection bases.
-# Cached primal values avoid repeating numerical work, but their computation
-# does not supply an additional tangent. Numerical diagnostics are not AD targets.
-#
-# Operator parameterization owns dA and the adjoint contraction, not the power
-# rule. Generic Lineax operators use action JVPs/VJPs and remain matrix-free when
-# appropriate. The Jacobi parameter-space representation instead streams active
-# assembly directions and contracts source coordinates directly, avoiding an
-# assembly reverse tape or a dense matrix cotangent. Fixed geometry and matrix
-# caches remain primal numerical state, not independent derivative coordinates.
-#
-# We retain separate PyTree and HiType bindings because their tangent structures
-# and batching contracts differ, while sharing numerical sensitivity kernels and
-# convergence checks. Forcing one binding would obscure those contracts; separate
-# backend-specific power mathematics would duplicate them. Representation details
-# belong in operators.py/parameterized.py, numerical kernels in sensitivity.py,
-# and history rules in _demographic_action.py. Preserve Sequential higher AD and
-# supported mixed derivatives; further Krylov operator sensitivities are explicitly
-# unsupported rather than falling through to differentiation of the solver.
 
 
 class _PowerMethod[State](Protocol):
@@ -132,7 +127,21 @@ def _sequential_power_pair(operator, perturbation, initial, tangent, steps):
 
 
 class _PowerAction(hijax.HiPrim):
-    """Power evaluation or cached value with the same mathematical derivative."""
+    r"""Bind $A^k x$ with operator-PyTree and initial-state derivatives.
+
+    The operator's active array leaves describe its differentiable coordinates;
+    $k$ and numerical-method configuration are fixed. The JVP combines the
+    initial-state action $A^k\dot x$ with the Frechet power action generated by
+    $\dot A$. A missing operator direction reduces to an ordinary power action,
+    without an operator-sensitivity calculation.
+
+    Sequential evaluates a coupled recurrence; Krylov uses `_FrechetAction`
+    so adaptive basis construction does not become the derivative target.
+    An optional cached value supplies the primal only: its tangent is ignored.
+    Reverse rules are derived from the JVP, while standalone transposition is
+    allowed only in the initial state of an uncached power. This boundary lets
+    numerical evaluation change without redefining the power derivative.
+    """
 
     def __init__(self, avals, static, *, cached):
         """Keep array leaves dynamic and filtered Python configuration static."""
@@ -151,7 +160,7 @@ class _PowerAction(hijax.HiPrim):
         return method._power_action(operator, initial, steps)
 
     def jvp(self, primals, tangents):
-        """Differentiate the mathematical power, independently of solver implementation."""
+        """Apply the power derivative using the selected method family's evaluation."""
         operator, initial, steps, method, *value = eqx.combine(
             primals, cast(tuple, self.params["static"])
         )
@@ -271,7 +280,22 @@ def _checked_adjoint_factors(method, operator, initial, cotangent, steps):
 
 
 class _FrechetAction(hijax.HiPrim):
-    """First-order Krylov sensitivity with an explicit low-rank pullback."""
+    r"""Represent the linearized power in ordinary operator coordinates.
+
+    For fixed $A,x,k$, the mathematical action is
+    $A^k\dot x+\sum_{j=0}^{k-1}A^{k-1-j}\dot A A^j x$.
+    It is linear in the operator direction and state direction, even though
+    the Krylov projection used to approximate it can depend on those directions.
+    The explicit transpose therefore uses mathematical adjoint factors and the
+    opposite state action, rather than differentiating that numerical projection.
+
+    Operator cotangents are contracted into active PyTree leaves by the generic
+    operator adapter. State cotangents use $(A^T)^k$ independently, and failed
+    sensitivity checks raise. Further differentiation through this sensitivity
+    primitive is rejected explicitly; direct transposition is restricted to its
+    tangent arguments. This separates first-order mathematical AD from the
+    implementation of its approximate numerical evaluation.
+    """
 
     def __init__(self, avals, static):
         """Declare the state result and preserve filtered operator structure."""
@@ -354,7 +378,23 @@ def _frechet_action(
 
 
 class _Power(hijax.HiPrim):
-    """Apply a mathematical power or attach its rule to a cached primal."""
+    r"""Bind $A(\theta)^k x$ with a parameter-space operator tangent.
+
+    The primal operator is an opaque value containing parameters, fixed geometry
+    and a matrix cache, but its tangent is a parameter vector rather than a
+    matrix. The power product rule is the same as `_PowerAction`; only the
+    operator-coordinate representation and its JAX binding differ.
+
+    At a cached binding, visible parameter leaves preserve which process
+    coordinates are active before flattening. They own the parameter tangent;
+    adding the opaque value's aliased tangent would count it twice. The opaque
+    primal remains live so supported mixed state/parameter derivatives survive.
+    Cached outputs contribute no additional derivative path.
+
+    Parameter directions invoke `_Sensitivity`; state-only directions invoke a
+    power with the same operator. The standalone transpose applies the opposite
+    orientation only for an uncached action linear in its initial state.
+    """
 
     def __init__(self, avals, method, steps, cached, *, with_parameter_leaves=False):
         self.in_avals = avals
@@ -429,7 +469,21 @@ class _Power(hijax.HiPrim):
 
 
 class _Sensitivity(hijax.HiPrim):
-    """Linearized power with direct parameter-space adjoint contraction."""
+    r"""Linearize a parameterized power without differentiating its matrix cache.
+
+    Given $\dot\theta$, assembly supplies $E=\mathrm D A(\theta)[\dot\theta]$.
+    The returned state direction approximates
+    $A^k\dot x+\sum_{j=0}^{k-1}A^{k-1-j}EA^j x$ with the shared checked Krylov
+    kernel. Fixed geometry is not a derivative coordinate.
+
+    Transposition returns parameter coordinates through `_Pullback` and state
+    coordinates through the opposite power action. The active-process metadata
+    limits derivative assembly; it records structural participation, not whether
+    a direction happens to be numerically zero. Only tangent arguments admit
+    standalone transposition, and further AD through this primitive is unsupported.
+    A separate binding preserves these contracts without forcing compact
+    parameter tangents into an ordinary operator PyTree.
+    """
 
     def __init__(self, avals, method, steps, *, active_process=None):
         self.in_avals = avals
@@ -485,7 +539,20 @@ class _Sensitivity(hijax.HiPrim):
 
 
 class _Pullback(hijax.HiPrim):
-    """Contract power-adjoint factors; further AD and transposition are unsupported."""
+    r"""Return parameter cotangents for a power from fixed primal and adjoint seeds.
+
+    For $y=A(\theta)^k x$ and output cotangent $g$, the result approximates
+    $\nabla_\theta[g^T A(\theta)^k x]$ with $x,g$ held fixed. Krylov spaces
+    produce operator-adjoint factors $L,R$; the representation adapter contracts
+    $LR^T$ directly into process/source coordinates. No dense matrix cotangent
+    or reverse tape for matrix assembly is constructed.
+
+    Only active process directions are evaluated, and the factor calculation
+    must pass its convergence check. The initial-state cotangent is computed
+    separately by the calling sensitivity rule. Further JVP/VJP differentiation
+    and standalone transposition of this primitive are explicitly unsupported;
+    its three-input contract must not inherit a tangent-action transpose rule.
+    """
 
     def __init__(self, avals, method, steps, *, active_process=None):
         self.in_avals = avals

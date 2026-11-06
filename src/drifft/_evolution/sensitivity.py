@@ -1,4 +1,36 @@
-"""Krylov approximations of mathematical power sensitivities and pullbacks."""
+r"""Numerically approximate power derivatives and operator-adjoint factors.
+
+For $y=A^k x$, a perturbation $E$ of $A$ and an initial-state direction $\dot x$
+can be propagated together using the block identity
+
+$$
+\begin{pmatrix}A&E\\0&A\end{pmatrix}^{k}
+\begin{pmatrix}\dot x\\x\end{pmatrix}
+=
+\begin{pmatrix}
+A^k\dot x+\sum_{j=0}^{k-1}A^{k-1-j}EA^j x\\ A^k x
+\end{pmatrix}.
+$$
+
+This module evaluates the upper block using Krylov projection. For an output
+cotangent $g$, the operator adjoint is
+$G=\sum_{j=0}^{k-1}(A^T)^{k-1-j}g\,(A^j x)^T$.
+Separate projected spaces seeded by $g$ and $x$ approximate it as $LR^T$,
+avoiding construction of the full matrix cotangent. Operator-specific code can
+then contract these fixed factors into parameter coordinates.
+
+These are numerical kernels, not definitions of JAX derivative rules. Their
+bases can depend on the state, cotangent or perturbation direction. Calling them
+inside the primitives in `autodiff.py` lets us approximate the mathematical
+power derivative without differentiating the basis-selection algorithm.
+`projection.py` supplies the shared projection machinery; `operators.py` and
+`parameterized.py` supply parameter contractions after factor evaluation.
+
+Nested-space comparisons and recurrence defects estimate sensitivity error;
+they are not certified bounds and exclude backend representation error. The
+power bindings enforce convergence separately from the primal solve. Further
+Krylov operator sensitivities are not obtained by applying AD to these kernels.
+"""
 
 import jax
 import jax.numpy as jnp

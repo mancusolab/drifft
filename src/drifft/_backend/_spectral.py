@@ -75,7 +75,19 @@ def _sample_batches(nodes, values, *, size, radius, batch_size, transpose):
 
 
 class _BernsteinSampling(hijax.HiPrim):
-    """Linear sampling with an explicit streaming adjoint and fixed geometry."""
+    r"""Sample a fixed Bernstein map and apply its matched streaming transpose.
+
+    For prepared nodes $q_i$, the represented linear map approximates
+    $y_i=\sum_j B_{n,j}(q_i)v_j$ using the selected binomial stencils.
+    The transposed orientation scatters node masses back to count coordinates
+    using the same weights. Thus the transpose matches the sampled numerical
+    map, including its truncation, rather than an independently approximated map.
+
+    Nodes and stencil configuration are fixed geometry; active node derivatives
+    are rejected. Value JVPs apply the same linear map, and value pullbacks use
+    the opposite orientation. The explicit primitive regenerates stencils in
+    batches so reverse mode need not retain a node-by-stencil weight array.
+    """
 
     def __init__(self, nodes, values, *, size, radius, batch_size, transposed):
         """Declare input/output avals and static sampling geometry for Hijax."""
@@ -183,7 +195,20 @@ def _evaluate_nufft(coefficients, probabilities, tolerance, endpoints):
 
 
 class _CosineTranspose(hijax.HiPrim):
-    """Cosine adjoint whose probability derivatives avoid singular angles."""
+    r"""Apply the coefficient/endpoint adjoint of cosine evaluation at probabilities.
+
+    For fixed probabilities, `_CosineEvaluation` is linear in its coefficient
+    vector and two endpoint values. This primitive maps mass to their separate
+    cotangents using the transpose of that numerical value map. Endpoint
+    cotangents can subsequently be folded into the coefficient vector when the
+    endpoint values are constrained to be polynomial sums.
+
+    Probability derivatives use the transpose of a polynomial coefficient
+    recurrence rather than derivatives of singular angular coordinates. Mass
+    JVPs reuse this action; standalone transposition with respect to mass returns
+    cosine evaluation. Keeping the adjoint as a primitive preserves the endpoint
+    rule through nested AD instead of exposing the raw NUFFT angular calculation.
+    """
 
     def __init__(self, probabilities, mass, *, count, tolerance):
         """Declare the coefficient and endpoint cotangent shapes."""
@@ -285,10 +310,20 @@ def _transpose_cosine(probabilities, mass, count, tolerance):
 
 
 class _CosineEvaluation(hijax.HiPrim):
-    """Cosine evaluation with polynomial JVPs and explicit linear transposition.
+    r"""Evaluate a cosine polynomial with explicit endpoint values and polynomial AD.
 
-    Transposing the raw angular implementation and then differentiating would
-    expose singular endpoint coordinates. Keep the safe adjoint as a primitive.
+    Coefficients $a_k$ represent $\sum_k a_k T_k(1-2q)$, evaluated through a
+    NUFFT for interior probabilities. Separate endpoint inputs supply exact
+    values at $q=0,1$. The coefficient/endpoint argument is linear at fixed $q$,
+    with a matched adjoint implemented by `_CosineTranspose`.
+
+    Probability JVPs follow the coefficient polynomial's derivative, including
+    at endpoints; they do not differentiate the endpoint-selection branch or
+    $q\mapsto 2\arcsin\sqrt q$. This avoids singular angular derivatives when
+    the polynomial itself has finite endpoint slopes. Endpoint inputs are the
+    exact value path, while coefficients define that probability derivative.
+    The explicit primitive and its adjoint retain this convention under nested
+    transforms; numerical interior evaluation remains subject to NUFFT accuracy.
     """
 
     def __init__(self, coefficients, probabilities, endpoints, *, tolerance):

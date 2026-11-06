@@ -88,7 +88,20 @@ def _moment_recurrence(points, values, *, rank, order, transposed):
 
 
 class _GegenbauerMoments(hijax.HiPrim):
-    """Streaming polynomial moments and their matched evaluation transpose."""
+    r"""Compute polynomial moments or evaluation with a shared streaming recurrence.
+
+    Let $p_j^{(r)}(z)$ denote derivative order $r$ of the represented Gegenbauer
+    basis. The moment orientation returns $m_j=\sum_i v_i p_j^{(r)}(z_i)$;
+    the transpose returns $y_i=\sum_j v_j p_j^{(r)}(z_i)$. Both are linear in
+    values at fixed points and use the same recurrence, so their linear
+    transposes are paired without storing a point-by-degree matrix.
+
+    Point directions invoke the next derivative-order recurrence: moments first
+    weight masses by the point direction, whereas evaluations multiply the
+    result pointwise. This defines nested derivatives without retaining all
+    recurrence intermediates through generic reverse AD. Standalone transposition
+    is restricted to values; point derivatives are supplied by the JVP.
+    """
 
     def __init__(self, points, values, *, rank, order, transposed):
         """Declare array shapes and static recurrence configuration."""

@@ -167,7 +167,20 @@ def _diploid_selection_jvp(primals, tangents):
 
 
 class _DiploidSelection(hijax.HiPrim):
-    """Selection with stable analytic derivatives in every AD mode."""
+    r"""Apply diploid selection with factored analytic parameter and frequency AD.
+
+    With fitnesses $1,h=1-s_{\mathrm{het}},a=1-s_{\mathrm{hom}}$, the selected
+    frequency is $q(x)=[a x^2+h x(1-x)]/w(x)$, where
+    $w(x)=(1-x)^2+2h x(1-x)+a x^2$. Parameters and input frequency are dynamic;
+    valid fitness/frequency domains are supplied by the frequency-map contract.
+
+    The JVP evaluates analytic partials using divided factors rather than large
+    fitness products or an explicit squared denominator. This avoids avoidable
+    overflow and quotient cancellation when the derivative remains representable.
+    The primal is rebound through this primitive so nested AD retains the same
+    rule. Reverse mode follows from the JVP; there is no standalone linear
+    transpose of this nonlinear selection map.
+    """
 
     def __init__(self, *avals):
         """Declare broadcast output shape and dtype from the primal formula."""
@@ -716,7 +729,20 @@ def _multiplicative_selection_jvp(primals, tangents):
 
 
 class _MultiplicativeSelection(hijax.HiPrim):
-    """Selection with stable analytic derivatives in every AD mode."""
+    r"""Differentiate multiplicative selection without squaring the fitness ratio.
+
+    For positive fitness multiplier $r$ and allele frequency $x$, the map is
+    $q(x,r)=rx/(1-x+rx)$. Writing $w=1-x+rx$, its partials are
+    $\partial q/\partial r=x(1-x)/w^2$ and $\partial q/\partial x=r/w^2$.
+    The implementation evaluates these as products of divided factors, with an
+    optimization barrier where needed to prevent reconstruction of $w^2$.
+
+    This primitive preserves finite derivatives in regimes where an intermediate
+    squared denominator would overflow. JVPs include both parameter and frequency
+    directions, reverse rules derive from that linearization, and rebinding the
+    primal preserves the analytic rule under nested transforms. Domain checks
+    belong to the surrounding frequency-map contract, not to clipping in this map.
+    """
 
     def __init__(self, *avals):
         """Declare broadcast output shape and dtype from the primal formula."""

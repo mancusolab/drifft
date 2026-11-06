@@ -1,11 +1,38 @@
-"""Jacobi operator representation and parameter-space differentiation.
+r"""Adapt Jacobi epoch operators to parameter-space differentiation.
 
-The ordinary Lineax adapter keeps prepared problems compatible with Equinox.
-Only the mathematical power boundary uses an opaque HiType: its dense matrix
-is numerical state, whereas its tangent is the process/source parameter vector.
-This module owns that representation and its parameter derivatives, not the
-power or history rules. Transposition changes orientation without changing the
-parameter coordinates.
+For a Jacobi working-coordinate operator $A(\theta)$, the process and encoded
+source parameters $\theta$ determine a matrix used repeatedly by numerical
+power evaluation. Treating that matrix as the differentiation coordinate can
+produce a dense matrix cotangent and retain an assembly reverse tape. Instead,
+this module carries the matrix as a numerical cache while representing operator
+tangents and cotangents in the coordinates of $\theta$.
+
+An ordinary `_JacobiOperator` implements the Lineax interface for prepared
+problems and custom methods. At the power boundary, an opaque HiJAX type carries
+the parameters, required fixed geometry and cached matrix. Given adjoint factors
+$L,R$, process-coordinate cotangents are evaluated as
+
+$$
+\bar\theta_i=\langle L,(\partial A/\partial\theta_i)R\rangle_F.
+$$
+
+Only active process directions are assembled, one at a time. The affine source
+column permits a direct factor contraction instead of one assembly per source
+coordinate. Parameter-space differentiation and state-space reduction are
+separate ideas: the former controls derivative storage; this implementation
+specifically adapts the latter for Jacobi epochs.
+
+Packing, unpacking, transposition and batching preserve that representation.
+Transposition changes the matrix orientation, not the parameter coordinates;
+geometry remains shared across batches when it is not mapped. Visible parameter
+leaves preserve symbolic activity before flattening, without counting their
+tangent again through the opaque value.
+
+Jacobi geometry and assembly formulas live in `_backend/jacobi.py`. This module
+owns their evolution adapter and parameter derivatives, while `autodiff.py` owns
+power rules and `sensitivity.py` owns numerical sensitivity evaluation. Encoding,
+reconstruction and history source placement remain part of the enclosing chain
+rule, rather than being absorbed into the cached matrix's derivative.
 """
 
 # pattern: Functional Core
@@ -26,7 +53,19 @@ from .operators import _numerical_operator
 
 
 class _JacobiOperator(lx.AbstractLinearOperator):
-    """Lazily assemble a reduced operator, preserving public preparation AD."""
+    r"""Expose the Jacobi working-coordinate action as a differentiable Lineax operator.
+
+    The backend assembles a reduced expectation matrix; its transpose advances
+    working mass. An encoded source adds a homogeneous column and scalar row,
+    turning repeated affine updates into a linear power. The `transposed` flag
+    reverses the complete augmented action while retaining its parameters.
+
+    This ordinary Equinox PyTree is used in prepared problems, so custom methods
+    and direct operator differentiation see parameter-dependent assembly. Built-in
+    Krylov power bindings separately pack it into `_Operator` to use compact
+    cotangents and a stopped numerical matrix. It represents an epoch's working
+    action, not the full population-space encoding and reconstruction.
+    """
 
     backend: Jacobi
     frequency_map: AbstractFrequencyMap
@@ -107,7 +146,19 @@ def _forward_matrix(expectation, source, transposed):
 
 @dataclass(frozen=True)
 class _Spec:
-    """Static reconstruction recipe; runtime geometry stays in the payload."""
+    r"""Describe how to reconstruct $A(\theta)$ from parameter coordinates.
+
+    The filtered process/source structure and unravel function recover parameter
+    leaves from a flat vector. Static dimensions select the assembly shape; any
+    required runtime geometry is supplied separately, never hidden in this
+    hashable reconstruction recipe. Orientation and augmentation determine the
+    final action represented by the cached matrix.
+
+    `process_size` separates process coordinates, which require directional
+    assembly, from source coordinates, whose adjoint contraction is explicit.
+    Keeping this recipe separate from numerical payloads lets derivative kernels
+    reconstruct a direction without retaining the backend's encoding tables.
+    """
 
     static: tuple
     unravel: Callable
@@ -136,7 +187,18 @@ class _Spec:
 
 @dataclass(frozen=True)
 class _Operator:
-    """Numerical cache whose logical coordinates are process/source parameters."""
+    r"""Carry a parameterized primal operator with numerical payloads for evaluation.
+
+    `parameters` identifies the logical derivative coordinates; `matrix` caches
+    $A(\theta)$ for numerical actions, and `geometry` contains only the fixed
+    arrays needed to reconstruct it. `spec` describes that reconstruction.
+    The caller must supply a cache consistent with the parameters and orientation.
+
+    The registered `_OperatorType` gives this value a parameter-vector tangent
+    and cotangent rather than a tangent for each stored array. Thus the matrix
+    can be retained for efficient solves without becoming a dense cotangent.
+    Payload access during tracing goes through the representation primitives.
+    """
 
     parameters: jax.Array
     geometry: tuple
@@ -146,7 +208,17 @@ class _Operator:
 
 @dataclass(frozen=True)
 class _AxisShift:
-    """Component-wise offsets used by HiJAX's nested mapping adjustment."""
+    r"""Record component-wise offsets for nested mappings of an operator payload.
+
+    Parameters and the matrix share one batch-axis position; geometry can have
+    its own positions or remain unmapped. Removing or inserting an enclosing
+    mapped axis therefore need not shift every payload component equally.
+
+    `_Axis` comparisons produce these offsets for HiJAX's nested-map adjustment
+    expressions. They are internal mapping arithmetic, not a scalar ordering of
+    operators. Carrying geometry offsets separately preserves sharing rather
+    than introducing spurious batch dimensions.
+    """
 
     axis: int
     geometry: tuple[int, ...] | None
@@ -154,7 +226,19 @@ class _AxisShift:
 
 @dataclass(frozen=True)
 class _Axis(hijax.MappingSpec):
-    """Map parameters/matrix together while allowing shared geometry leaves."""
+    r"""Map operator payloads without requiring geometry to follow parameter batches.
+
+    `axis` maps parameters and the matrix together. An explicit `geometry` tuple
+    specifies each geometry leaf's mapped axis, with a None entry denoting a
+    shared leaf. A None tuple instead means uniform mapping on `axis`, as needed
+    when an entire value is stacked, for example by a scan.
+
+    Nested maps insert and remove dimensions independently in these payloads.
+    Component-wise comparisons and shifts preserve their positions through
+    HiJAX's mapping adjustments. This is a representation contract: batching
+    changes storage axes, not which parameters the mathematical operator depends
+    on, and shared geometry must not be broadcast merely to match the matrix.
+    """
 
     axis: int = 0
     geometry: tuple[int | None, ...] | None = None
@@ -207,7 +291,19 @@ class _Axis(hijax.MappingSpec):
 
 @dataclass(frozen=True)
 class _OperatorType(hijax.HiType):
-    """Lower the cache but differentiate only its parameter coordinates."""
+    r"""Define an operator whose primal storage and derivative coordinates differ.
+
+    Lowering exposes parameters, required geometry and the numerical matrix;
+    raising reconstructs the same `_Operator` value. The tangent type is only
+    the parameter-vector type, so cotangent accumulation takes place in those
+    coordinates instead of allocating derivatives for fixed geometry or caches.
+
+    Rank changes follow `_Axis`: parameters and matrix are mapped together,
+    while geometry may remain shared. Static reconstruction metadata stays in
+    the type rather than becoming runtime numerical storage. This HiType exists
+    because a conventional PyTree tangent would mirror all primal array leaves
+    and would not express the intended compact derivative contract.
+    """
 
     parameters: hijax.ShapedArray
     geometry: tuple
@@ -275,7 +371,19 @@ hijax.register_hitype(
 
 
 class _Pack(hijax.HiPrim):
-    """Bind parameters to an AD-stopped cache assembled by the numerical solve."""
+    r"""Introduce the parameterized operator's logical AD boundary.
+
+    The primal bundles $(\theta,\mathrm{geometry},A_{\mathrm{cache}})$ into an
+    opaque operator. Its JVP returns only $\dot\theta$: the cached matrix is
+    numerical state, not an independent mathematical argument, and active
+    geometry tangents are rejected. Numerical callers provide a matrix consistent
+    with the represented operator; this primitive does not reassemble or check it.
+
+    Binding this operation as a primitive prevents later AD from assigning
+    matrix-shaped cotangents to the payload. Its batch rule maps parameters and
+    matrix while leaving unmapped geometry shared, preserving the same logical
+    operator coordinates across batches.
+    """
 
     def __init__(self, avals, spec):
         self.in_avals = avals
@@ -349,7 +457,19 @@ def _pack(operator, matrix):
 
 
 class _Unpack(hijax.HiPrim):
-    """Expose numerical payloads only inside mathematical primitive expansions."""
+    r"""Expose an opaque operator's payload inside numerical primitive expansions.
+
+    The output is the stored parameter vector, geometry tuple and matrix cache.
+    This is a representation access operation, not the mathematical map
+    $\theta\mapsto A(\theta)$: it does not define a JVP that differentiates cache
+    contents. Power and sensitivity primitives own the derivative semantics of
+    the computations that use these arrays.
+
+    Its batching rule preserves each component's mapping, including geometry
+    that remains shared. Keeping access behind a primitive allows traced opaque
+    values to be used by numerical kernels without treating their payload as
+    independent operator derivative coordinates.
+    """
 
     def __init__(self, aval):
         self.in_avals = (aval,)
@@ -375,7 +495,18 @@ def _unpack(operator):
 
 
 class _Transpose(hijax.HiPrim):
-    """Transpose numerical state without changing parameter coordinates."""
+    r"""Reverse operator orientation while preserving parameter coordinates.
+
+    The primal transposes the cached matrix and flips the reconstruction recipe's
+    orientation. A direction in $\theta$ is unchanged: it now describes the
+    variation of $A(\theta)^T$ through the transposed recipe, rather than being a
+    matrix tangent that must itself be transposed.
+
+    This identity map on parameter tangents supports opposite-orientation state
+    pullbacks without losing process dependence in mixed derivatives. Geometry
+    and parameter payloads are retained, and the mapping specification is passed
+    through so transposition does not replicate shared geometry.
+    """
 
     def __init__(self, aval):
         self.in_avals = (aval,)

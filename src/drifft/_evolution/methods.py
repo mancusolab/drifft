@@ -1,4 +1,31 @@
-"""Geometry-free evolution methods and their common orchestration."""
+r"""Evaluate prepared epoch powers and reconstruct population-space results.
+
+An epoch method receives a working operator $A$, seed $z_0$, exponent $k$ and
+reconstruction maps from `preparation.py`/`problem.py`. Its task is to evaluate
+$A^k z_0$ and return a checked population result. Separating this task from
+geometry preparation lets the same numerical algorithm operate on different
+transition representations.
+
+[`Sequential`][drifft.Sequential] applies the represented transition repeatedly.
+[`PolynomialKrylov`][drifft.PolynomialKrylov] and
+[`RationalKrylov`][drifft.RationalKrylov] approximate the power in a projected
+space. For built-in Krylov methods, numerical construction is stopped for AD,
+and a cached power binding attaches the mathematical derivative to the computed
+value. This preserves primal diagnostics without differentiating basis selection
+or repeating the primal projection.
+
+Numerical representation selection is delegated to `operators.py`; cached AD
+binding is delegated to `autodiff.py`, which distinguishes ordinary operator
+PyTrees from Jacobi parameter-space values. The power JVP in `autodiff.py`
+selects coupled-recurrence or Krylov sensitivity evaluation from the method
+family. Custom methods define their own differentiation behavior through the
+prepared-problem interface.
+
+Thus numerical power evaluation lives here and in `projection.py`, mathematical
+power transformation rules in `autodiff.py`, and Krylov sensitivity calculations
+in `sensitivity.py`. Parameter-dependent preparation and reconstruction remain
+outside the power primitive and retain their derivatives in the full epoch.
+"""
 
 # pattern: Functional Core
 import math

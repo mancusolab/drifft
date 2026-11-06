@@ -1,4 +1,35 @@
-"""Mathematical demographic actions and their shared HiJAX differentiation rules."""
+r"""Mathematical history actions and their shared differentiation boundary.
+
+Let $H(\theta)$ be the represented history expectation operator and $c(\theta)$
+the final mass accumulated from singleton sources starting from zero mass.
+For initial mass $p$ and terminal values $f$, the public actions are
+
+$$
+\operatorname{advance}(p)=H^T p+c, \qquad
+\operatorname{expect}(f)=(Hf,\;c^T f).
+$$
+
+The extra source term makes forward evolution affine. Augmenting the state
+with a scalar makes both orientations linear actions of one operator:
+$\mathcal A=\begin{pmatrix}H^T&c\\0&1\end{pmatrix}$.
+Forward evolution applies $\mathcal A$ to $(p,1)^T$; backward expectation
+applies $\mathcal A^T$ to $(f,0)^T$. Vector pullbacks use the opposite
+orientation, while parameter pullbacks differentiate the scalar pairing
+$y^T\mathcal A(\theta)x$ with the augmented vectors held fixed.
+
+This boundary keeps the history derivative independent of the choice of state
+representation. Its implementation composes epoch powers and population-size
+boundaries, including parameter-dependent encoding, reconstruction and sources.
+The power rules in `_evolution/autodiff.py` supply epoch sensitivities; this
+module retains parameter linearizations from the requested primal orientation
+rather than forming $H$ or a history Jacobian. Geometry, numerical settings and
+diagnostics are not differentiation targets.
+
+$H$ denotes the numerical representation of the Wright–Fisher history, not
+necessarily its exact transition matrix. Krylov action and sensitivity errors
+can differ: opposite orientations approximate the mathematical transpose,
+rather than exactly transposing a particular adaptive projection.
+"""
 
 # pattern: Functional Core
 from typing import cast
@@ -178,12 +209,25 @@ def _check_fixed(model_flags):
 
 
 class _DemographicAction(hijax.HiPrim):
-    """An oriented history action that reuses its primal work in differentiation.
+    r"""Apply an oriented augmented history action with mathematical AD rules.
 
-    JVPs evaluate the primal and direction together. Parameter VJPs in either
-    orientation retain the linearization from the primal evaluation; vector
-    cotangents invoke the opposite action. Cached outputs preserve this boundary
-    under higher derivatives without repeating the primal calculation.
+    With $\mathcal A=\begin{pmatrix}H^T&c\\0&1\end{pmatrix}$, the primitive
+    applies either $\mathcal A x$ or $\mathcal A^T x$. The scalar coordinate
+    scales source input in the forward orientation and accumulates source
+    reward in the backward orientation. This makes affine histories linear in
+    the augmented vector, including arbitrary scalar cotangents in reverse mode.
+
+    JVPs compose the history's epoch and boundary derivatives. Parameter VJPs
+    retain the linearization of the requested primal orientation; vector VJPs
+    invoke the opposite action. Geometry and method settings are fixed, and
+    diagnostic cotangents do not contribute. A cached value preserves the same
+    AD boundary without a second primal evaluation. Standalone transposition
+    is restricted to the augmented vector of an uncached, diagnostic-free action.
+
+    The primitive targets the represented history, including source, encoding
+    and reconstruction dependence. Approximate epoch solves can give different
+    forward/backward numerical errors; this rule is not the exact transpose of
+    an input-dependent Krylov projection.
     """
 
     def __init__(

@@ -1,4 +1,28 @@
-"""Arnoldi projection kernels and reconstructed power-error estimates."""
+r"""Approximate working-coordinate powers with polynomial or rational Krylov spaces.
+
+Given an operator $A$, seed $x$ and exponent $k$, an orthonormal basis $V$ yields
+a small projected operator $B=V^T A V$ and the approximation
+
+$$ A^k x\approx V B^k(V^T x). $$
+
+Polynomial Arnoldi constructs the space from operator actions; rational Arnoldi
+uses shifted solves to build a space suited to long powers. This module owns
+that numerical construction, projected power evaluation and reconstruction of
+error estimates. It can return the basis when sensitivity kernels need it,
+without requiring every primal solve to retain it.
+
+The same machinery evaluates primal powers in `methods.py` and derivative
+block actions/adjoint factors in `sensitivity.py`. Those calls can use different
+seeds and spaces. The mathematical AD rules live in `autodiff.py`: they do not
+treat differentiation of this projection algorithm as the derivative of $A^k x$.
+In particular, separately projected forward and transpose actions agree only
+to their numerical accuracy.
+
+Nested spaces and recurrence defects provide practical error estimates, not
+rigorous certificates for arbitrary operators. Backend approximation error is
+outside these estimates. Inner-solve success and outer power convergence are
+distinct outcomes passed back to the calling method or sensitivity rule.
+"""
 
 # pattern: Functional Core
 from typing import NamedTuple
@@ -108,7 +132,20 @@ def _require_krylov_derivative_jvp(primals, tangents):
 
 
 class _RequireKrylovDerivative(hijax.HiPrim):
-    """Preserve the Arnoldi derivative guard through JVP and reverse mode."""
+    r"""Attach a support check to differentiation of a numerical projection value.
+
+    The primal map is the identity $v\mapsto v$ and does not reject a value when
+    the dynamic support predicate is false. Its tangent is the identity only
+    when the predicate holds; otherwise differentiation raises. The projection
+    code uses this for nonzero-seed and no-breakdown requirements of direct
+    Arnoldi differentiation.
+
+    A checked unit multiplier on the tangent path survives reverse transposition,
+    so requesting a gradient alone cannot eliminate the check with the unused
+    primal. The predicate is diagnostic, not a derivative target. This guard
+    concerns AD through the numerical projection; the mathematical power rules
+    use stopped primal construction and their own sensitivity checks.
+    """
 
     def __init__(self, value, supported):
         """Declare an identity operation with a dynamic support predicate."""

@@ -462,12 +462,19 @@ class FFT(AbstractTransitionBackend):
 
 
 class _BinomialWeights(hijax.HiPrim):
-    """Endpoint-safe binomial weights with polynomial probability derivatives.
+    r"""Evaluate binomial weights with endpoint-safe probability derivatives.
 
-    Counts are integer indices and size is static. Probability and log-weight
-    derivatives retain their existing rules. The operation is nonlinear in
-    both arguments, so reverse mode transposes the JVP's linearization rather
-    than the weight evaluation itself.
+    For integer count $j$ and fixed degree $n$, the mathematical weight is
+    $B_{n,j}(q)=\binom nj q^j(1-q)^{n-j}$. The primal uses log weights in the
+    interior and exact endpoint values. Its probability derivative uses
+    $B'_{n,j}=n(B_{n-1,j-1}-B_{n-1,j})$, with out-of-range counts contributing
+    zero, rather than differentiating logarithms at $q=0$ or $q=1$.
+
+    Counts are integer indices and the degree is static. The auxiliary log-weight
+    input also carries multiplicative weight tangents when active. Probability
+    rules recursively reuse lower-degree primitives, retaining finite polynomial
+    endpoint derivatives under nested AD. The operation is nonlinear, so reverse
+    mode transposes its JVP's linearization, not the weight evaluation itself.
     """
 
     def __init__(self, counts, logchoose, probabilities, *, size):

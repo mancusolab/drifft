@@ -1,4 +1,25 @@
-"""Adapt transition representations to linear power problems."""
+r"""Express population evolution as a power in a backend's working coordinates.
+
+An epoch can be written as $p_{\mathrm{out}}=R A^k z_0+e$, where $z_0$ is the
+encoded initial state, $R$ decodes a working state and $e$ is an output offset.
+The working state can include a homogeneous scalar coordinate, making repeated
+source addition part of a linear power. Preparation defines these maps without
+choosing how the power will be evaluated.
+
+This boundary matters for differentiation: encoding, the working operator and
+source terms can all depend on process parameters. Keeping those dependencies
+in the prepared problem lets ordinary AD compose them with the mathematical
+power rules in `autodiff.py`. Backward epoch expectation transposes the affine
+preparation/reconstruction in `_demographic_action.py`, including its offsets.
+
+Generic backends use a one-generation [`Transition`][drifft.Transition] action.
+Jacobi uses a reduced representation: its encoding already includes one selected
+transition, so an epoch of $g>0$ generations requires only $g-1$ reduced powers.
+Earlier source events enter the encoded state, while the final source event is
+an output offset. Zero- and one-generation cases therefore need separate
+preparations, not an artificial extra power. `problem.py` carries this contract;
+`methods.py` consumes it to evaluate and reconstruct the result.
+"""
 
 # pattern: Functional Core
 from functools import partial, singledispatch
