@@ -107,3 +107,41 @@ Symbolic-zero hygiene review:
   checking PyTree and tangent-type preservation for every input leaf.
 - All 43 demographic autodiff tests pass, as do lint, formatting, type and
   whitespace checks. Changes remain uncommitted.
+
+Backward parameter-linearization experiment (completed, uncommitted):
+- Baseline revision: bb3bd60; source and measurement artifacts now live under
+  `/tmp/drifft-expect-linearization`. A clean docs build cleared the initial
+  `.cache` artifacts; the baseline source was recreated from git and its scalar
+  measurements recovered from exact captured output. The report records this.
+- Benchmark the public SD expectation likelihood gradient, ending 252 generations
+  ago, with the documented Jacobi/RationalKrylov settings and fixed sampling
+  reward. Record setup, compilation, synchronized execution, compiler storage,
+  and peak RSS in fresh serial processes before and after the change.
+- Retain each orientation's parameter linearization during its original primal
+  evaluation. Keep opposite-action vector pullbacks and mathematical epoch rules.
+- Check dense-reference derivatives, source offsets, batching, higher/mixed
+  derivatives, symbolic zeros, and failure behavior. Compare small joint-gradient
+  timings as well as the SD parameter-only workload before judging the tradeoff.
+- The default SD baseline completed a first synchronized value-and-gradient:
+  206.79 s, finite likelihood/gradient, 417.13 s compilation, 29.59 GiB compiler
+  temporary storage, and 3.80 GiB process peak RSS. Hardware has 16 GiB RAM;
+  compression/swap makes RSS understate the burden. Stopped untimed warmups
+  rather than repeat the oversized allocation. No clean SD warm baseline exists.
+- The orientation-local parameter VJP implementation passes all 46 demographic
+  autodiff tests (including three new batched dense-reference cases), Ruff,
+  formatting, and ty. Another 97 demography/power/symbolic-zero regression tests
+  pass (143 total), along with the strict clean docs build and whitespace check.
+- Changed SD: 203.64 s first call, 368.91 s compilation, 22.36 GiB compiler
+  temporary storage, 6.77 GiB peak RSS. Maximum relative gradient difference is
+  5.35e-9; log-likelihood differs by 3.87e-11. The allocation estimate falls 24.5%,
+  but physical RSS rises and timing is memory-pressure-sensitive. No SD speedup
+  or physical peak-memory improvement is established on this 16 GiB host.
+- Small serial paired runs (30 synchronized samples) show parameter-only
+  gradients improving 8.758 -> 6.688 ms for Sequential and 24.521 -> 16.188 ms
+  for RationalKrylov, with lower temporary storage. Joint gradient timings are
+  roughly unchanged; Sequential joint temporary storage increases 0.65%.
+- Direct review found no additional correctness issue. Keep the simpler
+  orientation-local linearization for its parameter-only benefit; investigate
+  large SD storage separately. Full measurements, limitations, and reproduction
+  scripts: `/tmp/drifft-expect-linearization/REPORT.md`.
+- User-owned demo.tsv remains untouched. No commit made for this experiment.

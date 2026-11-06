@@ -133,29 +133,29 @@ def _evaluate_with_aux(
 
 
 def _parameter_vjp(
-    model, seed, rate, mask, *, segregating, diagnostics=False, throw=True
+    model, seed, rate, mask, *, segregating, transpose, diagnostics=False, throw=True
 ):
-    """Retain the forward scalar-pairing pullback and its numerical intermediates.
+    """Linearize parameters during the requested orientation's primal evaluation.
 
-    The forward action uses its original seed. For the backward action the
-    incoming cotangent becomes the seed and the original input becomes the
-    reward. Both orientations therefore differentiate the same pairing.
+    Contracting this pullback with an output cotangent differentiates the same
+    augmented scalar pairing in either orientation. Epoch primitives supply
+    mathematical derivatives; adaptive solver construction remains outside AD.
     """
     active, fixed = eqx.partition((model, rate), mask)
 
-    def forward(parameters):
+    def action(parameters):
         current_model, current_rate = eqx.combine(parameters, fixed)
         return _evaluate_with_aux(
             current_model,
             seed,
             current_rate,
             segregating=segregating,
-            transpose=True,
+            transpose=transpose,
             diagnostics=diagnostics,
             throw=throw,
         )
 
-    return eqx.filter_vjp(forward, active, has_aux=True)
+    return eqx.filter_vjp(action, active, has_aux=True)
 
 
 def _pack(state, auxiliary, diagnostics):
@@ -180,8 +180,8 @@ def _check_fixed(model_flags):
 class _DemographicAction(hijax.HiPrim):
     """An oriented history action that reuses its primal work in differentiation.
 
-    JVPs evaluate the primal and direction together. Forward parameter VJPs
-    retain the epoch linearization from that same primal evaluation; vector
+    JVPs evaluate the primal and direction together. Parameter VJPs in either
+    orientation retain the linearization from the primal evaluation; vector
     cotangents invoke the opposite action. Cached outputs preserve this boundary
     under higher derivatives without repeating the primal calculation.
     """
@@ -273,20 +273,21 @@ class _DemographicAction(hijax.HiPrim):
     lin, linearized = hijax.linearize_from_jvp
 
     def vjp_fwd(self, nzs, *primals):
-        """Retain the forward parameter linearization instead of recomputing it."""
+        """Retain parameter residuals from the original oriented action."""
         _check_fixed(nzs[0])
         model, state, rate, *_ = eqx.combine(
             primals, cast(tuple, self.params["static"])
         )
         mask = _parameter_mask(nzs)
         pullback = None
-        if self.params["orientation"] and any(jax.tree.leaves(mask)):
+        if any(jax.tree.leaves(mask)):
             value, pullback, auxiliary = _parameter_vjp(
                 model,
                 state,
                 rate,
                 mask,
                 segregating=self.params["segregating"],
+                transpose=self.params["orientation"],
                 diagnostics=self.params["diagnostics"],
                 throw=self.params["throw"],
             )
@@ -316,30 +317,14 @@ class _DemographicAction(hijax.HiPrim):
         )
         cotangent = jax.tree.map(hijax.instantiate_zeros, state_ct, is_leaf=_is_ad_leaf)
         model_grad = rate_grad = state_grad = None
-        opposite_value = None
         mask = _parameter_mask(nzs)
         if any(jax.tree.leaves(mask)):
-            if self.params["orientation"]:
-                model_grad, rate_grad = pullback(cotangent)[0]
-            else:
-                opposite_value, backward_pairing, _ = _parameter_vjp(
-                    model,
-                    cotangent,
-                    rate,
-                    mask,
-                    segregating=self.params["segregating"],
-                )
-                model_grad, rate_grad = backward_pairing(state)[0]
+            model_grad, rate_grad = pullback(cotangent)[0]
         if any(jax.tree.leaves(nzs[1])):
-            # For expect, the forward pairing already produced A @ cotangent.
-            # Keep the opposite primitive boundary for higher derivatives,
-            # using that value instead of evaluating the action a second time.
-            cached = () if opposite_value is None else (opposite_value,)
             state_grad = _bind_action(
                 model,
                 cotangent,
                 rate,
-                *cached,
                 segregating=self.params["segregating"],
                 transpose=not self.params["orientation"],
             )

@@ -124,7 +124,10 @@ log-likelihood.
 The history rules compose interval and boundary operations without forming
 $\widetilde H$ or its derivative matrix. Numerical methods share these
 mathematical identities. Their algorithms determine how accurately the
-required actions are evaluated.
+required actions are evaluated. Both `advance` and `expect` retain parameter
+linearizations from their original evaluation for use in the pullback. This
+reuses intermediate work at the cost of retaining derivative residuals until
+the reverse pass; it does not store the full history operator.
 
 ## Accuracy and limitations
 

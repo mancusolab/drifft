@@ -597,3 +597,39 @@ def test_numerically_zero_cotangent_retains_curvature(backward):
     assert jnp.abs(gradient) < 1e-12
     assert expected > 1e-5
     assert jnp.allclose(curvature, expected, atol=2e-9, rtol=2e-8)
+
+
+@pytest.mark.parametrize(
+    "backend,method",
+    [
+        (drifft.FFT, drifft.Sequential()),
+        (drifft.FFT, drifft.PolynomialKrylov(dimension=16)),
+        (drifft.Jacobi, drifft.RationalKrylov(dimension=16)),
+    ],
+)
+def test_batched_expect_parameter_gradients_match_dense(backend, method):
+    """Each batched backward linearization includes process and source dependence."""
+    geometry = drifft.Demography([3, 2, 4], [3, 2]).prepare(backend_factory=backend)
+    parameters = jnp.array([[0.03, 0.01, 0.02, 0.0], [0.04, 0.02, 0.01, 0.001]])
+    values = jnp.cos(jnp.arange(7))
+    weights = jnp.sin(jnp.arange(5) + 0.3)
+
+    def objective(parameters):
+        s, u, v, rate = parameters
+        model = drifft.DemographicTransition(
+            geometry,
+            drifft.Composition(drifft.AdditiveSelection(s), drifft.Mutation(u, v)),
+            method=method,
+        )
+        result = model.expect(values, segregating=True, singleton_mutation_rate=rate)
+        # Weight both outputs; zero source rate still has a nonzero rate derivative.
+        return result.values @ weights + 0.7 * result.offset
+
+    def oracle(parameters):
+        result = reference(parameters, values, backward=True, segregating=True)
+        return result[:-1] @ weights + 0.7 * result[-1]
+
+    actual = jax.jit(jax.vmap(jax.value_and_grad(objective)))(parameters)
+    expected = jax.vmap(jax.value_and_grad(oracle))(parameters)
+    for observed, target in zip(actual, expected, strict=True):
+        assert jnp.allclose(observed, target, atol=2e-9, rtol=2e-8)
