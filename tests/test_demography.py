@@ -483,3 +483,21 @@ def test_transition_requires_prepared_geometry():
             drifft.Demography([4], []),  # ty: ignore[invalid-argument-type] -- invalid geometry
             drifft.Neutral(),
         )
+
+
+def test_geometry_lookup_and_iteration_use_distinct_population_sizes():
+    """Size lookup exposes shared epoch backends, not intervals or boundary backends."""
+    geometry = drifft.Demography([4, 3, 4], [2, 2]).prepare(
+        backend_factory=drifft.Dense, boundary_backend_factory=drifft.FFT
+    )
+    assert len(geometry) == 2
+    assert set(geometry) == {3, 4}
+    assert all(isinstance(geometry[size], drifft.Dense) for size in geometry)
+    assert geometry[4].pop_size == 4
+    assert geometry[3].pop_size == 3
+    chronological = [geometry[size] for size in geometry.demography.pop_sizes]
+    assert chronological[0] is chronological[2]
+    with pytest.raises(KeyError):
+        geometry[0]  # Population-size keys are not positional indices.
+    with pytest.raises(KeyError):
+        geometry[5]

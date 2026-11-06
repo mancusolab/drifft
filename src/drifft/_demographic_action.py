@@ -50,7 +50,8 @@ from ._evolution.autodiff import (
 )
 from ._evolution.methods import prepare_epoch
 from ._evolution.preparation import validate_domain
-from ._evolution.problem import EvolutionStatus, _working_problem
+from ._evolution.problem import EvolutionStatus, _epoch_result, _working_problem
+from ._operator import Transition
 
 
 def _stop_arrays(tree):
@@ -96,6 +97,110 @@ def _expect_epoch(model, backend, values, generations, rate, segregating):
     return encode_transpose(working)[0], offset
 
 
+def _transition(model, source_pop_size: int, dest_pop_size: int) -> Transition:
+    """Bind a boundary transition using the destination's prepared backend.
+
+    The source size sets the input grid and the destination backend sets the
+    output grid. Both history orientations use this same represented kernel,
+    with the bound frequency map retaining its parameter derivatives.
+    """
+    return Transition(
+        model.geometry._boundary_backends[dest_pop_size],
+        model.frequency_map,
+        source_pop_size=source_pop_size,
+    )
+
+
+def _advance_history(model, distribution, *, segregating, singleton_rate, throw):
+    """Propagate mass forward through holds and boundaries, retaining diagnostics.
+
+    Each interval reserves its final generation for the rectangular boundary
+    transition. Singleton input is added after each generation at that
+    generation's destination size. This is the forward numerical traversal
+    paired with `_expect_history`; the enclosing primitive supplies its AD rules.
+    """
+    from ._demography import DemographicResult, IntervalDiagnostics
+
+    distribution = jnp.asarray(distribution, dtype=jnp.float64)
+    size = 2 * model.demography.initial_pop_size + (-1 if segregating else 1)
+    if distribution.shape != (size,):
+        raise ValueError(f"distribution must have {size} entries")
+    # Validate every prepared domain even for identity/boundary-only histories.
+    for size in model.geometry:
+        distribution = validate_domain(
+            model.geometry[size],
+            distribution,
+            model.frequency_map,
+            reduced=model.method.allows_reduced_representation,
+        )
+    initial_result = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
+    status = initial_result.status
+    diagnostics = []
+    for source, destination, duration in zip(
+        model.demography.pop_sizes[:-1],
+        model.demography.pop_sizes[1:],
+        model.demography.generations,
+        strict=True,
+    ):
+        # The final generation belongs to the rectangular boundary action.
+        # Holding for duration instead would add an extra generation and,
+        # in segregating mode, an extra source contribution at the source size.
+        error = jnp.asarray(0.0)
+        interval_status = EvolutionStatus.successful
+        if duration > 1:
+            source_mass = (
+                jnp.zeros_like(distribution).at[0].set(2 * source * singleton_rate)
+                if segregating
+                else None
+            )
+            result = model.method.advance(
+                model.geometry[source],
+                distribution,
+                frequency_map=model.frequency_map,
+                generations=duration - 1,
+                segregating=segregating,
+                source_mass=source_mass,
+                throw=False,
+            )
+            distribution, error, interval_status = (
+                result.distribution,
+                result.error_estimate,
+                result.status,
+            )
+        transition = _transition(model, source, destination)
+        distribution = transition.advance(distribution, segregating=segregating)
+        if segregating:
+            distribution = distribution.at[0].add(2 * destination * singleton_rate)
+        boundary = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
+        interval_status = EvolutionStatus.where(
+            interval_status == EvolutionStatus.successful,
+            boundary.status,
+            interval_status,
+        )
+        status = EvolutionStatus.where(
+            status == EvolutionStatus.successful, interval_status, status
+        )
+        diagnostics.append(
+            IntervalDiagnostics(
+                source,
+                destination,
+                duration,
+                error,
+                interval_status == EvolutionStatus.successful,
+                interval_status,
+            )
+        )
+    converged = status == EvolutionStatus.successful
+    if throw:
+        distribution = eqx.error_if(
+            distribution,
+            ~converged,
+            "demographic evolution failed: inspect interval diagnostics with throw=False; "
+            "check input mass and increase dimension or use Sequential",
+        )
+    return DemographicResult(distribution, converged, status, tuple(diagnostics))
+
+
 def _expect_history(model, state, rate, *, segregating):
     """Apply (f, a) -> (H f, a + c.T f) by reversing the history.
 
@@ -104,9 +209,9 @@ def _expect_history(model, state, rate, *, segregating):
     adaptive projection machinery.
     """
     values, offset = state
-    for backend in model.geometry._backends.values():
+    for size in model.geometry:
         values = validate_domain(
-            backend,
+            model.geometry[size],
             values,
             model.frequency_map,
             reduced=model.method.allows_reduced_representation,
@@ -124,13 +229,13 @@ def _expect_history(model, state, rate, *, segregating):
     ):
         if segregating:
             offset = offset + 2 * destination * rate * values[0]
-        values = model._transition(source, destination).expect(
+        values = _transition(model, source, destination).expect(
             values, segregating=segregating
         )
         if duration > 1:
             values, contribution = _expect_epoch(
                 model,
-                model.geometry._backends[source],
+                model.geometry[source],
                 values,
                 duration - 1,
                 rate,
@@ -146,8 +251,12 @@ def _evaluate_with_aux(
     """Evaluate once and separate nondifferentiable numerical diagnostics."""
     if transpose:
         vector, scalar = state
-        result = model._advance(
-            vector, segregating=segregating, singleton_rate=rate * scalar, throw=throw
+        result = _advance_history(
+            model,
+            vector,
+            segregating=segregating,
+            singleton_rate=rate * scalar,
+            throw=throw,
         )
         payload = (
             (

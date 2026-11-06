@@ -18,7 +18,7 @@ parameter-dependent operators are evaluated using that bound process.
 
 ::: drifft.DemographicGeometry
     options:
-        members: []
+        members: [__getitem__, __iter__, __len__]
 
 ---
 

@@ -2,7 +2,7 @@
 
 # pattern: Functional Core
 import operator
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from typing import NamedTuple, final
 
 import equinox as eqx
@@ -12,10 +12,8 @@ import jax.numpy as jnp
 from ._backend import AbstractTransitionBackend
 from ._demographic_action import _demographic_advance, _demographic_expect
 from ._evolution.methods import AbstractEpochMethod, Sequential
-from ._evolution.preparation import validate_domain
-from ._evolution.problem import EvolutionStatus, _epoch_result
+from ._evolution.problem import EvolutionStatus
 from ._frequency import AbstractFrequencyMap
-from ._operator import Transition
 
 
 def _singleton_inputs(vector, segregating, singleton_mutation_rate):
@@ -269,6 +267,11 @@ class DemographicGeometry(eqx.Module):
     Construct with [`Demography.prepare`][drifft.Demography.prepare] outside JIT. Geometry contains no bound
     frequency map or epoch method and can be shared across parameter evaluations.
     Backend approximation domains still constrain the processes used with it.
+
+    `geometry[size]` returns the shared epoch backend for a diploid population
+    size. Iteration yields distinct prepared sizes, and `len(geometry)` counts
+    them. These operations exclude boundary backends and do not traverse the
+    chronological schedule; use `geometry.demography` for that schedule.
     """
 
     demography: Demography
@@ -314,6 +317,27 @@ class DemographicGeometry(eqx.Module):
             self._boundary_backends = {
                 size: boundary_backend_factory(size) for size in self._backends
             }
+
+    def __getitem__(self, pop_size: int) -> AbstractTransitionBackend:
+        """Return the prepared epoch backend for a concrete diploid population size.
+
+        The key is a population size, not an interval index. Repeated sizes
+        share one backend. Boundary backends are separate and are not returned.
+        An unprepared size raises `KeyError`; lookup does not prepare geometry.
+        """
+        return self._backends[pop_size]
+
+    def __iter__(self) -> Iterator[int]:
+        """Iterate distinct prepared population-size keys, not chronological epochs.
+
+        Use `demography.pop_sizes` and `demography.generations` for the ordered
+        schedule, including repeated sizes. Iteration order here is unspecified.
+        """
+        return iter(self._backends)
+
+    def __len__(self) -> int:
+        """Return the number of distinct prepared sizes, not the interval count."""
+        return len(self._backends)
 
     def __check_init__(self) -> None:
         """Require rectangular transition geometry at all boundaries."""
@@ -407,20 +431,13 @@ class DemographicTransition(eqx.Module):
         self.method = Sequential() if method is None else method
         if not isinstance(self.method, AbstractEpochMethod):
             raise TypeError("method must be an AbstractEpochMethod")
-        for backend in geometry._backends.values():
-            self.method.validate(backend, frequency_map)
+        for size in geometry:
+            self.method.validate(geometry[size], frequency_map)
 
     @property
     def demography(self) -> Demography:
         """The population schedule associated with the prepared geometry."""
         return self.geometry.demography
-
-    def _transition(self, source_pop_size: int, dest_pop_size: int) -> Transition:
-        return Transition(
-            self.geometry._boundary_backends[dest_pop_size],
-            self.frequency_map,
-            source_pop_size=source_pop_size,
-        )
 
     @eqx.filter_jit
     def advance(
@@ -497,86 +514,6 @@ class DemographicTransition(eqx.Module):
             singleton_rate=rate,
             throw=throw,
         )
-
-    def _advance(self, distribution, *, segregating, singleton_rate, throw):
-        distribution = jnp.asarray(distribution, dtype=jnp.float64)
-        size = 2 * self.demography.initial_pop_size + (-1 if segregating else 1)
-        if distribution.shape != (size,):
-            raise ValueError(f"distribution must have {size} entries")
-        # Validate every prepared domain even for identity/boundary-only histories.
-        for backend in self.geometry._backends.values():
-            distribution = validate_domain(
-                backend,
-                distribution,
-                self.frequency_map,
-                reduced=self.method.allows_reduced_representation,
-            )
-        initial_result = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
-        status = initial_result.status
-        diagnostics = []
-        for source, destination, duration in zip(
-            self.demography.pop_sizes[:-1],
-            self.demography.pop_sizes[1:],
-            self.demography.generations,
-            strict=True,
-        ):
-            # The final generation belongs to the rectangular boundary action.
-            # Holding for duration instead would add an extra generation and,
-            # in segregating mode, an extra source contribution at the source size.
-            error = jnp.asarray(0.0)
-            interval_status = EvolutionStatus.successful
-            if duration > 1:
-                source_mass = (
-                    jnp.zeros_like(distribution).at[0].set(2 * source * singleton_rate)
-                    if segregating
-                    else None
-                )
-                result = self.method.advance(
-                    self.geometry._backends[source],
-                    distribution,
-                    frequency_map=self.frequency_map,
-                    generations=duration - 1,
-                    segregating=segregating,
-                    source_mass=source_mass,
-                    throw=False,
-                )
-                distribution, error, interval_status = (
-                    result.distribution,
-                    result.error_estimate,
-                    result.status,
-                )
-            transition = self._transition(source, destination)
-            distribution = transition.advance(distribution, segregating=segregating)
-            if segregating:
-                distribution = distribution.at[0].add(2 * destination * singleton_rate)
-            boundary = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
-            interval_status = EvolutionStatus.where(
-                interval_status == EvolutionStatus.successful,
-                boundary.status,
-                interval_status,
-            )
-            status = EvolutionStatus.where(
-                status == EvolutionStatus.successful, interval_status, status
-            )
-            diagnostics.append(
-                IntervalDiagnostics(
-                    source,
-                    destination,
-                    duration,
-                    error,
-                    interval_status == EvolutionStatus.successful,
-                    interval_status,
-                )
-            )
-        converged = status == EvolutionStatus.successful
-        if throw:
-            distribution = eqx.error_if(
-                distribution,
-                ~converged,
-                "demographic evolution failed: inspect interval diagnostics with throw=False; "
-                "check input mass and increase dimension or use Sequential",
-            )
-        return DemographicResult(distribution, converged, status, tuple(diagnostics))
 
     @eqx.filter_jit
     def expect(
