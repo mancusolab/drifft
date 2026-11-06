@@ -7,7 +7,8 @@ import lineax as lx
 import pytest
 
 import drifft
-from drifft._evolution.parameterized import _JacobiOperator, _pack, _power
+from drifft._evolution.autodiff import _power
+from drifft._evolution.parameterized import _JacobiOperator, _pack
 
 jax.config.update("jax_enable_x64", True)
 
@@ -245,7 +246,8 @@ def test_partial_gradient_assembles_only_active_process(
     monkeypatch, active, transposed
 ):
     """Execute only requested process directions, including with zero source rate."""
-    from drifft._evolution.parameterized import _Spec, parameterized_power
+    from drifft._evolution.autodiff import parameterized_power
+    from drifft._evolution.parameterized import _Spec
 
     backend = drifft.Jacobi(3)
     method = drifft.PolynomialKrylov(dimension=8)
@@ -294,7 +296,7 @@ def test_partial_gradient_assembles_only_active_process(
 
 def test_partial_parameter_batches_and_zero_jvp():
     """Partial gradients compose with batching and numerical zero JVP directions."""
-    from drifft._evolution.parameterized import parameterized_power
+    from drifft._evolution.autodiff import parameterized_power
 
     backend = drifft.Jacobi(3)
     method = drifft.PolynomialKrylov(dimension=8)
@@ -489,7 +491,7 @@ def test_batched_scan_with_shared_geometry():
 @pytest.mark.parametrize("transform", ["jvp", "vjp", "transpose"])
 def test_pullback_rejects_unsupported_derivative_transforms(transform):
     """The parameter pullback reports its AD boundary without argument errors."""
-    from drifft._evolution.parameterized import _Pullback
+    from drifft._evolution.autodiff import _Pullback
 
     backend = drifft.Jacobi(3)
     op = _JacobiOperator(backend, drifft.Mutation(0.01, 0.02), None, True)
