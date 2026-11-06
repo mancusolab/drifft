@@ -1,4 +1,4 @@
-"""Jacobi geometry, reduced selection operators, and distribution transforms."""
+"""[`Jacobi`][drifft.Jacobi] geometry, reduced selection operators, and distribution transforms."""
 
 # pattern: Functional Core
 import math
@@ -78,7 +78,7 @@ def _rational_coefficients(frequency_map):
 def _diploid_padding(copies: int, rank: int, strength: float, tolerance: float) -> int:
     """Plan a conservative ellipse bound for endpoint-subtracted rational columns.
 
-    Fitness reductions are bounded in absolute value by strength. Mutation's
+    Fitness reductions are bounded in absolute value by strength. [`Mutation`][drifft.Mutation]'s
     affine coordinate maps the ellipse into itself. Shrink the ellipse until
     the denominator differs from its positive real-interval value by less than
     half the fitness lower bound. Full Hahn dimension is the exact fallback.
@@ -225,6 +225,44 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     return matrix.at[:, 2:].set((1 - 1 / copies) * columns.T)
 
 
+def _assemble_reduced(
+    frequency_map,
+    copies,
+    rank,
+    padded_rank,
+    diploid_padded_rank,
+    endpoint_correction,
+    *,
+    segregating,
+):
+    """Assemble ED from shape configuration and only required runtime geometry."""
+    if isinstance(frequency_map, (Neutral, Underdominance)):
+        strength = (
+            jnp.asarray(0.0)
+            if isinstance(frequency_map, Neutral)
+            else frequency_map.strength
+        )
+        matrix, forcing = _assemble(strength, copies, rank, padded_rank)
+        if not segregating:
+            extended = jnp.zeros((rank + 2, rank + 2))
+            extended = extended.at[:2, :2].set(jnp.eye(2))
+            extended = extended.at[2:, 1].set(forcing)
+            matrix = extended.at[2:, 2:].set(matrix)
+    else:
+        matrix = _assemble_diploid(
+            frequency_map,
+            copies,
+            rank,
+            diploid_padded_rank,
+        )
+        if segregating:
+            # Recurrent mutation can produce nonzero endpoint coefficients.
+            # Fold their interior contribution into E_int D_int before discarding
+            # endpoints; simply slicing the full operator would lose that term.
+            matrix = matrix[2:, 2:] + endpoint_correction @ matrix[:2, 2:]
+    return matrix
+
+
 def _choose_rank(copies: int, tolerance: float) -> int:
     """Bound the ideal one-step polynomial tail, excluding quadrature and roundoff."""
     # Counts/tolerance are host configuration; math computes a concrete rank
@@ -253,7 +291,7 @@ def _choose_rank(copies: int, tolerance: float) -> int:
 
 
 def _padded_rank(copies: int, rank: int, max_strength: float, tolerance: float) -> int:
-    """Choose Jacobi padding using a Bernstein-ellipse assembly bound."""
+    """Choose [`Jacobi`][drifft.Jacobi] padding using a Bernstein-ellipse assembly bound."""
     # math operates on fixed geometry and the configured strength bound, not
     # the dynamic selection strength differentiated by _assemble.
     ratio = max_strength / (2 - max_strength)
@@ -510,7 +548,7 @@ class Jacobi(AbstractTransitionBackend):
     contribution of $v$. Its basis vanishes at both endpoints, preserving $v_0$
     and $v_M$ explicitly. The full representation has $r+2$ coordinates;
     the segregating representation has $r$. Krylov methods evolve this reduced
-    state; Sequential applies the count-space transition each generation.
+    state; [`Sequential`][drifft.Sequential] applies the count-space transition each generation.
 
     !!! note "Theory"
 
@@ -524,7 +562,7 @@ class Jacobi(AbstractTransitionBackend):
         in either order. Custom maps and longer compositions are unsupported.
         Selection must stay within `max_strength`; mutation rates must be
         finite and in [0, 1]. These domains are checked even for zero generations.
-        One-generation operations and Sequential accept arbitrary valid
+        One-generation operations and [`Sequential`][drifft.Sequential] accept arbitrary valid
         frequency maps through the common expectation interface.
     """
 
@@ -555,16 +593,16 @@ class Jacobi(AbstractTransitionBackend):
           If omitted, use an ideal one-step polynomial tail bound.
         - `max_strength`: Static bound in `[0, 1)` on the absolute values of
           both diploid fitness reductions, used for reduced Krylov padding.
-          In reduced assembly, `Underdominance` and `Overdominance` retain their
+          In reduced assembly, [`Underdominance`][drifft.Underdominance] and [`Overdominance`][drifft.Overdominance] retain their
           finite, nonnegative strength domains, including in mutation compositions.
         - `one_step_tolerance`: Planning tolerance in `(0, 1)` for polynomial
-          truncation and Jacobi padding separately; not a total error guarantee.
+          truncation and [`Jacobi`][drifft.Jacobi] padding separately; not a total error guarantee.
 
         **Raises:**
 
         `ValueError` for invalid counts or tolerances. Enable JAX x64 before
         constructing this backend. Dense reduced storage costs O(rank²).
-        With RationalKrylov, dense LU factorization costs O(rank³) per power action.
+        With [`RationalKrylov`][drifft.RationalKrylov], dense LU factorization costs O(rank³) per power action.
         """
         if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 2:
             raise ValueError("pop_size must be a Python integer >= 2")
@@ -649,14 +687,14 @@ class Jacobi(AbstractTransitionBackend):
 
         **Arguments:**
 
-        - `frequency_map`: Neutral, supported diploid selection, mutation, or
+        - `frequency_map`: [`Neutral`][drifft.Neutral], supported diploid selection, mutation, or
           one mutation composed with one supported selection rule in either order.
 
         **Returns:**
 
         `None`. Checks the map structure only. Reduced evolution checks dynamic
         parameter domains separately, even for zero generations. One-generation
-        `expect` and Sequential do not impose these assembly restrictions.
+        `expect` and [`Sequential`][drifft.Sequential] do not impose these assembly restrictions.
 
         **Raises:**
 
@@ -673,35 +711,21 @@ class Jacobi(AbstractTransitionBackend):
         selection-family dispatch, padding, and endpoint corrections here so
         evolution code need not know the representation's assembly details.
         """
-        if isinstance(frequency_map, (Neutral, Underdominance)):
-            strength = (
-                jnp.asarray(0.0)
-                if isinstance(frequency_map, Neutral)
-                else frequency_map.strength
-            )
-            matrix, forcing = _assemble(
-                strength, self._gene_copies, self.rank, self.padded_rank
-            )
-            if not segregating:
-                extended = jnp.zeros((self.rank + 2, self.rank + 2))
-                extended = extended.at[:2, :2].set(jnp.eye(2))
-                extended = extended.at[2:, 1].set(forcing)
-                matrix = extended.at[2:, 2:].set(matrix)
-        else:
-            matrix = _assemble_diploid(
-                frequency_map,
-                self._gene_copies,
-                self.rank,
-                self._diploid_padded_rank,
-            )
-            if segregating:
-                # Recurrent mutation can produce nonzero endpoint coefficients.
-                # Fold their interior contribution into E_int D_int before discarding
-                # endpoints; simply slicing the full operator would lose that term.
-                matrix = (
-                    matrix[2:, 2:] + self._geometry.endpoint_correction @ matrix[:2, 2:]
-                )
-        return matrix
+        return _assemble_reduced(
+            frequency_map,
+            self._gene_copies,
+            self.rank,
+            self.padded_rank,
+            self._diploid_padded_rank,
+            self._reduced_correction(frequency_map, segregating=segregating),
+            segregating=segregating,
+        )
+
+    def _reduced_correction(self, frequency_map, *, segregating):
+        """Select the sole runtime geometry array needed by reduced assembly."""
+        if segregating and not isinstance(frequency_map, (Neutral, Underdominance)):
+            return self._geometry.endpoint_correction
+        return None
 
     def _validate_parameters(
         self, distribution: jax.Array, frequency_map: AbstractFrequencyMap

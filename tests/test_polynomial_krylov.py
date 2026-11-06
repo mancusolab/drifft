@@ -135,9 +135,9 @@ def test_polynomial_nonconvergence_and_nonfinite_status():
 def test_polynomial_demography_and_gradients(backend_type):
     """Differentiate selected demographic evolution, mass and singleton input."""
     model = drifft.DemographicTransition(
-        drifft.Demography([4, 3, 5], [4, 3]),
-        backend_factory=backend_type,
-        boundary_backend_factory=drifft.FFT,
+        drifft.Demography([4, 3, 5], [4, 3]).prepare(
+            backend_factory=backend_type, boundary_backend_factory=drifft.FFT
+        ),
         method=drifft.PolynomialKrylov(dimension=16),
         frequency_map=drifft.Underdominance(0.03),
     )
@@ -171,8 +171,8 @@ def test_polynomial_demography_and_gradients(backend_type):
         jax.vmap(lambda p: model.advance(p, segregating=True).distribution)
     )(jnp.stack((mass, 2 * mass)))
     assert jnp.allclose(batched[1], 2 * batched[0], atol=1e-10)
-    with pytest.raises(ValueError, match="Sequential"):
-        model.expect(jnp.ones(11))
+    expectation = model.expect(weights, segregating=True)
+    assert jnp.allclose(mass @ expectation.values, batched[0] @ weights, atol=1e-10)
 
 
 @pytest.mark.parametrize("backend_type", [drifft.FFT, drifft.NUFFT])

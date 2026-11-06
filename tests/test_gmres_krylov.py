@@ -64,8 +64,7 @@ def test_gmres_zero_mass_and_source_mass(backend_type, generations):
 def test_gmres_composed_demography_gradients(backend_type):
     """Check selection, mass and source derivatives through implicit GMRES solves."""
     model = drifft.DemographicTransition(
-        drifft.Demography([4, 3, 5], [4, 3]),
-        backend_factory=backend_type,
+        drifft.Demography([4, 3, 5], [4, 3]).prepare(backend_factory=backend_type),
         method=drifft.RationalKrylov(dimension=16),
         frequency_map=drifft.Underdominance(0.03),
     )

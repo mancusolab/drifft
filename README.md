@@ -1,6 +1,6 @@
-# drifft
+# `drifft`
 
-drifft is a JAX-based Python library for Wright–Fisher population genetics. It
+`drifft` is a JAX-based Python library for Wright–Fisher population genetics. It
 propagates allele-count distributions, computes expectations and expected visits
 before absorption, and supports differentiation through selection parameters.
 FFT and polynomial compression accelerate the discrete-time binomial transition.
@@ -9,7 +9,7 @@ FFT and polynomial compression accelerate the discrete-time binomial transition.
 
 ## Installation
 
-drifft requires Python 3.12 or newer. Install from a repository checkout with uv:
+`drifft` requires Python 3.12 or newer. Install from a repository checkout with uv:
 
 ```bash
 git clone https://github.com/mancusolab/drifft.git
@@ -46,7 +46,7 @@ next_distribution = transition.advance(distribution)
 
 `next_distribution[i]` is the probability of `i` mutant copies in the next
 generation. Reuse the backend across selection strengths, or substitute
-`drifft.NUFFT` to use the Chebyshev/NUFFT implementation.
+[`NUFFT`](https://mancusolab.github.io/drifft/api/backends/#drifft.NUFFT) to use the Chebyshev/NUFFT implementation.
 
 Continue with [population histories](https://mancusolab.github.io/drifft/api/demography/),
 [expected visits](https://mancusolab.github.io/drifft/api/transitions/#drifft.Transition.expected_visits), or

@@ -78,36 +78,18 @@ $\phi_j$ denotes a normalized basis. These conventions follow
 
 ## Derivatives and local notation
 
-Derivative notation distinguishes perturbations of a calculation from
-sensitivities propagated backward from its output.
-
 A dot denotes a directional derivative; a bar denotes the cotangent of the
-same named quantity. Subscripts identify coordinates or projection spaces;
-they do not change the underlying symbol's role.
+same named quantity. A cotangent weights changes in that quantity when
+propagating derivatives backward from a scalar objective.
 
 | Concept | Symbol |
 | --- | --- |
-| Scalar objective | $\ell$ |
-| Population, working-state, and operator cotangents | $\bar v_t,\bar z,\bar y,\bar A$ |
-| Coupled tangent/state operator and vectors | $A_{\mathrm{blk}},z_{\mathrm{blk}},y_{\mathrm{blk}}$ |
-| Coupled Krylov basis and projected operator (at most $2m$ columns) | $V_{2m,\mathrm{blk}},H_{2m,\mathrm{blk}}$ |
-| Backward/forward adjoint bases (at most $m$ columns each) | $V_{m,\mathrm L},V_{m,\mathrm R}$ |
-| Their projected operators and seeds | $H_{m,\mathrm L},H_{m,\mathrm R};\ \bar y_{m,\mathrm L},z_{m,\mathrm R}$ |
-| Projected operator-cotangent core and lifted left factor | $C,F$ |
-| Rational Krylov shift and shifted operator | $\tau,S=I+\tau(I-A)$ |
-| Expected-visits incoming cotangent and adjoint solve variable | $\bar u,\eta_u$ |
+| Model parameters and scalar objective | $\theta,\ell$ |
+| Represented demographic expectation operator | $\widetilde H$ |
+| Final mass contributed by singleton sources | $c_H$ |
+| Augmented demographic forward operator | $\mathcal A$ |
+| Directional changes in the history and its input | $\dot{\widetilde H},\dot v,\dot f$ |
 
-The [autodiff chapter](../methods/autodiff.md) defines the labelled constructions.
-It uses $\bar\theta_A$ for the contribution to the parameter cotangent through
-$A$ alone; other parameter-dependent inputs contribute separately.
-
-Write $\mathcal L_\varphi(A,\Delta A)$ for the Fréchet derivative of a matrix function $\varphi$,
-and $\mathcal L_k$ for the power function $\varphi(A)=A^k$. The matrix-function
-literature commonly uses $E$ for the perturbation; we use $\Delta A$ to avoid
-confusion with the Jacobi transform. See
-[Kandolf et al.](https://arxiv.org/abs/2008.12926).
-
-Local summation indices and auxiliary functions may vary, but must be defined.
-In particular, sample allele counts may use $k$ locally without referring to a
-prepared power. Research notes retain their derivation notation and include
-explicit crosswalks to these conventions.
+The [autodiff chapter](../methods/autodiff.md) defines the demographic actions
+and their derivatives. Local summation indices and auxiliary functions may
+vary, but must be defined where they are used.

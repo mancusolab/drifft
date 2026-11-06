@@ -50,9 +50,9 @@ power. For direct interval calls, see
 
 ## Implementing custom methods
 
-Custom methods can focus on the power algorithm while reusing drifft's handling
+Custom methods can focus on the power algorithm while reusing `drifft`'s handling
 of population coordinates, backend representations, and source mass.
-`prepare_epoch` packages these details into an `EpochProblem`, which supplies
+[`prepare_epoch`](#drifft.prepare_epoch) packages these details into an [`EpochProblem`](#drifft.EpochProblem), which supplies
 the working operator, initial vector, and exponent, plus methods to reconstruct
 population mass and check the result. For a complete walkthrough, see
 [custom evolution methods](../extending.md).

@@ -99,7 +99,8 @@ def test_frechet_actions_cover_zero_and_invariant_seeds(method_type, zero_state)
 )
 def test_operator_pullback_preserves_filtered_parameter_tree(method_type):
     """Return callable-operator cotangents without differentiating fixed geometry."""
-    from drifft._evolution.sensitivity import _frechet_operator_pullback
+    from drifft._evolution.operators import _contract_operator_factors
+    from drifft._evolution.sensitivity import _frechet_adjoint_factors
 
     n, steps = 6, 7
     geometry = jnp.linspace(0.7, 0.9, n)
@@ -117,9 +118,10 @@ def test_operator_pullback_preserves_filtered_parameter_tree(method_type):
     )
     x, c = jnp.cos(jnp.arange(n)), jnp.sin(jnp.arange(n))
     method = method_type(dimension=12, rtol=1e-10, atol=1e-12)
-    actual, error, converged = eqx.filter_jit(_frechet_operator_pullback)(
-        method, operator, template, x, c, steps
+    left, right, error, converged = eqx.filter_jit(_frechet_adjoint_factors)(
+        method, operator, x, c, steps
     )
+    actual = eqx.filter_jit(_contract_operator_factors)(operator, template, left, right)
     _, pullback = eqx.filter_vjp(make_operator, parameters)
     # The low-level transpose leaves unperturbed captures symbolic; an ordinary
     # VJP expects explicit zeros for every floating output leaf.

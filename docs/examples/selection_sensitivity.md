@@ -9,32 +9,34 @@ individuals, starts with one derived copy, and has no mutation or added source m
 
 ## Calculation
 
-After [installing drifft](../index.md#installation), save the code below as
+After [installing `drifft`](../index.md#installation), save the code below as
 `selection_sensitivity.py` and run `uv run --with matplotlib python selection_sensitivity.py`.
 Matplotlib is needed only for plotting.
 
 ```python
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import drifft
 
+# Enable float64 before preparing geometry; the numerical backends require it.
 jax.config.update("jax_enable_x64", True)
-model = drifft.DemographicTransition(
-    drifft.Demography(pop_sizes=[32, 32], generations=[20]),
-    backend_factory=drifft.FFT,
-    method=drifft.Sequential(),
-    frequency_map=drifft.AdditiveSelection(s=0.02),
-)
+# Repeated sizes describe 20 generations at one fixed diploid population size.
+history = drifft.Demography(pop_sizes=[32, 32], generations=[20])
+# Keep host preparation outside the objective so parameter sweeps reuse geometry.
+geometry = history.prepare(backend_factory=drifft.FFT)
+# A full count grid includes loss and fixation; start at exactly one derived copy.
 initial = jnp.zeros(65).at[1].set(1.0)
 
 
 def loss_probability(s):
-    updated = eqx.tree_at(lambda m: m.frequency_map.s, model, s)
-    return updated.advance(initial).distribution[0]
+    # Construct selection from the argument so JAX can trace its effect on evolution.
+    transition = drifft.DemographicTransition(geometry, drifft.AdditiveSelection(s=s))
+    # With no mutation, count zero means the allele was lost by generation 20.
+    return transition.advance(initial).distribution[0]
 
 
+# Compute the scalar probability and d(probability)/ds in one compiled function.
 value_and_gradient = jax.jit(jax.value_and_grad(loss_probability))
 strengths = jnp.linspace(0.0, 0.08, 9)
 values, gradients = [], []
@@ -47,6 +49,7 @@ strength = jnp.asarray(0.02)
 value, gradient = value_and_gradient(strength)
 print(f"Loss after 20 generations: {value:.6f}")
 print(f"Derivative at s=0.02: {gradient:.6f}")
+# Check autodiff against central differences at several steps to assess stability.
 for step in [1e-4, 1e-5, 1e-6]:
     finite_difference = (
         loss_probability(strength + step) - loss_probability(strength - step)
@@ -70,7 +73,7 @@ plt.show()
 ## Interpretation
 
 Positive derivatives indicate greater loss probability with increasing fitness
-penalty. `eqx.tree_at` updates selection while reusing the prepared model.
+penalty. Each evaluation binds the current selection to the same prepared geometry.
 The full distribution retains absorbed mass, so its first entry gives loss
 probability by generation 20.
 

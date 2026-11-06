@@ -27,7 +27,7 @@ For example, choosing $f_j=\mathbf 1_{\{j=0\}}$ gives next-generation loss
 probabilities conditional on each initial count. Propagating $v_0$ gives the
 full count distribution after an interval. The visit equation assumes the
 transience conditions in the [model chapter](../guide/model.md#interior-states-and-expected-visits).
-The inverse is mathematical notation: drifft solves the
+The inverse is mathematical notation: `drifft` solves the
 linear system rather than explicitly forming an inverse.
 
 A dense transition has $(M+1)^2$ entries. Applying it costs $O(M^2)$, and
@@ -63,7 +63,7 @@ An **evolution method** chooses how to apply a represented transition over many
 generations. This choice controls a different source of computational cost from
 the backend that represents one generation.
 
-`Sequential` applies the represented transition once per generation.
+[`Sequential`](../api/methods.md#drifft.Sequential) applies the represented transition once per generation.
 [Polynomial and rational Krylov methods](jacobi_krylov.md) instead approximate
 a power action in a smaller, input-dependent subspace. The **working state**
 is the vector evolved by that calculation: population mass for Sequential and
@@ -90,6 +90,6 @@ errors. Neither a power convergence flag nor a small solve residual bounds all
 of these contributions.
 
 The [accuracy guide](../guide/numerics.md) gives practical checks. The
-[autodiff chapter](autodiff.md) explains how drifft differentiates these
+[autodiff chapter](autodiff.md) explains how `drifft` differentiates these
 representations, including the distinction between differentiating a matrix
 power and differentiating the algorithm used to approximate it.

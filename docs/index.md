@@ -1,4 +1,4 @@
-# drifft
+# `drifft`
 
 `drifft` computes allele-count distributions, expectations, and occupation
 times under the discrete-time Wright–Fisher model with selection, mutation,
@@ -8,7 +8,7 @@ with respect to selection, mutation, and initial mass.
 
 ## Installation
 
-drifft requires Python 3.12 or newer. From a repository checkout:
+`drifft` requires Python 3.12 or newer. From a repository checkout:
 
 ```bash
 git clone https://github.com/mancusolab/drifft.git
@@ -28,6 +28,7 @@ import jax
 import jax.numpy as jnp
 import drifft
 
+# Enable float64 before preparing geometry; the numerical backends require it.
 jax.config.update("jax_enable_x64", True)
 
 # 32 diploid individuals carry 64 gene copies.
@@ -41,7 +42,7 @@ after_one_generation = transition.advance(initial)
 print(f"Loss probability: {after_one_generation[0]:.4f}")
 ```
 
-`AdditiveSelection(s)` assigns genotype fitnesses $(1,1-s/2,1-s)$:
+[`AdditiveSelection(s)`](api/frequency_maps.md#drifft.AdditiveSelection) assigns genotype fitnesses $(1,1-s/2,1-s)$:
 positive `s` penalizes the derived allele. Output entry `i` is the probability
 of `i` copies; entries 0 and 64 are loss and fixation.
 
@@ -50,10 +51,12 @@ Put the same calculation in a function of the selection coefficient and apply
 
 ```python
 def loss_probability(s):
+    # Bind the current selection coefficient without rebuilding backend geometry.
     selected = drifft.Transition(backend, drifft.AdditiveSelection(s=s))
     return selected.advance(initial)[0]
 
 
+# The objective is a scalar, so grad returns its derivative with respect to s.
 sensitivity = jax.grad(loss_probability)(jnp.asarray(0.02))
 print(f"Sensitivity to s: {sensitivity:.4f}")
 ```
@@ -63,7 +66,7 @@ more likely. The calculation reuses the prepared backend while selection changes
 
 ## Next steps
 
-Continue with [A random walk through drifft](tour.md): connect selection,
+Continue with [A random walk through `drifft`](tour.md): connect selection,
 mutation, population history, and differentiation in one calculation.
 
 ## Dependencies and hardware

@@ -268,7 +268,12 @@ def test_cached_power_uses_operator_rule_and_ignores_value_tangent():
 
     def action(initial, cache):
         return _cached_power_action(
-            method, lx.MatrixLinearOperator(matrix), initial, 3, cache
+            lx.MatrixLinearOperator(matrix),
+            method,
+            initial,
+            3,
+            cache,
+            lx.MatrixLinearOperator(matrix),
         )
 
     cache = jnp.linalg.matrix_power(matrix, 3) @ state

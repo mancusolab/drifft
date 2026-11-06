@@ -162,9 +162,9 @@ def test_composed_demography_matches_changing_size_dense_history():
             destination, parameters, source_copies=source
         )
     model = drifft.DemographicTransition(
-        history,
-        backend_factory=drifft.Jacobi,
-        boundary_backend_factory=drifft.FFT,
+        history.prepare(
+            backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+        ),
         method=drifft.RationalKrylov(dimension=24),
         frequency_map=composed_map(parameters),
     )

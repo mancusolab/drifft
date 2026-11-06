@@ -15,9 +15,9 @@ jax.config.update("jax_enable_x64", True)
 def test_modular_selected_history_and_diagnostics():
     """Preserve selected chronology, singleton input and per-interval diagnostics."""
     model = drifft.DemographicTransition(
-        drifft.Demography([8, 5, 9], [7, 3]),
-        backend_factory=drifft.Jacobi,
-        boundary_backend_factory=drifft.FFT,
+        drifft.Demography([8, 5, 9], [7, 3]).prepare(
+            backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+        ),
         method=drifft.RationalKrylov(dimension=32),
         frequency_map=drifft.Underdominance(0.04),
     )
@@ -59,8 +59,7 @@ def test_method_reuses_settings_across_population_sizes():
 def test_jacobi_default_boundary_and_reduced_map_validation_without_holds(history):
     """Reject invalid combinations even when no hold would execute."""
     model = drifft.DemographicTransition(
-        history,
-        backend_factory=drifft.Jacobi,
+        history.prepare(backend_factory=drifft.Jacobi),
         method=drifft.RationalKrylov(),
         frequency_map=drifft.Neutral(),
     )
@@ -69,9 +68,9 @@ def test_jacobi_default_boundary_and_reduced_map_validation_without_holds(histor
     assert jnp.allclose(model.advance(initial).distribution, expected, atol=2e-12)
     with pytest.raises(TypeError, match="diploid selection"):
         drifft.DemographicTransition(
-            history,
-            backend_factory=drifft.Jacobi,
-            boundary_backend_factory=drifft.FFT,
+            history.prepare(
+                backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+            ),
             method=drifft.RationalKrylov(),
             frequency_map=drifft.FrequencyMap(lambda x: x),
         )
@@ -80,9 +79,9 @@ def test_jacobi_default_boundary_and_reduced_map_validation_without_holds(histor
 def test_failed_power_status_survives_demography_and_batching():
     """Retain unsuccessful hold status after a finite boundary transition."""
     model = drifft.DemographicTransition(
-        drifft.Demography([40, 40], [100]),
-        backend_factory=drifft.Jacobi,
-        boundary_backend_factory=drifft.FFT,
+        drifft.Demography([40, 40], [100]).prepare(
+            backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+        ),
         method=drifft.RationalKrylov(dimension=2),
         frequency_map=drifft.Neutral(),
     )
@@ -98,8 +97,7 @@ def test_failed_power_status_survives_demography_and_batching():
 def test_identity_history_reports_nonfinite_mass():
     """Check identity inputs despite having no interval diagnostics."""
     model = drifft.DemographicTransition(
-        drifft.Demography([8], []),
-        backend_factory=drifft.FFT,
+        drifft.Demography([8], []).prepare(backend_factory=drifft.FFT),
         frequency_map=drifft.Neutral(),
     )
     result = model.advance(jnp.full(17, jnp.nan), throw=False)
@@ -133,9 +131,9 @@ def test_jacobi_domain_validation_survives_no_hold_histories(generations):
     """Selection outside prepared geometry remains invalid without a hold action."""
     sizes = [8] if not generations else [8, 5]
     model = drifft.DemographicTransition(
-        drifft.Demography(sizes, generations),
-        backend_factory=drifft.Jacobi,
-        boundary_backend_factory=drifft.FFT,
+        drifft.Demography(sizes, generations).prepare(
+            backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+        ),
         method=drifft.RationalKrylov(),
         frequency_map=drifft.Underdominance(0.2),
     )
@@ -153,9 +151,9 @@ def test_method_configuration_has_no_geometry_arrays():
 def test_composed_jacobi_history_gradients_match_dense_recurrence():
     """Differentiate selection, initial mass and singleton input through size changes."""
     model = drifft.DemographicTransition(
-        drifft.Demography([4, 3, 5], [4, 3]),
-        backend_factory=drifft.Jacobi,
-        boundary_backend_factory=drifft.FFT,
+        drifft.Demography([4, 3, 5], [4, 3]).prepare(
+            backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+        ),
         method=drifft.RationalKrylov(dimension=16),
         frequency_map=drifft.Underdominance(0.03),
     )
@@ -213,8 +211,7 @@ def test_custom_population_method_uses_same_representation_in_demography(history
         backend, initial, frequency_map=frequency_map, generations=sum(history[1])
     )
     model = drifft.DemographicTransition(
-        drifft.Demography(*history),
-        backend_factory=drifft.Jacobi,
+        drifft.Demography(*history).prepare(backend_factory=drifft.Jacobi),
         method=method,
         frequency_map=frequency_map,
     )

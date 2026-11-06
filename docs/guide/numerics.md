@@ -9,7 +9,7 @@ introduce separate errors.
 1. Compare the final statistic under tighter backend settings and, separately,
    tighter power or solve settings. Check mass and negative entries; outputs
    are not clipped or renormalized.
-2. Compare with `Dense` on a small population or an analytic reference. A mean
+2. Compare with [`Dense`](../api/backends.md#drifft.Dense) on a small population or an analytic reference. A mean
    frequency alone is insufficient because low-degree polynomials can be
    reproduced accurately.
 3. Compare gradients with the reference and finite differences at several step

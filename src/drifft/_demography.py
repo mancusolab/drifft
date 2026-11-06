@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 
 from ._backend import AbstractTransitionBackend
+from ._demographic_action import _demographic_advance, _demographic_expect
 from ._evolution.methods import AbstractEpochMethod, Sequential
 from ._evolution.preparation import validate_domain
 from ._evolution.problem import EvolutionStatus, _epoch_result
@@ -83,6 +84,39 @@ class Demography(eqx.Module):
         if any(duration < 1 for duration in self.generations):
             raise ValueError("generations entries must be positive integers")
 
+    def prepare(
+        self,
+        *,
+        backend_factory: Callable[[int], AbstractTransitionBackend],
+        boundary_backend_factory: Callable[[int], AbstractTransitionBackend]
+        | None = None,
+    ) -> "DemographicGeometry":
+        """Prepare reusable geometry outside JIT, independently of the process.
+
+        **Arguments:**
+
+        - `backend_factory`: Factory receiving each distinct diploid population
+          size. Use `functools.partial` to supply backend settings.
+        - `boundary_backend_factory`: Optional factory for rectangular boundary
+          transitions. Defaults to the hold factory, sharing its geometry.
+
+        **Returns:**
+
+        A [`DemographicGeometry`][drifft.DemographicGeometry] reusable across frequency maps and epoch methods.
+        The population schedule is unchanged. Parameter-dependent operators are
+        assembled when computing with a bound [`DemographicTransition`][drifft.DemographicTransition].
+
+        **Raises:**
+
+        `TypeError` for invalid factories or returned backend types;
+        `ValueError` when a backend does not preserve the requested size.
+        """
+        return DemographicGeometry(
+            self,
+            backend_factory=backend_factory,
+            boundary_backend_factory=boundary_backend_factory,
+        )
+
     @property
     def initial_pop_size(self) -> int:
         r"""Initial diploid effective population size, `pop_sizes[0]`, as a Python integer."""
@@ -100,7 +134,7 @@ class Demography(eqx.Module):
 
 
 # Document the generated constructor without replacing its implementation.
-Demography.__init__.__doc__ = r"""Initialize Demography.
+Demography.__init__.__doc__ = r"""Initialize [`Demography`][drifft.Demography].
 
 **Arguments:**
 
@@ -134,7 +168,7 @@ class IntervalDiagnostics(NamedTuple):
     - `generations`: Interval duration, including its final boundary generation.
     - `error_estimate`: Scalar absolute L1 hold-power estimate, zero without a hold.
     - `converged`: Scalar boolean for the complete interval.
-    - `status`: First hold or boundary failure, or successful `EvolutionStatus`.
+    - `status`: First hold or boundary failure, or successful [`EvolutionStatus`][drifft.EvolutionStatus].
     """
 
     source_pop_size: int
@@ -151,11 +185,11 @@ IntervalDiagnostics.__new__.__doc__ = r"""Construct an immutable result without 
 
 **Arguments:**
 
-The fields documented on `IntervalDiagnostics`, supplied by position or keyword.
+The fields documented on [`IntervalDiagnostics`][drifft.IntervalDiagnostics], supplied by position or keyword.
 
 **Returns:**
 
-An `IntervalDiagnostics` holding the supplied values. Normal evolution calls construct this
+An [`IntervalDiagnostics`][drifft.IntervalDiagnostics] holding the supplied values. Normal evolution calls construct this
 result automatically; constructing it directly performs no numerical checks.
 """
 
@@ -172,7 +206,7 @@ class DemographicResult(NamedTuple):
       `2 * final_pop_size - 1` for segregating evolution; not normalized.
     - `converged`: Scalar boolean, true when the entire history succeeded.
     - `status`: First numerical failure in chronological order, or success.
-    - `diagnostics`: Tuple of `IntervalDiagnostics`, one per interval in order.
+    - `diagnostics`: Tuple of [`IntervalDiagnostics`][drifft.IntervalDiagnostics], one per interval in order.
       Local error estimates are not a bound on the total propagated error.
     """
 
@@ -188,11 +222,11 @@ DemographicResult.__new__.__doc__ = r"""Construct an immutable result without va
 
 **Arguments:**
 
-The fields documented on `DemographicResult`, supplied by position or keyword.
+The fields documented on [`DemographicResult`][drifft.DemographicResult], supplied by position or keyword.
 
 **Returns:**
 
-A `DemographicResult` holding the supplied values. Normal evolution calls construct this
+A [`DemographicResult`][drifft.DemographicResult] holding the supplied values. Normal evolution calls construct this
 result automatically; constructing it directly performs no numerical checks.
 """
 
@@ -220,27 +254,24 @@ DemographicExpectation.__new__.__doc__ = """Construct an immutable result withou
 
 **Arguments:**
 
-The fields documented on `DemographicExpectation`, supplied by position or keyword.
+The fields documented on [`DemographicExpectation`][drifft.DemographicExpectation], supplied by position or keyword.
 
 **Returns:**
 
-A `DemographicExpectation` holding the supplied values.
+A [`DemographicExpectation`][drifft.DemographicExpectation] holding the supplied values.
 """
 
 
 @final
-class DemographicTransition(eqx.Module):
-    r"""Compose constant-size evolution and rectangular boundary transitions.
+class DemographicGeometry(eqx.Module):
+    """Prepared population-size backends and their immutable demographic schedule.
 
-    An interval of g generations holds its source size for g-1 generations,
-    then changes size on its last generation. Sequential provides
-    a matched expectation transpose. Both Krylov methods support all
-    backends for forward evolution only. Frequency-map parameters remain differentiable array leaves.
+    Construct with [`Demography.prepare`][drifft.Demography.prepare] outside JIT. Geometry contains no bound
+    frequency map or epoch method and can be shared across parameter evaluations.
+    Backend approximation domains still constrain the processes used with it.
     """
 
     demography: Demography
-    frequency_map: AbstractFrequencyMap
-    method: AbstractEpochMethod
     _backends: dict[int, AbstractTransitionBackend]
     _boundary_backends: dict[int, AbstractTransitionBackend]
 
@@ -249,42 +280,12 @@ class DemographicTransition(eqx.Module):
         demography: Demography,
         *,
         backend_factory: Callable[[int], AbstractTransitionBackend],
-        frequency_map: AbstractFrequencyMap,
         boundary_backend_factory: Callable[[int], AbstractTransitionBackend]
         | None = None,
-        method: AbstractEpochMethod | None = None,
     ) -> None:
-        r"""Prepare reusable geometry outside JIT.
-
-        Prepares one geometry per distinct size, sharing hold and boundary
-        geometry when the same factory is used.
-
-        **Arguments:**
-
-        - `demography`: Population history, oldest to newest.
-        - `backend_factory`: Factory receiving a diploid population size for constant-size geometry.
-          Use `functools.partial(drifft.NUFFT, accuracy=1e-11)`, for example,
-          to supply numerical settings.
-        - `frequency_map`: Process shared by every generation.
-        - `boundary_backend_factory`: Factory receiving a diploid population size for
-          rectangular transitions; defaults to the hold factory for all backends.
-        - `method`: Geometry-free epoch algorithm; defaults to `Sequential()`.
-          Holds call its `advance` method, including custom overrides.
-
-        **Raises:**
-
-        `TypeError` for unsupported combinations, including histories without holds;
-        `ValueError` for incorrect backend sizes. RationalKrylov selects dense LU
-        for Jacobi and GMRES for other transition backends. Dense is intended for
-        small reference calculations; optimized backends avoid a dense population
-        matrix.
-        """
+        """Prepare one backend per distinct size; prefer [`Demography.prepare`][drifft.Demography.prepare]."""
         if not isinstance(demography, Demography):
             raise TypeError("demography must be a Demography")
-        if not isinstance(frequency_map, AbstractFrequencyMap):
-            raise TypeError(
-                "frequency_map must be an AbstractFrequencyMap; wrap functions in FrequencyMap"
-            )
         if not callable(backend_factory):
             raise TypeError("backend_factory must be callable")
         if boundary_backend_factory is not None and not callable(
@@ -292,10 +293,6 @@ class DemographicTransition(eqx.Module):
         ):
             raise TypeError("boundary_backend_factory must be callable")
         self.demography = demography
-        self.frequency_map = frequency_map
-        self.method = Sequential() if method is None else method
-        if not isinstance(self.method, AbstractEpochMethod):
-            raise TypeError("method must be an AbstractEpochMethod")
         self._backends = {
             size: backend_factory(size) for size in dict.fromkeys(demography.pop_sizes)
         }
@@ -308,7 +305,6 @@ class DemographicTransition(eqx.Module):
                 raise ValueError(
                     "backend_factory must preserve the requested diploid size"
                 )
-            self.method.validate(geometry, frequency_map)
         if (
             boundary_backend_factory is None
             or boundary_backend_factory is backend_factory
@@ -331,9 +327,97 @@ class DemographicTransition(eqx.Module):
                     "boundary_backend_factory must preserve the requested diploid size"
                 )
 
+
+@final
+class DemographicTransition(eqx.Module):
+    r"""Bind prepared demographic geometry to a differentiable frequency map.
+
+    Let $P_t$ be the one-generation kernel from diploid size $N_t$ to
+    $N_{t+1}$, using the shared frequency map and the binomial law defined by
+    [`Transition`][drifft.Transition]. Each $P_t$ has shape
+    $(2N_t+1)\times(2N_{t+1}+1)$. The whole-history operator is
+
+    $$ H = P_0 P_1 \cdots P_{T-1}, $$
+
+    where $T$ is the total number of generations. Without source input,
+
+    $$ p_T = H^T p_0, \qquad v_0 = Hf, $$
+
+    for initial mass $p_0$ and terminal values $f$. An interval from size $N$
+    to $N'$ lasting $g$ generations contributes
+
+    $$ P_{N\to N}^{\,g-1} P_{N\to N'}. $$
+
+    Thus the source size is held for $g-1$ generations, and the size change
+    occurs on the final generation. An empty history has $H=I$. Segregating
+    operations use the interior restrictions of these kernels.
+
+    Numerical methods evaluate or approximate the action without forming $H$.
+    Both orientations use the configured method. Krylov forward and backward
+    actions approximate the same represented operator independently. The method
+    docstrings below describe singleton source input and its expectation offset.
+
+    Differentiation targets these mathematical actions with respect to process
+    parameters, input mass or values, and singleton rate. Geometry and method
+    settings are fixed. [`Sequential`][drifft.Sequential] supports higher
+    derivatives through the represented transitions; Krylov operator
+    sensitivities support first derivatives. Adaptive projection bases and
+    numerical diagnostics are not differentiation targets.
+    """
+
+    geometry: DemographicGeometry
+    frequency_map: AbstractFrequencyMap
+    method: AbstractEpochMethod
+
+    def __init__(
+        self,
+        geometry: DemographicGeometry,
+        frequency_map: AbstractFrequencyMap,
+        *,
+        method: AbstractEpochMethod | None = None,
+    ) -> None:
+        """Bind a process and algorithm without rebuilding geometry.
+
+        This lightweight constructor may be called inside JAX transformations.
+        Prepare geometry once with [`Demography.prepare`][drifft.Demography.prepare] outside JIT, then build
+        the frequency map from the current selection and mutation parameters.
+
+        **Arguments:**
+
+        - `geometry`: Prepared demographic geometry, including the schedule.
+        - `frequency_map`: Process shared by every generation.
+        - `method`: Geometry-free epoch algorithm; defaults to [`Sequential()`][drifft.Sequential].
+          Holds call its `advance` method, including custom overrides.
+
+        **Raises:**
+
+        `TypeError` for invalid geometry, frequency maps, methods, or unsupported
+        method/backend/process combinations, including histories without holds.
+        """
+        if not isinstance(geometry, DemographicGeometry):
+            raise TypeError(
+                "geometry must be a DemographicGeometry; use Demography.prepare"
+            )
+        if not isinstance(frequency_map, AbstractFrequencyMap):
+            raise TypeError(
+                "frequency_map must be an AbstractFrequencyMap; wrap functions in FrequencyMap"
+            )
+        self.geometry = geometry
+        self.frequency_map = frequency_map
+        self.method = Sequential() if method is None else method
+        if not isinstance(self.method, AbstractEpochMethod):
+            raise TypeError("method must be an AbstractEpochMethod")
+        for backend in geometry._backends.values():
+            self.method.validate(backend, frequency_map)
+
+    @property
+    def demography(self) -> Demography:
+        """The population schedule associated with the prepared geometry."""
+        return self.geometry.demography
+
     def _transition(self, source_pop_size: int, dest_pop_size: int) -> Transition:
         return Transition(
-            self._boundary_backends[dest_pop_size],
+            self.geometry._boundary_backends[dest_pop_size],
             self.frequency_map,
             source_pop_size=source_pop_size,
         )
@@ -349,6 +433,32 @@ class DemographicTransition(eqx.Module):
     ) -> DemographicResult:
         r"""Propagate mass through the history, optionally discarding endpoint hits.
 
+        Let $P_t$ map source counts at generation $t$ to destination counts at
+        $t+1$, including any population-size change. Over $T$ total generations,
+        the forward recurrence is
+
+        $$ p_{t+1} = P_t^T p_t + b_{t+1}, \qquad t=0,\ldots,T-1. $$
+
+        By default $b_{t+1}=0$. With singleton input at per-copy rate $\mu$,
+        $b_{t+1}=2N_{t+1}\mu e_1$, where $N_{t+1}$ is the destination diploid
+        size and $e_1$ places mass at count one after reproduction. This source
+        requires `segregating=True`. In segregating mode, replace $P_t$ with its
+        interior restriction; endpoint mass is discarded without conditioning
+        on survival. Epoch methods evaluate or approximate this evolution.
+
+        !!! example "Example: Follow a singleton through a population history"
+
+            Given a bound demographic transition `model`:
+
+            ```python
+            # Start with one derived copy on the history's initial population grid.
+            initial = jnp.zeros(2 * model.demography.initial_pop_size + 1).at[1].set(1.0)
+            result = model.advance(initial)
+            # The final grid can have a different size; index zero still means absence.
+            final_distribution = result.distribution
+            absent_probability = final_distribution[0]
+            ```
+
         **Arguments:**
 
         - `distribution`: Real mass of length `2 * initial_pop_size + 1`, or
@@ -363,21 +473,29 @@ class DemographicTransition(eqx.Module):
 
         **Returns:**
 
-        `DemographicResult` containing final mass and each interval's outcome.
+        [`DemographicResult`][drifft.DemographicResult] containing final mass and each interval's outcome.
         Output length is `2 * final_pop_size + 1`, or `2 * final_pop_size - 1` when segregating.
-        No mass normalization occurs.
+        No mass normalization occurs. Derivatives of `distribution` include
+        process, input-mass, and singleton-rate dependence; diagnostics are
+        excluded from differentiation.
 
         **Raises:**
 
         `ValueError` for invalid shapes, flags, or singleton input in full-state
         mode. Invalid rates or process domains raise even with `throw=False`.
-        Other numerical failures raise with `throw=True` and return status with false.
+        Primal numerical failures raise with `throw=True` and return status
+        with false. Sensitivity and pullback failures raise even with
+        `throw=False`. Higher-order Krylov operator sensitivities raise explicitly.
         """
         distribution, rate = _singleton_inputs(
             distribution, segregating, singleton_mutation_rate
         )
-        return self._advance(
-            distribution, segregating=segregating, singleton_rate=rate, throw=throw
+        return _demographic_advance(
+            self,
+            distribution,
+            segregating=segregating,
+            singleton_rate=rate,
+            throw=throw,
         )
 
     def _advance(self, distribution, *, segregating, singleton_rate, throw):
@@ -386,7 +504,7 @@ class DemographicTransition(eqx.Module):
         if distribution.shape != (size,):
             raise ValueError(f"distribution must have {size} entries")
         # Validate every prepared domain even for identity/boundary-only histories.
-        for backend in self._backends.values():
+        for backend in self.geometry._backends.values():
             distribution = validate_domain(
                 backend,
                 distribution,
@@ -414,7 +532,7 @@ class DemographicTransition(eqx.Module):
                     else None
                 )
                 result = self.method.advance(
-                    self._backends[source],
+                    self.geometry._backends[source],
                     distribution,
                     frequency_map=self.frequency_map,
                     generations=duration - 1,
@@ -468,7 +586,43 @@ class DemographicTransition(eqx.Module):
         segregating: bool = False,
         singleton_mutation_rate: float | jax.Array | None = None,
     ) -> DemographicExpectation:
-        r"""Compute the matched expectation transpose for Sequential histories.
+        r"""Compute the expectation action of the demographic history.
+
+        Let $P_t$ be the one-generation transition from $t$ to $t+1$, including
+        size changes, and $b_{t+1}$ the source added after that step. Starting
+        from terminal values $v_T=f$ and $c_T=0$, work backward through the
+        $T$ generations:
+
+        $$ v_t = P_t v_{t+1}, \qquad
+           c_t = c_{t+1} + b_{t+1}^T v_{t+1}. $$
+
+        The returned `values` and `offset` are $v_0$ and $c_0$, satisfying
+
+        $$ p_T^T f = p_0^T v_0 + c_0. $$
+
+        The source is zero by default. With singleton input,
+        $b_{t+1}=2N_{t+1}\mu e_1$, using the destination diploid size and
+        per-copy rate. In segregating mode, $P_t$ denotes its interior
+        restriction, discarding endpoint mass without conditioning on survival.
+
+        !!! example "Example: Expected final allele count"
+
+            ```python
+            # Define the observable on the final grid, where the allele is counted.
+            counts = jnp.arange(2 * model.demography.final_pop_size + 1)
+            expectation = model.expect(counts)
+            # Each returned value corresponds to an initial population count.
+            initial = jnp.zeros(2 * model.demography.initial_pop_size + 1).at[1].set(1.0)
+            # Include the affine offset; it is zero here because no source was supplied.
+            expected_count = initial @ expectation.values + expectation.offset
+            ```
+
+        !!! warning "Krylov approximation"
+
+            Krylov methods approximate the backward action independently of
+            the forward action. Their pairing agrees to numerical accuracy,
+            rather than being an exact transpose of an input-dependent
+            projection. Increase dimension or tighten tolerances as needed.
 
         **Arguments:**
 
@@ -481,69 +635,37 @@ class DemographicTransition(eqx.Module):
 
         **Returns:**
 
-        A `DemographicExpectation` with float64 `values` of length
+        A [`DemographicExpectation`][drifft.DemographicExpectation] with float64 `values` of length
         `2 * initial_pop_size + 1`, or `2 * initial_pop_size - 1` when segregating, and a
         scalar `offset`. The reward `initial @ result.values + result.offset`
-        equals the terminal reward from `advance` with the same layout and rate.
+        equals the terminal reward from `advance` with the same layout and rate,
+        up to numerical approximation error.
         The offset is zero without a source or for an identity history.
+        Both `values` and `offset` retain their process and input-value
+        derivatives. Only `offset` depends on singleton rate; its rate
+        derivative can be nonzero even at zero rate.
         Signed vectors are supported; no normalization occurs.
 
         **Raises:**
 
         `ValueError` for incompatible shapes, nonboolean flags, invalid source
-        configuration or a non-Sequential method, which does not provide a matched
-        transpose of its input-dependent approximation. Invalid rate values raise
-        at runtime, including for identity histories. Input finiteness is a caller
-        precondition, as for `Transition.expect`.
+        configuration. Numerical convergence and sensitivity failures raise at
+        runtime. Higher-order Krylov operator sensitivities raise explicitly.
+        Invalid rate values raise at runtime, including for identity histories.
+        Input finiteness is a caller
+        precondition, as for [`Transition.expect`][drifft.Transition.expect].
         """
-        if not isinstance(self.method, Sequential):
-            raise ValueError(
-                "expect requires Sequential; adaptive epoch actions have no matched transpose"
-            )
         values, rate = _singleton_inputs(values, segregating, singleton_mutation_rate)
         size = 2 * self.demography.final_pop_size + (-1 if segregating else 1)
         if values.shape != (size,):
             raise ValueError(f"values must have {size} entries")
-        offset = jnp.asarray(0.0)
-        # Transposition reverses composition: apply the last boundary's
-        # expectation first, then its source-size hold, moving backward in time.
-        for source, destination, duration in reversed(
-            tuple(
-                zip(
-                    self.demography.pop_sizes[:-1],
-                    self.demography.pop_sizes[1:],
-                    self.demography.generations,
-                    strict=True,
-                )
-            )
-        ):
-            # Sources enter after each forward step, so evaluate their reward
-            # before transposing that step's transition.
-            if segregating:
-                offset = offset + 2 * destination * rate * values[0]
-            values = self._transition(source, destination).expect(
-                values, segregating=segregating
-            )
-            if duration > 1:
-                backend = self._backends[source]
-                assert isinstance(backend, AbstractTransitionBackend)
-                transition = Transition(backend, self.frequency_map)
-
-                def step(_, carry, source=source, transition=transition):
-                    current, accumulated = carry
-                    if segregating:
-                        accumulated = accumulated + 2 * source * rate * current[0]
-                    return transition.expect(
-                        current, segregating=segregating
-                    ), accumulated
-
-                values, offset = jax.lax.fori_loop(
-                    0, duration - 1, step, (values, offset)
-                )
+        expected, offset = _demographic_expect(
+            self, values, segregating=segregating, singleton_rate=rate
+        )
         # Keep validation live even when an outer JIT consumes only the
         # identity history's offset and discards the expectation vector.
         return eqx.error_if(
-            DemographicExpectation(values, offset),
+            DemographicExpectation(expected, offset),
             ~jnp.isfinite(rate) | (rate < 0),
             "singleton_mutation_rate must be finite and nonnegative",
         )

@@ -83,10 +83,10 @@ def test_dense_demography_with_mutation_selection_and_source_mass(segregating):
         drifft.Mutation(0.003, 0.006), drifft.AdditiveSelection(0.04)
     )
     dense = drifft.DemographicTransition(
-        history, backend_factory=drifft.Dense, frequency_map=rule
+        history.prepare(backend_factory=drifft.Dense), frequency_map=rule
     )
     fft = drifft.DemographicTransition(
-        history, backend_factory=drifft.FFT, frequency_map=rule
+        history.prepare(backend_factory=drifft.FFT), frequency_map=rule
     )
     initial = jnp.eye(9 if segregating else 11)[2]
     values = jnp.cos(jnp.arange(7 if segregating else 9) * 0.4)

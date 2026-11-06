@@ -1,4 +1,4 @@
-"""Transition operations driven by frequency maps."""
+"""[`Transition`][drifft.Transition] operations driven by frequency maps."""
 
 # pattern: Functional Core; pure operations over a prepared transition backend.
 from functools import partial
@@ -54,7 +54,7 @@ class Transition(eqx.Module):
         **Arguments:**
 
         - `backend`: Prepared destination backend.
-        - `frequency_map`: `AbstractFrequencyMap`; mutually exclusive with `probabilities`.
+        - `frequency_map`: [`AbstractFrequencyMap`][drifft.AbstractFrequencyMap]; mutually exclusive with `probabilities`.
         - `source_pop_size`: Positive integer diploid source size. Defaults to
           `backend.pop_size` for a map. For explicit rows, inferred as
           `(len(probabilities) - 1) // 2`. If supplied, requires
@@ -359,7 +359,7 @@ class Transition(eqx.Module):
 
         **Returns:**
 
-        An `ExpectedVisitsResult` with float64 `visits` of length
+        An [`ExpectedVisitsResult`][drifft.ExpectedVisitsResult] with float64 `visits` of length
         `dest_size() - 2`, plus convergence diagnostics.
 
         **Raises:**

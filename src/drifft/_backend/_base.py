@@ -23,7 +23,7 @@ class AbstractTransitionBackend(eqx.Module):
     Implementations provide `pop_size` and an `expect` operation linear in
     destination values, supporting transposition, JVP, VJP, and batching.
     Prepare geometry outside JIT. Apply the backend directly at supplied
-    probabilities, or use `Transition` to bind a frequency map and allele-count
+    probabilities, or use [`Transition`][drifft.Transition] to bind a frequency map and allele-count
     grids for compiled application.
     """
 

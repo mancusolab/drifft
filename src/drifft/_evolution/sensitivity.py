@@ -1,6 +1,5 @@
 """Krylov approximations of mathematical power sensitivities and pullbacks."""
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import lineax as lx
@@ -208,38 +207,3 @@ def _frechet_adjoint_factors(
         & (error <= method.atol + method.rtol * jnp.linalg.norm(core))
     )
     return left, v, error, converged
-
-
-def _frechet_operator_pullback(
-    method: _KrylovConfig, operator, tangent_template, initial, cotangent, steps
-):
-    """Contract low-rank adjoint factors into the active operator PyTree leaves.
-
-    The tangent template selects perturbed leaves, not biological parameter names.
-    The numerical factors are residuals of the inner operator VJP; differentiating
-    their construction there would introduce unwanted basis-derivative terms.
-    """
-
-    def is_none(x):
-        return x is None
-
-    if not any(
-        x is not None for x in jax.tree.leaves(tangent_template, is_leaf=is_none)
-    ):
-        return (
-            jax.tree.map(lambda _: None, operator),
-            jnp.asarray(0.0),
-            jnp.asarray(True),
-        )
-    selected = jax.tree.map(lambda x: x is not None, tangent_template, is_leaf=is_none)
-    active, fixed = eqx.partition(operator, selected, is_leaf=is_none)
-    left, right, error, converged = _frechet_adjoint_factors(
-        method, operator, initial, cotangent, steps
-    )
-
-    def action(active):
-        op = eqx.combine(active, fixed)
-        return jax.lax.map(op.mv, right.T)
-
-    _, pullback = eqx.filter_vjp(action, active)
-    return pullback(left.T)[0], error, converged

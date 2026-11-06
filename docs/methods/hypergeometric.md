@@ -1,6 +1,6 @@
 # Hypergeometric sampling
 
-`HypergeometricSampling` maps a final population distribution to a sample drawn
+[`HypergeometricSampling`](../api/sampling.md#drifft.HypergeometricSampling) maps a final population distribution to a sample drawn
 without replacement. It does not advance a generation or apply selection.
 
 Configuration: [API reference](../api/sampling.md).
@@ -158,7 +158,7 @@ assert jnp.isclose(expected_frequency, 0.25, rtol=0, atol=1e-10)
 
 For a history, pass `model.advance(initial).distribution` to `sampling.advance`.
 To work backward, pass `sampling.expect(sample_values)` to `model.expect`;
-matched demographic expectations require Sequential.
+Krylov demographic expectations agree with forward rewards up to approximation error.
 
 The operator accepts full count vectors, including endpoints. For a segregating
 population spectrum, explicitly pad it with zeros at both ends. Sampling can

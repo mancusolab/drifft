@@ -1,12 +1,19 @@
-"""HiJAX power actions with method-owned sensitivities and explicit adjoints.
+"""HiJAX power actions with mathematical sensitivities and explicit adjoints.
 
 Preparation, reconstruction, and diagnostics remain outside these primitives.
-Sequential uses an exact coupled recurrence. Krylov methods approximate the
-Frechet action and its operator pullback without differentiating Arnoldi bases.
+[`Sequential`][drifft.Sequential] uses an exact coupled recurrence. Krylov methods
+approximate the Frechet action and its operator pullback without differentiating
+Arnoldi bases.
+
+Ordinary operator PyTrees and parameter-space HiTypes have distinct bindings,
+sharing the checked sensitivity kernels. Operator-coordinate pushforwards and
+factor contractions live in operators.py and parameterized.py; this module owns
+power differentiation and selects cached bindings from prepared operator types.
 """
 
 # pattern: Functional Core
-from typing import Protocol, cast
+from functools import singledispatch
+from typing import Any, Protocol, cast
 
 import equinox as eqx
 import equinox.internal as eqxi
@@ -15,33 +22,59 @@ import jax.numpy as jnp
 import lineax as lx
 from jax.experimental import hijax
 
+from .operators import _contract_operator_factors, _operator_pushforward
+from .parameterized import (
+    _contract_parameter_factors,
+    _JacobiOperator,
+    _pack,
+    _parameter_direction,
+    _parameter_pushforward,
+    _transpose,
+    _unpack,
+)
 from .problem import _KrylovConfig
-from .sensitivity import _frechet_operator_pullback, _frechet_power
+from .sensitivity import _frechet_adjoint_factors, _frechet_power
+
+# Autodiff design: differentiate the represented mathematical operation, not the
+# algorithm used to approximate it. At the history level, advance applies H.T to
+# mass (plus accumulated sources), while expect applies H to terminal values and
+# returns the source reward. Their vector pullbacks use the opposite orientation.
+# History composition includes parameter-dependent encoding, reconstruction,
+# boundaries and sources; differentiating a reduced matrix alone is insufficient.
+#
+# This module supplies the epoch power rule for y = A(theta)**k @ x. Its JVP is
+# A**k @ dx + D(A**k)[dA] @ x; its VJP combines (A.T)**k @ output_ct with a
+# contraction of the operator adjoint into theta. The derivative identity is
+# shared. Sequential evaluates a coupled recurrence; Krylov approximates the
+# Frechet action/adjoint without differentiating adaptive projection bases.
+# Cached primal values avoid repeating numerical work, but their computation
+# does not supply an additional tangent. Numerical diagnostics are not AD targets.
+#
+# Operator parameterization owns dA and the adjoint contraction, not the power
+# rule. Generic Lineax operators use action JVPs/VJPs and remain matrix-free when
+# appropriate. The Jacobi parameter-space representation instead streams active
+# assembly directions and contracts source coordinates directly, avoiding an
+# assembly reverse tape or a dense matrix cotangent. Fixed geometry and matrix
+# caches remain primal numerical state, not independent derivative coordinates.
+#
+# We retain separate PyTree and HiType bindings because their tangent structures
+# and batching contracts differ, while sharing numerical sensitivity kernels and
+# convergence checks. Forcing one binding would obscure those contracts; separate
+# backend-specific power mathematics would duplicate them. Representation details
+# belong in operators.py/parameterized.py, numerical kernels in sensitivity.py,
+# and history rules in _demographic_action.py. Preserve Sequential higher AD and
+# supported mixed derivatives; further Krylov operator sensitivities are explicitly
+# unsupported rather than falling through to differentiation of the solver.
 
 
 class _PowerMethod[State](Protocol):
-    """Internal primal and joint-JVP contract consumed by the HiJAX power rule."""
+    """Numerical power evaluation consumed by the shared HiJAX rule."""
 
     def _power_action(
         self, operator: lx.AbstractLinearOperator, initial: State, steps: int
     ) -> State:
         """Evaluate a checked working-coordinate power."""
         ...
-
-    def _power_jvp(
-        self,
-        operator: lx.AbstractLinearOperator,
-        tangent_operator: lx.TangentLinearOperator | None,
-        initial: State,
-        tangent_initial: State,
-        steps: int,
-    ) -> tuple[State, State]:
-        """Return the primal and its joint operator/state directional derivative."""
-        ...
-
-
-class _KrylovMethod(_PowerMethod[jax.Array], _KrylovConfig, Protocol):
-    """Power callbacks plus the settings needed by the Krylov derivative kernels."""
 
 
 def _is_ad_leaf(value):
@@ -86,6 +119,18 @@ def _accumulate(accums, values):
     jax.tree.map(add, accums, values, is_leaf=lambda x: x is None or _is_ad_leaf(x))
 
 
+def _sequential_power_pair(operator, perturbation, initial, tangent, steps):
+    """Evaluate A**g x and its joint derivative in one coupled recurrence."""
+
+    def step(_, carry):
+        state, direction = carry
+        return operator.mv(state), jax.tree.map(
+            jnp.add, operator.mv(direction), perturbation.mv(state)
+        )
+
+    return jax.lax.fori_loop(0, steps, step, (initial, tangent))
+
+
 class _PowerAction(hijax.HiPrim):
     """Power evaluation or cached value with the same mathematical derivative."""
 
@@ -106,7 +151,7 @@ class _PowerAction(hijax.HiPrim):
         return method._power_action(operator, initial, steps)
 
     def jvp(self, primals, tangents):
-        """Apply method-owned sensitivities without differentiating configuration."""
+        """Differentiate the mathematical power, independently of solver implementation."""
         operator, initial, steps, method, *value = eqx.combine(
             primals, cast(tuple, self.params["static"])
         )
@@ -117,27 +162,31 @@ class _PowerAction(hijax.HiPrim):
             )
         operator_direction = _operator_tangent(t_operator)
         tangent_operator = (
-            lx.TangentLinearOperator(operator, operator_direction)
+            _operator_pushforward(operator, operator_direction)
             if _has_tangent(t_operator)
             else None
         )
         tangent_initial = jax.tree.map(
             hijax.instantiate_zeros, t_initial, is_leaf=_is_ad_leaf
         )
-        if not self.params["cached"]:
-            return method._power_jvp(
-                operator, tangent_operator, initial, tangent_initial, steps
-            )
-        # A cached value is only a primal shortcut: its tangent is deliberately
-        # ignored. Differentiate A**g x through the operator and state, otherwise
-        # AD would follow the adaptive projection that produced the cached value.
         if tangent_operator is None:
+            primal = self(*primals)
             tangent = _power_action(method, operator, tangent_initial, steps)
-        else:
+        elif isinstance(method, _KrylovConfig):
+            primal = self(*primals)
+            # Numerical evaluation of the same power derivative by a projected
+            # block action; its adaptive basis is never the differentiation target.
             tangent = _frechet_action(
                 method, operator, initial, operator_direction, tangent_initial, steps
             )
-        return value[0], tangent
+        else:
+            value, tangent = _sequential_power_pair(
+                operator, tangent_operator, initial, tangent_initial, steps
+            )
+            # Preserve the primitive boundary for higher derivatives while
+            # reusing the primal already produced by the coupled recurrence.
+            primal = _bind_power(operator, initial, steps, method, value)
+        return primal, tangent
 
     lin, linearized = hijax.linearize_from_jvp
     vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
@@ -173,13 +222,52 @@ def _bind_power(operator, initial, steps, method, *value):
 def _power_action[State](
     method: _PowerMethod[State], operator, initial: State, steps: int
 ) -> State:
-    """Apply a power with method-owned JVPs and an operator-level transpose."""
+    """Apply a power with a shared mathematical JVP and operator-level transpose."""
     return _bind_power(operator, initial, steps, method)
 
 
-def _cached_power_action(method: _KrylovMethod, operator, initial, steps, value):
-    """Attach the mathematical power rule to an already computed primal value."""
+@singledispatch
+def _cached_power_action(operator, method, initial, steps, value, numerical_operator):
+    """Bind a checked primal using the prepared operator's derivative coordinates.
+
+    The generic path retains the differentiable operator PyTree. Specializations
+    can also reuse numerical_operator, the stopped representation used by the
+    primal projection, without rebuilding it or differentiating its cache.
+    """
     return _bind_power(operator, initial, steps, method, value)
+
+
+@_cached_power_action.register(_JacobiOperator)
+def _cached_parameterized_power(
+    operator, method, initial, steps, value, numerical_operator
+):
+    """Reuse the projected matrix while returning cotangents in parameter space."""
+    return parameterized_power(
+        method, operator, initial, steps, value, numerical_operator.as_matrix()
+    )
+
+
+def _checked_frechet_action(method, operator, perturbation, initial, tangent, steps):
+    """Evaluate the shared power derivative and enforce its convergence contract."""
+    result = _frechet_power(method, operator, perturbation, initial, tangent, steps)
+    return eqx.error_if(
+        result.distribution,
+        ~result.converged,
+        "Krylov sensitivity action did not converge; increase dimension or use Sequential",
+    )
+
+
+def _checked_adjoint_factors(method, operator, initial, cotangent, steps):
+    """Keep numerical factor evaluation inside the derivative primitive boundary."""
+    left, right, _, converged = _frechet_adjoint_factors(
+        method, operator, initial, cotangent, steps
+    )
+    left = eqx.error_if(
+        left,
+        ~converged,
+        "Krylov operator pullback did not converge; increase dimension or use Sequential",
+    )
+    return left, right
 
 
 class _FrechetAction(hijax.HiPrim):
@@ -197,18 +285,13 @@ class _FrechetAction(hijax.HiPrim):
         operator, initial, t_operator, t_initial, steps, method = eqx.combine(
             args, cast(tuple, self.params["static"])
         )
-        result = _frechet_power(
+        return _checked_frechet_action(
             method,
             operator,
-            lx.TangentLinearOperator(operator, t_operator),
+            _operator_pushforward(operator, t_operator),
             initial,
             t_initial,
             steps,
-        )
-        return eqx.error_if(
-            result.distribution,
-            ~result.converged,
-            "Krylov sensitivity action did not converge; increase dimension or use Sequential",
         )
 
     def jvp(self, primals, tangents):
@@ -245,14 +328,10 @@ class _FrechetAction(hijax.HiPrim):
                 t_operator,
                 is_leaf=_is_ad_leaf,
             )
-            operator_ct, _, converged = _frechet_operator_pullback(
-                method, operator, template, initial, cotangent, steps
+            left, right = _checked_adjoint_factors(
+                method, operator, initial, cotangent, steps
             )
-            operator_ct = eqx.error_if(
-                operator_ct,
-                ~converged,
-                "Krylov operator pullback did not converge; increase dimension or use Sequential",
-            )
+            operator_ct = _contract_operator_factors(operator, template, left, right)
             _accumulate(t_operator, operator_ct)
         if _has_accum(t_initial):
             _accumulate(t_initial, _power_action(method, operator.T, cotangent, steps))
@@ -272,3 +351,192 @@ def _frechet_action(
     )
     avals = jax.tree.map(jax.typeof, dynamic)
     return _FrechetAction(avals, static)(*dynamic)
+
+
+class _Power(hijax.HiPrim):
+    """Apply a mathematical power or attach its rule to a cached primal."""
+
+    def __init__(self, avals, method, steps, cached, *, with_parameter_leaves=False):
+        self.in_avals = avals
+        self.out_aval = avals[1]
+        self.params = dict(
+            method=method,
+            steps=steps,
+            cached=cached,
+            with_parameter_leaves=with_parameter_leaves,
+        )
+        super().__init__()
+
+    def expand(self, *args):
+        operator, initial, *value = args
+        if self.params["with_parameter_leaves"]:
+            _, *value = value
+        operator = _unpack(operator)
+        if self.params["cached"]:
+            return value[0]
+        return cast(Any, self.params["method"])._power_action(
+            lx.MatrixLinearOperator(operator.matrix), initial, self.params["steps"]
+        )
+
+    def jvp(self, primals, tangents):
+        operator, initial, *_ = primals
+        dp, dx, *_ = tangents
+        active_process = None
+        if self.params["with_parameter_leaves"]:
+            # These leaves alias the opaque payload, but retain structural zeros
+            # until this boundary. They own the parameter tangent here; using
+            # the opaque tangent as well would count that contribution twice.
+            leaves, directions = primals[2], tangents[2]
+            dp, active_process = _parameter_direction(
+                leaves,
+                directions,
+                jax.typeof(operator).spec.process_size,
+                jax.typeof(operator).to_tangent_aval(),
+            )
+        if isinstance(dp, hijax.Zero):
+            tangent = _power(operator, hijax.instantiate_zeros(dx), **self._settings())
+        else:
+            args = operator, initial, dp, hijax.instantiate_zeros(dx)
+            tangent = _Sensitivity(
+                jax.tree.map(jax.typeof, args),
+                active_process=active_process,
+                **self._settings(),
+            )(*args)
+        return self(*primals), tangent
+
+    def _settings(self):
+        return {key: self.params[key] for key in ("method", "steps")}
+
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def transpose(self, out_ct, *args):
+        ct = out_ct
+        operator, initial, *value = args
+        if isinstance(operator, hijax.GradAccum) or value:
+            raise ValueError("power is linear only in the initial state")
+        if isinstance(initial, hijax.GradAccum):
+            initial.accum(
+                _power(
+                    _transpose(operator),
+                    hijax.instantiate_zeros(ct),
+                    **self._settings(),
+                )
+            )
+
+    def batch_dim_rule(self, axis_data, dims):
+        return 0 if any(d is not None for d in jax.tree.leaves(dims)) else None
+
+
+class _Sensitivity(hijax.HiPrim):
+    """Linearized power with direct parameter-space adjoint contraction."""
+
+    def __init__(self, avals, method, steps, *, active_process=None):
+        self.in_avals = avals
+        self.out_aval = avals[1]
+        self.params = dict(method=method, steps=steps, active_process=active_process)
+        super().__init__()
+
+    def expand(self, *args):
+        operator, initial, dp, dx = args
+        operator = _unpack(operator)
+        return _checked_frechet_action(
+            self.params["method"],
+            lx.MatrixLinearOperator(operator.matrix),
+            _parameter_pushforward(operator, dp),
+            initial,
+            dx,
+            self.params["steps"],
+        )
+
+    def jvp(self, primals, tangents):
+        raise NotImplementedError(
+            "Higher-order Krylov sensitivities are not implemented; use Sequential"
+        )
+
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def _settings(self):
+        return {key: self.params[key] for key in ("method", "steps")}
+
+    def batch_dim_rule(self, axis_data, dims):
+        return 0 if any(d is not None for d in jax.tree.leaves(dims)) else None
+
+    def transpose(self, out_ct, *args):
+        ct = out_ct
+        operator, initial, dp, dx = args
+        if isinstance(operator, hijax.GradAccum) or isinstance(
+            initial, hijax.GradAccum
+        ):
+            raise ValueError("sensitivity is linear only in tangent arguments")
+        cotangent = hijax.instantiate_zeros(ct)
+        if isinstance(dp, hijax.GradAccum):
+            args = operator, initial, cotangent
+            dp.accum(
+                _Pullback(
+                    jax.tree.map(jax.typeof, args),
+                    active_process=self.params["active_process"],
+                    **self._settings(),
+                )(*args)
+            )
+        if isinstance(dx, hijax.GradAccum):
+            dx.accum(_power(_transpose(operator), cotangent, **self._settings()))
+
+
+class _Pullback(hijax.HiPrim):
+    """Contract power-adjoint factors; further AD and transposition are unsupported."""
+
+    def __init__(self, avals, method, steps, *, active_process=None):
+        self.in_avals = avals
+        self.out_aval = avals[0].to_ct_aval()
+        self.params = dict(method=method, steps=steps, active_process=active_process)
+        super().__init__()
+
+    def jvp(self, primals, tangents):
+        raise NotImplementedError(
+            "Higher-order Krylov sensitivities are not implemented; use Sequential"
+        )
+
+    lin, linearized = hijax.linearize_from_jvp
+    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
+
+    def transpose(self, out_ct, *args):
+        raise NotImplementedError(
+            "Higher-order Krylov sensitivities are not implemented; use Sequential"
+        )
+
+    def batch_dim_rule(self, axis_data, dims):
+        return 0 if any(d is not None for d in jax.tree.leaves(dims)) else None
+
+    def expand(self, *args):
+        operator, initial, cotangent = args
+        operator = _unpack(operator)
+        left, right = _checked_adjoint_factors(
+            self.params["method"],
+            lx.MatrixLinearOperator(operator.matrix),
+            initial,
+            cotangent,
+            self.params["steps"],
+        )
+        return _contract_parameter_factors(
+            operator, left, right, self.params["active_process"]
+        )
+
+
+def _power(operator, initial, method, steps, *value):
+    args = operator, initial, *value
+    return _Power(jax.tree.map(jax.typeof, args), method, steps, bool(value))(*args)
+
+
+def parameterized_power(method, operator, initial, steps, value, matrix):
+    """Attach a parameter-space mathematical rule to a stopped numerical cache."""
+    leaves = tuple(
+        jax.tree.leaves(
+            eqx.filter((operator.frequency_map, operator.source), eqx.is_array)
+        )
+    )
+    args = _pack(operator, matrix), initial, leaves, value
+    return _Power(
+        jax.tree.map(jax.typeof, args), method, steps, True, with_parameter_leaves=True
+    )(*args)

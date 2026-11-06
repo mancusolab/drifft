@@ -1,7 +1,7 @@
 """Prepared power problems and numerical outcome contracts."""
 
 from collections.abc import Callable
-from typing import ClassVar, NamedTuple, Protocol, final
+from typing import ClassVar, NamedTuple, Protocol, final, runtime_checkable
 
 import equinox as eqx
 import jax
@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import lineax as lx
 
 
+@runtime_checkable
 class _KrylovConfig(Protocol):
     """Configuration consumed by projection and sensitivity kernels."""
 
@@ -47,9 +48,9 @@ class EpochResult(NamedTuple):
     - `distribution`: Float64 full or interior mass, with the input population
       shape. Signed inputs are not normalized.
     - `error_estimate`: Scalar absolute L1 power-error estimate in population
-      coordinates; zero for Sequential and identity actions.
+      coordinates; zero for [`Sequential`][drifft.Sequential] and identity actions.
     - `converged`: Scalar boolean, true exactly when `status` is successful.
-    - `status`: `EvolutionStatus` describing the numerical outcome.
+    - `status`: [`EvolutionStatus`][drifft.EvolutionStatus] describing the numerical outcome.
     """
 
     distribution: jax.Array
@@ -64,17 +65,17 @@ EpochResult.__new__.__doc__ = r"""Construct an immutable result without validati
 
 **Arguments:**
 
-The fields documented on `EpochResult`, supplied by position or keyword.
+The fields documented on [`EpochResult`][drifft.EpochResult], supplied by position or keyword.
 
 **Returns:**
 
-An `EpochResult` holding the supplied values. Normal evolution calls construct this
+An [`EpochResult`][drifft.EpochResult] holding the supplied values. Normal evolution calls construct this
 result automatically; constructing it directly performs no numerical checks.
 """
 
 
 class EpochProblem(Protocol):
-    r"""Read-only algorithm inputs returned by `prepare_epoch`.
+    r"""Read-only algorithm inputs returned by [`prepare_epoch`][drifft.prepare_epoch].
 
     Approximate `operator**steps @ initial` in the provided working coordinates,
     then use `result` to reconstruct population mass and check convergence.
@@ -83,7 +84,7 @@ class EpochProblem(Protocol):
     requested generation count. A source term may add an auxiliary coordinate.
 
     This protocol describes drifft's prepared PyTree; obtain instances through
-    `prepare_epoch`. It is not a constructor or an interface for supplying
+    [`prepare_epoch`][drifft.prepare_epoch]. It is not a constructor or an interface for supplying
     arbitrary user-defined problem objects to built-in methods.
 
     **Working inputs:**
@@ -162,7 +163,7 @@ class EpochProblem(Protocol):
 
         **Returns:**
 
-        An `EpochResult` with reconstructed mass, estimate, status and convergence.
+        An [`EpochResult`][drifft.EpochResult] with reconstructed mass, estimate, status and convergence.
 
         **Raises:**
 

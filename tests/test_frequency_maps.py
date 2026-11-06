@@ -48,8 +48,7 @@ def test_mutation_reintroduces_alleles_from_both_endpoints(backend):
 def test_demographic_mutation_gradients(backend):
     """Keep both mutation rates dynamic through constant-size and changing-size steps."""
     model = drifft.DemographicTransition(
-        drifft.Demography([8, 5], [3]),
-        backend_factory=backend,
+        drifft.Demography([8, 5], [3]).prepare(backend_factory=backend),
         frequency_map=drifft.Composition(drifft.Neutral(), drifft.Mutation(0.1, 0.2)),
     )
     initial = jnp.eye(17)[4]
@@ -96,8 +95,7 @@ def test_frequency_map_configuration_validation():
         drifft.Transition(backend, frequency_map=lambda x: x)  # ty: ignore[invalid-argument-type] -- unwrapped function
     with pytest.raises(TypeError):
         drifft.DemographicTransition(
-            drifft.Demography([8, 8], [1]),
-            backend_factory=drifft.FFT,
+            drifft.Demography([8, 8], [1]).prepare(backend_factory=drifft.FFT),
             frequency_map=lambda x: x,  # ty: ignore[invalid-argument-type] -- unwrapped function
         )
 

@@ -32,8 +32,7 @@ def test_demographic_holds_use_custom_method_advance(duration):
             )
 
     model = drifft.DemographicTransition(
-        drifft.Demography([4, 3], [duration]),
-        backend_factory=drifft.Dense,
+        drifft.Demography([4, 3], [duration]).prepare(backend_factory=drifft.Dense),
         frequency_map=drifft.Neutral(),
         method=ScaledAdvance(),
     )
@@ -58,9 +57,9 @@ def test_factories_reuse_geometry_for_repeated_sizes_and_shared_boundaries():
         return drifft.Dense(copies)
 
     drifft.DemographicTransition(
-        drifft.Demography([4, 3, 4], [2, 2]),
-        backend_factory=factory,
-        boundary_backend_factory=factory,
+        drifft.Demography([4, 3, 4], [2, 2]).prepare(
+            backend_factory=factory, boundary_backend_factory=factory
+        ),
         frequency_map=drifft.Neutral(),
     )
     assert calls == [4, 3]
@@ -76,7 +75,8 @@ def test_demographic_evaluation_matches_dense_boundary_history(
     """Hold the source size and change only on the final interval generation."""
     history = drifft.Demography(pop_sizes=sizes, generations=durations)
     model = drifft.DemographicTransition(
-        history, backend_factory=backend, frequency_map=drifft.Underdominance(0.07)
+        history.prepare(backend_factory=backend),
+        frequency_map=drifft.Underdominance(0.07),
     )
     matrix = jnp.eye(2 * sizes[0] + 1)
     for source, destination, duration in zip(
@@ -101,8 +101,7 @@ def test_demographic_evaluation_matches_dense_boundary_history(
 def test_demographic_selection_gradient_and_batching(backend):
     """Differentiate dynamic selection through size changes and fixed-length loops."""
     model = drifft.DemographicTransition(
-        drifft.Demography([8, 5, 11], [3, 2]),
-        backend_factory=backend,
+        drifft.Demography([8, 5, 11], [3, 2]).prepare(backend_factory=backend),
         frequency_map=drifft.Underdominance(0.07),
     )
     initial = jnp.eye(17)[3]
@@ -185,8 +184,7 @@ def test_demography_rejects_invalid_schedule(sizes, durations):
 def test_demographic_methods_reject_wrong_shape(method, size):
     """Validate source and destination vector lengths at the public boundary."""
     model = drifft.DemographicTransition(
-        drifft.Demography([8, 5], [2]),
-        backend_factory=drifft.FFT,
+        drifft.Demography([8, 5], [2]).prepare(backend_factory=drifft.FFT),
         frequency_map=drifft.Underdominance(0.07),
     )
     with pytest.raises(ValueError):
@@ -197,10 +195,11 @@ def test_demographic_methods_reject_wrong_shape(method, size):
 def test_expect_transposes_custom_sequential_hold_backend(segregating):
     """Transpose the configured hold operator even when boundary geometry differs."""
     model = drifft.DemographicTransition(
-        drifft.Demography([200, 200], [5]),
-        boundary_backend_factory=drifft.FFT,
-        backend_factory=lambda n: drifft.FFT(
-            n, interp_order=2, min_mode_count=8, block_spacing=4
+        drifft.Demography([200, 200], [5]).prepare(
+            boundary_backend_factory=drifft.FFT,
+            backend_factory=lambda n: drifft.FFT(
+                n, interp_order=2, min_mode_count=8, block_spacing=4
+            ),
         ),
         frequency_map=drifft.Underdominance(0.03),
     )
@@ -224,8 +223,7 @@ def test_expect_transposes_custom_sequential_hold_backend(segregating):
 def test_segregating_affine_expect_matches_dense_history(backend, sizes, durations):
     """Match killed-chain rewards and singleton sources against dense histories."""
     model = drifft.DemographicTransition(
-        drifft.Demography(sizes, durations),
-        backend_factory=backend,
+        drifft.Demography(sizes, durations).prepare(backend_factory=backend),
         frequency_map=drifft.Underdominance(0.03),
     )
     values = jnp.sin(jnp.arange(2 * sizes[-1] - 1) + 0.2)
@@ -273,9 +271,9 @@ def test_segregating_affine_expect_matches_dense_history(backend, sizes, duratio
 def test_affine_expect_recurrent_mutation_gradients_and_batching():
     """Match forward rewards and derivatives with recurrent mutation and influx."""
     model = drifft.DemographicTransition(
-        drifft.Demography([4, 3, 5], [3, 2]),
-        backend_factory=drifft.Jacobi,
-        boundary_backend_factory=drifft.FFT,
+        drifft.Demography([4, 3, 5], [3, 2]).prepare(
+            backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+        ),
         frequency_map=drifft.Mutation(0.01, 0.02),
     )
     mass = jnp.linspace(-0.1, 0.3, 7)
@@ -332,8 +330,7 @@ def test_affine_expect_recurrent_mutation_gradients_and_batching():
 def test_expect_validates_layout_source_and_return_contract():
     """Reject invalid inputs even for identity histories; never drop a source."""
     model = drifft.DemographicTransition(
-        drifft.Demography([4], []),
-        backend_factory=drifft.Dense,
+        drifft.Demography([4], []).prepare(backend_factory=drifft.Dense),
         frequency_map=drifft.Neutral(),
     )
     for kwargs in (
@@ -357,8 +354,9 @@ def test_expect_validates_layout_source_and_return_contract():
         model.expect(jnp.ones(9), segregating=True)
     for method in (drifft.PolynomialKrylov(), drifft.RationalKrylov()):
         updated = eqx.tree_at(lambda m: m.method, model, method)
-        with pytest.raises(ValueError, match="Sequential"):
-            updated.expect(jnp.ones(7), segregating=True)
+        result = updated.expect(jnp.ones(7), segregating=True)
+        assert jnp.array_equal(result.values, jnp.ones(7))
+        assert result.offset == 0
     values = jnp.arange(9.0)
     result = model.expect(values)
     assert isinstance(result, drifft.DemographicExpectation)
@@ -371,8 +369,7 @@ def test_expect_validates_layout_source_and_return_contract():
 def test_affine_identity_rate_check_survives_partial_output(component, rate):
     """An outer JIT must retain domain checks for either returned component."""
     model = drifft.DemographicTransition(
-        drifft.Demography([4], []),
-        backend_factory=drifft.Dense,
+        drifft.Demography([4], []).prepare(backend_factory=drifft.Dense),
         frequency_map=drifft.Neutral(),
     )
 
@@ -386,3 +383,103 @@ def test_affine_identity_rate_check_survives_partial_output(component, rate):
 
     with pytest.raises(eqx.EquinoxRuntimeError, match="mutation_rate"):
         selected(jnp.asarray(rate)).block_until_ready()
+
+
+@pytest.mark.parametrize(
+    "backend,method",
+    [
+        (drifft.FFT, drifft.Sequential()),
+        (drifft.Jacobi, drifft.RationalKrylov(dimension=16)),
+    ],
+)
+def test_prepared_geometry_reused_when_binding_inside_jax(backend, method):
+    """Selection/mutation likelihood derivatives reuse geometry under JIT and vmap."""
+    from jax.scipy.stats import binom
+    from scipy.stats import hypergeom
+
+    calls = []
+
+    def factory(size):
+        """Count host preparation independently of traced evaluations."""
+        calls.append(size)
+        return backend(size)
+
+    history = drifft.Demography([4, 3, 4], [2, 2])
+    geometry = history.prepare(backend_factory=factory)
+    sampler = drifft.HypergeometricSampling(4, 2, accuracy=0)
+    initial = jnp.eye(9)[2]
+    observed = jnp.array([1, 2, 1])
+    sampling_matrix = jnp.asarray(
+        hypergeom.pmf(jnp.arange(5)[None, :], 8, jnp.arange(9)[:, None], 4)
+    )
+
+    def objective(parameters):
+        """Bind each parameter point without constructing backends."""
+        s, u, v = parameters
+        process = drifft.Composition(drifft.AdditiveSelection(s), drifft.Mutation(u, v))
+        transition = drifft.DemographicTransition(geometry, process, method=method)
+        probabilities = sampler.advance(transition.advance(initial).distribution)
+        return jnp.log(probabilities[observed]).sum()
+
+    def reference(parameters):
+        """Explicit genotype weighting and binomial recurrence, then exact sampling."""
+        s, u, v = parameters
+        mass = initial
+        for source, destination in [(4, 4), (4, 3), (3, 3), (3, 4)]:
+            x = jnp.arange(2 * source + 1) / (2 * source)
+            heterozygotes = 2 * x * (1 - x) * (1 - s / 2)
+            derived_homozygotes = x**2 * (1 - s)
+            selected = (heterozygotes / 2 + derived_homozygotes) / (
+                (1 - x) ** 2 + heterozygotes + derived_homozygotes
+            )
+            q = selected * (1 - v) + (1 - selected) * u
+            matrix = binom.pmf(
+                jnp.arange(2 * destination + 1)[None, :],
+                2 * destination,
+                q[:, None],
+            )
+            mass = mass @ matrix
+        return jnp.log((mass @ sampling_matrix)[observed]).sum()
+
+    parameters = jnp.array([0.04, 0.02, 0.03])
+    value, gradient = jax.jit(jax.value_and_grad(objective))(parameters)
+    expected, expected_gradient = jax.value_and_grad(reference)(parameters)
+    assert jnp.allclose(value, expected, atol=1e-10)
+    assert jnp.allclose(gradient, expected_gradient, atol=1e-9)
+    assert jnp.allclose(jax.jit(jax.jacfwd(objective))(parameters), gradient, atol=1e-9)
+    batch = jnp.stack([parameters, parameters * 1.2])
+    assert jnp.allclose(
+        jax.jit(jax.vmap(objective))(batch), jax.vmap(reference)(batch), atol=1e-10
+    )
+    assert calls == [4, 3]
+    for method in (drifft.Sequential(), drifft.RationalKrylov(dimension=8)):
+        bound = drifft.DemographicTransition(geometry, drifft.Neutral(), method=method)
+        assert bound.geometry is geometry
+        assert bound.demography is history
+
+
+@pytest.mark.parametrize("boundary", [False, True])
+@pytest.mark.parametrize("invalid", ["not_callable", "not_backend", "wrong_size"])
+def test_geometry_preparation_rejects_invalid_factories(boundary, invalid):
+    """Validate factory contracts before binding any process or method."""
+    factory = {
+        "not_callable": None,
+        "not_backend": lambda size: object(),
+        "wrong_size": lambda size: drifft.Dense(size + 1),
+    }[invalid]
+    # None has a valid default meaning only for the boundary factory.
+    if boundary and invalid == "not_callable":
+        factory = 42
+    kwargs = {"backend_factory": drifft.Dense}
+    kwargs["boundary_backend_factory" if boundary else "backend_factory"] = factory
+    with pytest.raises(ValueError if invalid == "wrong_size" else TypeError):
+        drifft.Demography([4, 3], [2]).prepare(**kwargs)  # ty: ignore[invalid-argument-type] -- invalid factories
+
+
+def test_transition_requires_prepared_geometry():
+    """An unprepared schedule fails with actionable preparation guidance."""
+    with pytest.raises(TypeError, match="Demography.prepare"):
+        drifft.DemographicTransition(
+            drifft.Demography([4], []),  # ty: ignore[invalid-argument-type] -- invalid geometry
+            drifft.Neutral(),
+        )

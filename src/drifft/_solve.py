@@ -18,7 +18,7 @@ class ExpectedVisitsStatus(eqx.Enumeration):
     - `unconverged`: The independently recomputed residual exceeds tolerance.
     - `linear_solve_failed`: Lineax reported an unsuccessful solve.
 
-    Compare `ExpectedVisitsResult.status` with these members. Solver failure
+    Compare [`ExpectedVisitsResult.status`][drifft.ExpectedVisitsResult] with these members. Solver failure
     takes precedence over nonfinite output, then residual nonconvergence.
     The original Lineax outcome is retained separately as `solver_status`.
     """
@@ -45,7 +45,7 @@ class ExpectedVisitsResult(NamedTuple):
 
     - `visits`: Float64 vector of expected interior visits, including generation
       zero. Entry zero corresponds to one mutant copy.
-    - `status`: `ExpectedVisitsStatus` for the complete calculation.
+    - `status`: [`ExpectedVisitsStatus`][drifft.ExpectedVisitsStatus] for the complete calculation.
     - `solver_status`, `stats`: Unmodified Lineax result code and iteration diagnostics.
       GMRES `num_steps` counts outer steps, not individual matrix-vector products.
     - `residual_norm`: Scalar infinity norm of $(I-Q^T)u-e_1$.
@@ -70,7 +70,7 @@ ExpectedVisitsResult.__new__.__doc__ = r"""Construct the result container withou
 
 - `visits`: Candidate float64 expected visits of length `2 * pop_size-1`,
   including generation zero. Index zero represents one mutant copy.
-- `status`: Complete calculation outcome, an `ExpectedVisitsStatus`.
+- `status`: Complete calculation outcome, an [`ExpectedVisitsStatus`][drifft.ExpectedVisitsStatus].
 - `solver_status`: Unmodified Lineax result code.
 - `stats`: Unmodified Lineax iteration diagnostics.
 - `residual_norm`: Infinity norm of $(I-Q^T)u-e_1$.
@@ -112,7 +112,7 @@ def _solve_expected_visits(
 
     **Returns:**
 
-    `ExpectedVisitsResult` with one candidate visit count per operator state.
+    [`ExpectedVisitsResult`][drifft.ExpectedVisitsResult] with one candidate visit count per operator state.
     Index zero is state one. `converged` includes an explicit residual check against
     `atol + rtol`, since the right-hand side has infinity norm one.
 

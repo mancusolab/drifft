@@ -42,8 +42,7 @@ def test_zero_generation_epoch_rejects_invalid_selection(strength, throw):
 def test_identity_demography_rejects_invalid_mutation_rate(rate):
     """An empty history retains the mutation-rate domain check under JIT."""
     model = drifft.DemographicTransition(
-        drifft.Demography([8], []),
-        backend_factory=drifft.FFT,
+        drifft.Demography([8], []).prepare(backend_factory=drifft.FFT),
         frequency_map=drifft.Neutral(),
     )
     initial = jnp.ones(15) / 15
@@ -56,8 +55,7 @@ def test_identity_demography_rejects_invalid_mutation_rate(rate):
 def test_singleton_input_requires_segregating_states():
     """Keep singleton-source input distinct from full-state recurrent mutation."""
     model = drifft.DemographicTransition(
-        drifft.Demography([4], []),
-        backend_factory=drifft.Dense,
+        drifft.Demography([4], []).prepare(backend_factory=drifft.Dense),
         frequency_map=drifft.Neutral(),
     )
     with pytest.raises(ValueError, match="requires segregating=True"):
