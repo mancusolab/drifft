@@ -11,6 +11,7 @@ import lineax as lx
 from .._backend import AbstractTransitionBackend, Jacobi
 from .._frequency import AbstractFrequencyMap
 from .._operator import Transition
+from .parameterized import _JacobiOperator
 from .problem import _epoch_inputs, _PowerProblem
 
 
@@ -113,18 +114,13 @@ def _prepare_jacobi(
             jax.ShapeDtypeStruct(seed.shape, seed.dtype)
         )
         return _PowerProblem(operator, seed, 0, decode, source, False, jnp.asarray(1.0))
-    matrix = backend._reduced_expectation(frequency_map, segregating=segregating)
-    matrix = matrix.T
+    encoded_source = None
     augmented = source_mass is not None
     if augmented:
         # Earlier source events must pass through the next encoding step. The
         # final event has no subsequent transition and is added in physical
         # coordinates by output_offset, outside the reduced power.
         encoded_source = backend._geometry.encode(source, frequency_map, segregating)
-        extended = jnp.zeros((seed.size + 1, seed.size + 1))
-        extended = extended.at[:-1, :-1].set(matrix)
-        extended = extended.at[:-1, -1].set(encoded_source)
-        matrix = extended.at[-1, -1].set(1)
         seed = jnp.concatenate((seed, jnp.ones(1)))
     defect_scale = (
         1 + (generations - 1) * jnp.sum(jnp.abs(source))
@@ -132,7 +128,7 @@ def _prepare_jacobi(
         else jnp.asarray(1.0)
     )
     return _PowerProblem(
-        lx.MatrixLinearOperator(matrix),
+        _JacobiOperator(backend, frequency_map, encoded_source, segregating),
         seed,
         generations - 1,
         decode,

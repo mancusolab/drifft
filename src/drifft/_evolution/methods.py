@@ -8,10 +8,12 @@ from typing import ClassVar, final
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import lineax as lx
 
 from .._backend import AbstractTransitionBackend
 from .._frequency import AbstractFrequencyMap
 from .autodiff import _cached_power_action, _power_action
+from .parameterized import _JacobiOperator, parameterized_power
 from .preparation import _prepare_epoch, _prepare_transition, validate_representation
 from .problem import (
     EpochProblem,
@@ -404,10 +406,26 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         # A**g x. Stop its AD path and attach that mathematical rule to the cached
         # value below, retaining the primal diagnostics without a second projection.
         raw_problem = eqx.combine(jax.tree.map(jax.lax.stop_gradient, arrays), static)
+        if isinstance(raw_problem.operator, _JacobiOperator):
+            raw_problem = eqx.tree_at(
+                lambda p: p.operator,
+                raw_problem,
+                lx.MatrixLinearOperator(raw_problem.operator.as_matrix()),
+            )
         projection = project(raw_problem, self.dimension, polynomial=self._polynomial)
-        fine = _cached_power_action(
-            self, problem.operator, problem.initial, problem.steps, projection.fine
-        )
+        if isinstance(problem.operator, _JacobiOperator):
+            fine = parameterized_power(
+                self,
+                problem.operator,
+                problem.initial,
+                problem.steps,
+                projection.fine,
+                raw_problem.operator.as_matrix(),
+            )
+        else:
+            fine = _cached_power_action(
+                self, problem.operator, problem.initial, problem.steps, projection.fine
+            )
         return _projected_result(
             problem, projection._replace(fine=fine), self.rtol, self.atol, throw
         )

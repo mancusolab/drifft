@@ -151,15 +151,22 @@ def test_sequential_second_derivative_matches_dense(backward):
 
 
 @pytest.mark.parametrize("backward", [False, True])
-def test_krylov_higher_parameter_derivatives_raise(backward):
+@pytest.mark.parametrize(
+    "backend,method",
+    [
+        (drifft.FFT, drifft.PolynomialKrylov(dimension=12)),
+        (drifft.Jacobi, drifft.RationalKrylov(dimension=12)),
+    ],
+)
+def test_krylov_higher_parameter_derivatives_raise(backward, backend, method):
     """The demographic boundary must not bypass the epoch sensitivity restriction."""
-    geometry = drifft.Demography([3, 2], [4]).prepare(backend_factory=drifft.FFT)
+    geometry = drifft.Demography([3, 2], [4]).prepare(backend_factory=backend)
 
     def action(s):
         model = drifft.DemographicTransition(
             geometry,
             drifft.AdditiveSelection(s),
-            method=drifft.PolynomialKrylov(dimension=12),
+            method=method,
         )
         if backward:
             return model.expect(jnp.arange(5.0)).values.sum()
@@ -291,11 +298,16 @@ def test_source_offset_pullback_matches_dense(method, rate):
 
 
 @pytest.mark.parametrize(
-    "method", [drifft.Sequential(), drifft.PolynomialKrylov(dimension=16)]
+    "backend,method",
+    [
+        (drifft.FFT, drifft.Sequential()),
+        (drifft.FFT, drifft.PolynomialKrylov(dimension=16)),
+        (drifft.Jacobi, drifft.RationalKrylov(dimension=16)),
+    ],
 )
-def test_batched_jvp_and_pullback_pairing(method):
+def test_batched_jvp_and_pullback_pairing(backend, method):
     """Tangent-only batching and parameter pullbacks obey the dense pairing."""
-    geometry = drifft.Demography([3, 2, 4], [3, 2]).prepare(backend_factory=drifft.FFT)
+    geometry = drifft.Demography([3, 2, 4], [3, 2]).prepare(backend_factory=backend)
     parameters = jnp.array([0.03, 0.01, 0.02, 0.001])
     mass = jnp.linspace(0.01, 0.2, 5)
     directions = jnp.array([[0.2, -0.1, 0.3, 0.02], [-0.3, 0.4, 0.1, -0.01]])
@@ -327,9 +339,12 @@ def test_batched_jvp_and_pullback_pairing(method):
 
 
 @pytest.mark.parametrize("reverse", [False, True])
-def test_demographic_sensitivity_failure_raises_after_successful_primal(reverse):
+@pytest.mark.parametrize("backend", [drifft.FFT, drifft.Jacobi])
+def test_demographic_sensitivity_failure_raises_after_successful_primal(
+    reverse, backend
+):
     """An absorbing primal can converge while its mutation sensitivity is unresolved."""
-    geometry = drifft.Demography([8, 5], [20]).prepare(backend_factory=drifft.FFT)
+    geometry = drifft.Demography([8, 5], [20]).prepare(backend_factory=backend)
     initial = jnp.eye(17)[0]
 
     def result(rate):

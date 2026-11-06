@@ -145,3 +145,70 @@ Backward parameter-linearization experiment (completed, uncommitted):
   large SD storage separately. Full measurements, limitations, and reproduction
   scripts: `/tmp/drifft-expect-linearization/REPORT.md`.
 - User-owned demo.tsv remains untouched. No commit made for this experiment.
+
+Parameterized Jacobi operator experiment (in progress, 2026-11-05):
+- User authorized implementation and testing without permission requests; no new
+  commit or push requested. Baseline is bb87e5d, saved under
+  `/tmp/drifft-parameter-operator/baseline`.
+- Keep ordinary prepared Lineax operators as Equinox PyTrees; defer Jacobi
+  assembly until the numerical solve. The private power primitive consumes an
+  opaque HiType with a matrix cache and process/source-vector tangent space.
+- Contract low-rank power adjoints directly into process parameters by streamed
+  directional assembly; use an analytic contraction for encoded source columns.
+  Retain mathematical rules, convergence checks, and higher-order limitations.
+- Verify independent dense history derivatives, prepared custom solvers, shared
+  operator accumulation, JIT, vmap in both AD orders, and compact cotangent shape.
+- Compare current source, baseline, and assembly checkpointing in fresh serial
+  workers. Use the previously selected smaller SD half and guard allocations.
+  Benchmark files live in `/tmp`, outside the documentation build cache.
+
+Parameterized operator implementation and measurements:
+- Implemented a private lazy Lineax adapter, native operator HiType, parameter
+  power/JVP/adjoint primitives, and a compact process/source cotangent space.
+  Prepared custom solvers retain ordinary differentiable `mv`/`as_matrix` and
+  Lineax materialization/solve behavior. Public API and mathematical AD targets
+  remain unchanged.
+- Dense-reference and direct-power tests cover shared operator accumulation,
+  sources, both orientations, parameter-only and joint gradients, tangent-only
+  batching, mapped gradients, nested parameter grids, and custom Lineax solves.
+  Added native-path coverage for higher-order rejection and sensitivity failures.
+- Nested mapping initially failed because HiJAX shifts mapping specs with axis
+  arithmetic. The mapping spec now records/shifts its payload axis; nested
+  primal and gradient tests pass. No dependency/environment changes were made.
+- All 52 initial focused tests passed; 15 follow-up edge cases passed; the added
+  nested-gradient check passed. Ruff, formatting, ty, and strict docs build pass.
+  The complete 910-test suite is running; final outcome follows below.
+- Smaller SD half (26 intervals, 5672 -> 252 generations ago), fresh serial CPU
+  workers, dimension256, rtol1e-9/atol1e-11, two warm samples:
+  baseline 34.786 s / 5.973 GiB compiler temporaries / 5.521 GiB peak RSS;
+  HiType 44.067 s / 2.799 GiB / 5.857 GiB;
+  coarse assembly checkpointing 36.740 s / 7.298 GiB / 5.695 GiB.
+  Maximum relative HiType gradient difference is 5.28e-11. This establishes a
+  temporary-storage/runtime tradeoff, not a physical peak-memory improvement.
+- Small source-inclusive parameter gradients: 16.128 -> 25.816 ms, temporaries
+  5,744,032 -> 2,542,848 bytes; joint gradients: 27.815 -> 33.803 ms,
+  temporaries 8,036,192 -> 4,984,512 bytes. Four-direction forward mode:
+  46.372 -> 49.091 ms, temporaries 8,720,848 -> 8,561,288 bytes.
+- Raw timings, source controls, scripts, outputs, and methodology are preserved
+  in `/tmp/drifft-parameter-operator/REPORT.md`. Recomputing process directions
+  is the present speed cost; HiType wrapping alone is not the memory optimization.
+  Changes remain uncommitted for review. User-owned demo.tsv is untouched.
+
+Final verification for the parameterized operator experiment:
+- `pytest -p no:capture -q`: 910 passed in 579.40 s.
+- Ruff checks and formatting, ty, strict Zensical build, and diff whitespace
+  checks pass. Direct review covered logical versus numerical payloads,
+  source/transposed contractions, parameter reconstruction, geometry exclusion,
+  custom solver compatibility, symbolic zeros and batching. No remaining
+  correctness finding was identified within the tested scope.
+- The candidate is a storage/runtime tradeoff: approximately 53% lower compiler
+  temporary storage and 27% slower warm SD gradients, with slightly higher
+  measured process peak RSS. Keep this distinction when deciding whether to
+  adopt the experiment; the current directional contraction is not a speed win.
+- Preserved the final implementation source under
+  `/tmp/drifft-parameter-operator/candidate/src` alongside baseline/checkpoint
+  controls. No commit, push, environment change, or permission request was made.
+
+Adoption decision (2026-11-06):
+- User accepted the measured storage/runtime tradeoff and requested committing
+  the implementation on demo_primitive. Preserve the benchmark limitations above.
