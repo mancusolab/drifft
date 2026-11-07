@@ -10,7 +10,7 @@ This boundary matters for differentiation: encoding, the working operator and
 source terms can all depend on process parameters. Keeping those dependencies
 in the prepared problem lets ordinary AD compose them with the mathematical
 power rules in `autodiff.py`. Backward epoch expectation transposes the affine
-preparation/reconstruction in `_demographic_action.py`, including its offsets.
+preparation/reconstruction in `_demography/actions.py`, including its offsets.
 
 Generic backends use a one-generation [`Transition`][drifft.Transition] action.
 Jacobi uses a reduced representation: its encoding already includes one selected

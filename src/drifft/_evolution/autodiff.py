@@ -29,7 +29,7 @@ and opaque HiTypes need separate bindings because their tangent and batching
 structures differ; they share the method's checked sensitivity capabilities.
 Preparation and reconstruction remain outside the power boundary, so their
 parameter dependence is included by the enclosing history chain rule in
-`_demographic_action.py`.
+`_demography/autodiff.py`.
 
 Sequential supports higher derivatives where the underlying operations do.
 Further differentiation through Krylov sensitivity/pullback primitives is

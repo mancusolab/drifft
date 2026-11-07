@@ -109,7 +109,15 @@ The private implementation is organized by responsibility:
 | `_evolution/sensitivity.py` | Mathematical power sensitivities and operator pullbacks |
 | `_evolution/autodiff.py` | HiJAX integration for operator powers |
 | `_evolution/methods.py` | Public method configuration and orchestration |
-| `_demography.py` | Population-history chronology and boundary transitions |
+| `_demography/geometry.py` | Population schedules and reusable hold/boundary geometry |
+| `_demography/transition.py` | Public demographic transition API and input validation |
+| `_demography/actions.py` | Forward/backward history traversal and numerical result containers |
+| `_demography/autodiff.py` | HiJAX integration and mathematical history derivative rules |
+
+Demographic transitions call the autodiff layer, which wraps the history actions.
+Actions own their result containers and do not import the transition class or
+autodiff layer. Keep these imports one-way; the `_demography` package re-exports
+the public classes without defining execution logic.
 
 Projection and sensitivity kernels do not import backends. Preparation owns
 the representation boundary; Sequential uses the one-generation transition,

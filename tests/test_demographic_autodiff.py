@@ -490,7 +490,7 @@ def test_symbolic_zero_action_cotangent_skips_pullback_work(
     import equinox.internal as eqxi
     from jax.experimental import hijax
 
-    import drifft._demographic_action as actions
+    import drifft._demography.autodiff as actions
 
     geometry = drifft.Demography([3, 2], [3]).prepare(backend_factory=drifft.FFT)
     model = drifft.DemographicTransition(geometry, drifft.AdditiveSelection(0.03))
