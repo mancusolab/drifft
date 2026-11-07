@@ -188,8 +188,10 @@ class DemographicTransition(eqx.Module):
         `ValueError` for invalid shapes, flags, or singleton input in full-state
         mode. Invalid rates or process domains raise even with `throw=False`.
         Primal numerical failures raise with `throw=True` and return status
-        with false. Sensitivity and pullback failures raise even with
-        `throw=False`. Higher-order Krylov operator sensitivities raise explicitly.
+        with false. Sensitivity inner-solve failures and nonfinite outputs raise
+        even with `throw=False`; additional Krylov sensitivity-error checks are
+        opt-in via the method's `check_sensitivity=True` setting. Higher-order
+        Krylov operator sensitivities raise explicitly.
         """
         distribution, rate = _singleton_inputs(
             distribution, segregating, singleton_mutation_rate
@@ -273,8 +275,10 @@ class DemographicTransition(eqx.Module):
         **Raises:**
 
         `ValueError` for incompatible shapes, nonboolean flags, invalid source
-        configuration. Numerical convergence and sensitivity failures raise at
-        runtime. Higher-order Krylov operator sensitivities raise explicitly.
+        configuration. Numerical convergence and sensitivity numerical failures
+        raise at runtime; extra sensitivity-error checks apply only when the
+        method sets `check_sensitivity=True`. Higher-order Krylov operator
+        sensitivities raise explicitly.
         Invalid rate values raise at runtime, including for identity histories.
         Input finiteness is a caller
         precondition, as for [`Transition.expect`][drifft.Transition.expect].

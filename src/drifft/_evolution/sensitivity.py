@@ -91,6 +91,7 @@ def _frechet_power(
     rtol,
     atol,
     polynomial,
+    check_error=True,
 ):
     """Approximate the power sensitivity by a coupled block operator action.
 
@@ -101,6 +102,8 @@ def _frechet_power(
     twice that budget. `polynomial` selects polynomial rather than rational
     projection. Both output blocks must satisfy their own `atol + rtol * L1`
     tolerance, so a large primal cannot mask an inaccurate tangent.
+    With `check_error=False`, skip error estimation and retain only inner-solve
+    and finite-output checks; the returned error estimate is zero (not computed).
     """
     if steps == 0:
         return _epoch_result(tangent_initial, jnp.asarray(0.0), atol, False)
@@ -146,6 +149,10 @@ def _frechet_power(
         shifted_solve=shifted_solve,
     )
     fine = projection.fine
+    if not check_error:
+        # Check both blocks even though only the tangent is returned.
+        result = _epoch_result(fine, jnp.asarray(0.0), 0.0, False, projection.success)
+        return result._replace(distribution=result.distribution[:size])
     # Require the combined error to satisfy each output block's tolerance. A large
     # primal must not mask an inaccurate, small sensitivity. This remains an estimate.
     tolerance = jnp.minimum(
@@ -184,7 +191,16 @@ def _frechet_core(left_matrix, right_matrix, left_seed, right_seed, steps):
 
 
 def _frechet_adjoint_factors(
-    operator, initial, cotangent, steps, *, dimension, rtol, atol, polynomial
+    operator,
+    initial,
+    cotangent,
+    steps,
+    *,
+    dimension,
+    rtol,
+    atol,
+    polynomial,
+    check_error=True,
 ):
     """Approximate the operator pullback as left @ right.T without forming it.
 
@@ -196,6 +212,8 @@ def _frechet_adjoint_factors(
     compares the error estimate with `atol + rtol * norm(core)`, where `core`
     is the projected adjoint and the norm is Frobenius. Return the two factors,
     error estimate, and convergence flag; callers decide how to handle failure.
+    With `check_error=False`, skip error estimation and retain only inner-solve
+    and finite-factor checks; the returned error estimate is zero (not computed).
     """
     if steps == 0:
         empty = jnp.zeros((initial.size, 0), dtype=initial.dtype)
@@ -211,6 +229,11 @@ def _frechet_adjoint_factors(
     h, j = left_projection.projected, right_projection.projected
     c, x = left_projection.coordinates, right_projection.coordinates
     core = _frechet_core(h, j, c, x, steps)
+    left = u @ core
+    finite = jnp.all(jnp.isfinite(left)) & jnp.all(jnp.isfinite(v))
+    numerical_success = left_projection.success & right_projection.success & finite
+    if not check_error:
+        return left, v, jnp.asarray(0.0), numerical_success
     full = u.shape[1] == initial.size and v.shape[1] == initial.size
     exact_polynomial = polynomial and min(u.shape[1], v.shape[1]) >= steps
     if full or exact_polynomial:
@@ -262,16 +285,11 @@ def _frechet_adjoint_factors(
         + left_norms * right_errors[::-1]
     )
     error = jnp.maximum(error, recurrence_error)
-    left = u @ core
     # Zero columns at invariant-subspace breakdown need no completion: the seed's
     # orbit is represented by the remaining basis columns on each side.
-    finite = (
-        jnp.all(jnp.isfinite(left)) & jnp.all(jnp.isfinite(v)) & jnp.isfinite(error)
-    )
     converged = (
-        left_projection.success
-        & right_projection.success
-        & finite
+        numerical_success
+        & jnp.isfinite(error)
         & (error <= atol + rtol * jnp.linalg.norm(core))
     )
     return left, v, error, converged

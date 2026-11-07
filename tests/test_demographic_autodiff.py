@@ -351,7 +351,7 @@ def test_demographic_sensitivity_failure_raises_after_successful_primal(
         model = drifft.DemographicTransition(
             geometry,
             drifft.Mutation(rate, 0.0),
-            method=drifft.PolynomialKrylov(dimension=2),
+            method=drifft.PolynomialKrylov(dimension=2, check_sensitivity=True),
         )
         return model.advance(initial, throw=False)
 

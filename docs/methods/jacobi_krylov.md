@@ -99,6 +99,7 @@ action still inherits any error in the underlying transition backend.
 | --- | --- |
 | `dimension` | Maximum retained Krylov basis size |
 | `rtol`, `atol` | Acceptance threshold for the power-action estimate |
+| `check_sensitivity` | Static bool, default false; opt into additional operator-sensitivity and pullback error-estimate checks |
 | `throw` on application | Raise on numerical failure or return status for inspection |
 
 The estimate combines a smaller-basis comparison with a recurrence-defect check.

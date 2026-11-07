@@ -94,7 +94,11 @@ the function, then create or update the frequency map inside it; the
 shows this pattern with `jax.grad`.
 
 Krylov operator sensitivities support first derivatives; use Sequential for
-higher-order calculations. Sensitivity failures raise even with `throw=False`.
+higher-order calculations. Sensitivity inner-solve failures and nonfinite outputs
+raise even with `throw=False`. Set `check_sensitivity=True` on a Krylov method
+to additionally enforce its heuristic sensitivity-error checks; the default is
+`False`. This flag does not change primal convergence checks or guarantee
+gradient accuracy.
 See the [autodiff accuracy contract](../methods/autodiff.md#accuracy-and-limitations)
 for the derivative targets and limitations.
 

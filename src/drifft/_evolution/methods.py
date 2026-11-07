@@ -115,7 +115,8 @@ class AbstractEpochMethod(eqx.Module):
 
         Runtime errors for numerical failure with `throw=True`. A failed batch
         member may fail the entire call. For the built-in Krylov methods,
-        sensitivity failures raise even with `throw=False`, and higher-order
+        sensitivity numerical failures (and heuristic failures when
+        `check_sensitivity=True`) raise even with `throw=False`, and higher-order
         operator sensitivities are unsupported. Custom methods define their own
         differentiation and batching behavior.
         """
@@ -183,7 +184,9 @@ class AbstractEpochMethod(eqx.Module):
 
         `TypeError` for unsupported combinations; `ValueError` for static input errors.
         Runtime domain checks remain active even with `throw=False`; Krylov
-        sensitivity failures also raise independently of `throw`. [`Sequential`][drifft.Sequential]
+        sensitivity numerical failures also raise independently of `throw`; their
+        extra error-estimate checks are opt-in via `check_sensitivity=True`.
+        [`Sequential`][drifft.Sequential]
         supports higher derivatives; higher-order Krylov operator sensitivities
         are unsupported.
 
@@ -373,9 +376,12 @@ class AbstractKrylovMethod(AbstractEpochMethod):
     dimension: int = 64
     rtol: float = 1e-8
     atol: float = 1e-12
+    check_sensitivity: bool = eqx.field(static=True, default=False)
 
     def __check_init__(self) -> None:
         """Validate static algorithm settings before preparing any geometry."""
+        if not isinstance(self.check_sensitivity, bool):
+            raise ValueError("check_sensitivity must be a Python bool")
         if (
             isinstance(self.dimension, bool)
             or not isinstance(self.dimension, int)
@@ -423,7 +429,7 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         )
 
     def _sensitivity_action(self, operator, perturbation, initial, tangent, steps):
-        """Evaluate the projected power direction and require sensitivity convergence."""
+        """Check numerical failures and optionally the sensitivity error estimate."""
         result = _frechet_power(
             operator,
             perturbation,
@@ -434,6 +440,7 @@ class AbstractKrylovMethod(AbstractEpochMethod):
             rtol=self.rtol,
             atol=self.atol,
             polynomial=self._polynomial,
+            check_error=self.check_sensitivity,
         )
         return eqx.error_if(
             result.distribution,
@@ -452,6 +459,7 @@ class AbstractKrylovMethod(AbstractEpochMethod):
             rtol=self.rtol,
             atol=self.atol,
             polynomial=self._polynomial,
+            check_error=self.check_sensitivity,
         )
         left = eqx.error_if(
             left,
@@ -477,7 +485,9 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         **Raises:**
 
         Runtime errors for failed primal checks with `throw=True`, or failed
-        sensitivities regardless of `throw`. Higher-order operator sensitivities
+        sensitivity solves/nonfinite outputs regardless of `throw`. Additional
+        sensitivity-error checks raise only with `check_sensitivity=True`.
+        Higher-order operator sensitivities
         raise explicitly; use [`Sequential`][drifft.Sequential] when they are needed.
         """
         if not isinstance(problem, _PowerProblem):
@@ -581,10 +591,15 @@ Supply transition geometry separately.
   capped by the prepared working-state dimension.
 - `rtol`, `atol`: Finite nonnegative relative and absolute tolerances for the
   power-action error estimate; these do not control backend approximation.
+- `check_sensitivity`: Static Python bool, default `False`. When true, also
+  require operator-sensitivity and operator-pullback error estimates to satisfy
+  these tolerances. Inner-solve failures and nonfinite derivative outputs always
+  raise, independently of `throw`. Disabling the heuristic does not certify
+  derivative accuracy or disable ordinary power-action convergence checks.
 
 **Raises:**
 
-`ValueError` for invalid dimension or tolerances.
+`ValueError` for invalid dimension, tolerances, or a nonboolean sensitivity flag.
 """
 AbstractKrylovMethod.__init__.__doc__ = _krylov_init_doc
 RationalKrylov.__init__.__doc__ = _krylov_init_doc

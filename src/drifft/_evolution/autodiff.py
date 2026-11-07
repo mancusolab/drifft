@@ -278,7 +278,7 @@ class _FrechetAction(hijax.HiPrim):
         super().__init__()
 
     def expand(self, *args):
-        """Evaluate the coupled sensitivity and enforce tangent convergence."""
+        """Evaluate the coupled sensitivity using the method's check policy."""
         operator, initial, t_operator, t_initial, steps, method = eqx.combine(
             args, cast(tuple, self.params["static"])
         )

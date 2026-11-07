@@ -153,8 +153,14 @@ errors. Their pairings agree up to approximation error. A successful primal
 calculation does not certify an accurate gradient, and the numerical error
 estimates do not include backend error or provide rigorous error bounds.
 
-A failed sensitivity or pullback raises even with `throw=False`; a failing
-member under `vmap` can fail the batch. There is no automatic fallback.
+Krylov methods default to `check_sensitivity=False`: operator sensitivities and
+operator pullbacks reject inner-solve failures and nonfinite outputs, but skip
+the additional heuristic error estimates. Set `check_sensitivity=True` on the
+method to require those estimates to satisfy `rtol` and `atol` as well. These
+derivative failures raise even with `throw=False`; a failing member under `vmap`
+can fail the batch. Ordinary power-action checks, including state-only derivative
+actions, remain unchanged. Successful execution does not certify gradient
+accuracy. There is no automatic fallback.
 Numerical diagnostics and status fields are not differentiation targets.
 Zero inputs and zero source rates retain their mathematical derivatives.
 

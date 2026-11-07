@@ -289,14 +289,17 @@ def test_public_operator_rules_validate_truncated_jvp_and_vjp(method_type):
     "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
 )
 @pytest.mark.parametrize("reverse", [False, True])
-def test_derivative_nonconvergence_raises_even_with_throw_false(method_type, reverse):
-    """Primal status cannot suppress an unsuccessful sensitivity or pullback."""
+@pytest.mark.parametrize("check_sensitivity", [False, True])
+def test_derivative_nonconvergence_is_optional(method_type, reverse, check_sensitivity):
+    """Only strict sensitivity checks reject finite underresolved derivatives."""
     from drifft._evolution.problem import _working_problem
 
     size, steps = 48, 400
     diagonal = jnp.linspace(0.99, 0.9995, size)
     spec = jax.ShapeDtypeStruct((size,), jnp.float64)
-    method = method_type(dimension=2, rtol=1e-8, atol=1e-11)
+    method = method_type(
+        dimension=2, rtol=1e-8, atol=1e-11, check_sensitivity=check_sensitivity
+    )
     initial = jnp.cos(jnp.arange(size) * 0.3)
     weights = jnp.sin(jnp.arange(size) * 0.4)
 
@@ -314,11 +317,14 @@ def test_derivative_nonconvergence_raises_even_with_throw_false(method_type, rev
         if reverse
         else lambda x: jax.jvp(objective, (x,), (jnp.asarray(1.0),))[1]
     )
-    with pytest.raises(
-        Exception,
-        match="Krylov (sensitivity action|operator pullback) did not converge",
-    ):
-        jax.block_until_ready(eqx.filter_jit(fn)(jnp.asarray(1.0)))
+    if check_sensitivity:
+        with pytest.raises(
+            Exception,
+            match="Krylov (sensitivity action|operator pullback) did not converge",
+        ):
+            jax.block_until_ready(eqx.filter_jit(fn)(jnp.asarray(1.0)))
+    else:
+        assert jnp.isfinite(eqx.filter_jit(fn)(jnp.asarray(1.0)))
 
 
 @pytest.mark.parametrize(
@@ -362,7 +368,9 @@ def test_adjoint_estimate_detects_delayed_propagation(method_type, dimension, ac
     initial = jnp.eye(size)[0]
     cotangent = jnp.eye(size)[6]
     perturbation = jnp.zeros_like(matrix).at[1, 0].set(1.0)
-    method = method_type(dimension=dimension, rtol=1e-8, atol=1e-12)
+    method = method_type(
+        dimension=dimension, rtol=1e-8, atol=1e-12, check_sensitivity=True
+    )
     operator = lx.MatrixLinearOperator(matrix)
     primal = method.solve(_working_problem(operator, initial, steps), throw=False)
     assert primal.converged
@@ -449,3 +457,70 @@ def test_truncated_jacobi_likelihood_gradient_matches_sequential_fft(method_type
     )(parameters)
     assert jnp.allclose(actual[0], expected[0], atol=2e-12, rtol=2e-10)
     assert jnp.allclose(actual[1], expected[1], atol=2e-9, rtol=2e-8)
+
+
+@pytest.mark.parametrize(
+    "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
+)
+def test_sensitivity_check_is_static_and_opt_in(method_type):
+    """The flag belongs to method structure rather than differentiable leaves."""
+    default = method_type()
+    strict = method_type(check_sensitivity=True)
+    assert default.check_sensitivity is False
+    assert strict.check_sensitivity is True
+    assert jax.tree.structure(default) != jax.tree.structure(strict)
+    for invalid in (1, None, jnp.asarray(True)):
+        with pytest.raises(ValueError, match="check_sensitivity must be a Python bool"):
+            method_type(check_sensitivity=invalid)
+
+
+@pytest.mark.parametrize("check_sensitivity", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_sensitivity_flag_preserves_inner_solve_failure(check_sensitivity, reverse):
+    """A singular shifted solve remains a hard failure without heuristic checks."""
+    method = drifft.RationalKrylov(dimension=2, check_sensitivity=check_sensitivity)
+    # steps=1 gives shift=1/8; eigenvalue 9 makes I + shift*(I-A) singular.
+    operator = lx.MatrixLinearOperator(jnp.diag(jnp.array([9.0, 0.5, 0.8])))
+    seed = jnp.ones(3)
+    with pytest.raises(
+        Exception, match="Krylov (sensitivity action|operator pullback)"
+    ):
+        if reverse:
+            jax.block_until_ready(
+                eqx.filter_jit(method._sensitivity_adjoint_factors)(
+                    operator, seed, seed, 1
+                )
+            )
+        else:
+            jax.block_until_ready(
+                eqx.filter_jit(method._sensitivity_action)(
+                    operator, operator, seed, seed, 1
+                )
+            )
+
+
+@pytest.mark.parametrize(
+    "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_unchecked_sensitivity_rejects_nonfinite_output(method_type, reverse):
+    """Disabling error estimates must not allow nonfinite derivative output."""
+    method = method_type(dimension=2, check_sensitivity=False)
+    operator = lx.MatrixLinearOperator(jnp.diag(jnp.array([0.5, 0.8, 0.9])))
+    seed = jnp.ones(3)
+    bad = seed.at[0].set(jnp.nan)
+    with pytest.raises(
+        Exception, match="Krylov (sensitivity action|operator pullback)"
+    ):
+        if reverse:
+            jax.block_until_ready(
+                eqx.filter_jit(method._sensitivity_adjoint_factors)(
+                    operator, seed, bad, 2
+                )
+            )
+        else:
+            jax.block_until_ready(
+                eqx.filter_jit(method._sensitivity_action)(
+                    operator, operator, seed, bad, 2
+                )
+            )
