@@ -94,9 +94,10 @@ class Demography(eqx.Module):
         **Arguments:**
 
         - `backend_factory`: Factory receiving each distinct diploid population
-          size. Use `functools.partial` to supply backend settings.
+          size needed for a hold. Use `functools.partial` to supply backend settings.
         - `boundary_backend_factory`: Optional factory for rectangular boundary
-          transitions. Defaults to the hold factory, sharing its geometry.
+          transitions, prepared only for destination sizes. Defaults to the hold
+          factory, sharing geometry for sizes used in both roles.
 
         **Returns:**
 
@@ -269,9 +270,10 @@ class DemographicGeometry(eqx.Module):
     Backend approximation domains still constrain the processes used with it.
 
     `geometry[size]` returns the shared epoch backend for a diploid population
-    size. Iteration yields distinct prepared sizes, and `len(geometry)` counts
-    them. These operations exclude boundary backends and do not traverse the
-    chronological schedule; use `geometry.demography` for that schedule.
+    size used by a constant-size hold (an interval longer than one generation).
+    Iteration and `len(geometry)` expose only these hold sizes, excluding
+    boundary-only sizes. An identity history prepares no backends. Use
+    `geometry.demography` for the full chronological schedule.
     """
 
     demography: Demography
@@ -286,7 +288,7 @@ class DemographicGeometry(eqx.Module):
         boundary_backend_factory: Callable[[int], AbstractTransitionBackend]
         | None = None,
     ) -> None:
-        """Prepare one backend per distinct size; prefer [`Demography.prepare`][drifft.Demography.prepare]."""
+        """Prepare only scheduled holds and destinations; prefer [`Demography.prepare`][drifft.Demography.prepare]."""
         if not isinstance(demography, Demography):
             raise TypeError("demography must be a Demography")
         if not callable(backend_factory):
@@ -296,9 +298,15 @@ class DemographicGeometry(eqx.Module):
         ):
             raise TypeError("boundary_backend_factory must be callable")
         self.demography = demography
-        self._backends = {
-            size: backend_factory(size) for size in dict.fromkeys(demography.pop_sizes)
-        }
+        hold_sizes = dict.fromkeys(
+            size
+            for size, duration in zip(
+                demography.pop_sizes[:-1], demography.generations, strict=True
+            )
+            if duration > 1
+        )
+        boundary_sizes = dict.fromkeys(demography.pop_sizes[1:])
+        self._backends = {size: backend_factory(size) for size in hold_sizes}
         for size, geometry in self._backends.items():
             if not isinstance(geometry, AbstractTransitionBackend):
                 raise TypeError(
@@ -312,23 +320,29 @@ class DemographicGeometry(eqx.Module):
             boundary_backend_factory is None
             or boundary_backend_factory is backend_factory
         ):
-            self._boundary_backends = self._backends
+            self._boundary_backends = {
+                size: self._backends[size]
+                if size in self._backends
+                else backend_factory(size)
+                for size in boundary_sizes
+            }
         else:
             self._boundary_backends = {
-                size: boundary_backend_factory(size) for size in self._backends
+                size: boundary_backend_factory(size) for size in boundary_sizes
             }
 
     def __getitem__(self, pop_size: int) -> AbstractTransitionBackend:
         """Return the prepared epoch backend for a concrete diploid population size.
 
         The key is a population size, not an interval index. Repeated sizes
-        share one backend. Boundary backends are separate and are not returned.
-        An unprepared size raises `KeyError`; lookup does not prepare geometry.
+        with holds share one backend. Boundary-only sizes are not returned, even
+        when factories are shared. A size without a hold raises `KeyError`;
+        lookup does not prepare geometry.
         """
         return self._backends[pop_size]
 
     def __iter__(self) -> Iterator[int]:
-        """Iterate distinct prepared population-size keys, not chronological epochs.
+        """Iterate distinct hold population sizes, not chronological epochs.
 
         Use `demography.pop_sizes` and `demography.generations` for the ordered
         schedule, including repeated sizes. Iteration order here is unspecified.
@@ -336,7 +350,7 @@ class DemographicGeometry(eqx.Module):
         return iter(self._backends)
 
     def __len__(self) -> int:
-        """Return the number of distinct prepared sizes, not the interval count."""
+        """Return the number of distinct hold sizes, not the interval count."""
         return len(self._backends)
 
     def __check_init__(self) -> None:
@@ -416,7 +430,7 @@ class DemographicTransition(eqx.Module):
         **Raises:**
 
         `TypeError` for invalid geometry, frequency maps, methods, or unsupported
-        method/backend/process combinations, including histories without holds.
+        method/backend/process combinations for the scheduled holds.
         """
         if not isinstance(geometry, DemographicGeometry):
             raise TypeError(

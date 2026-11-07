@@ -56,8 +56,8 @@ def test_method_reuses_settings_across_population_sizes():
 @pytest.mark.parametrize(
     "history", [drifft.Demography([8], []), drifft.Demography([8, 5], [1])]
 )
-def test_jacobi_default_boundary_and_reduced_map_validation_without_holds(history):
-    """Reject invalid combinations even when no hold would execute."""
+def test_jacobi_default_boundary_without_holds(history):
+    """Boundary-only histories need no reduced-assembly map restrictions."""
     model = drifft.DemographicTransition(
         history.prepare(backend_factory=drifft.Jacobi),
         method=drifft.RationalKrylov(),
@@ -66,14 +66,14 @@ def test_jacobi_default_boundary_and_reduced_map_validation_without_holds(histor
     initial = jnp.eye(17)[1]
     expected = initial if not history.generations else dense_transition(8, 5, 0)[1]
     assert jnp.allclose(model.advance(initial).distribution, expected, atol=2e-12)
-    with pytest.raises(TypeError, match="diploid selection"):
-        drifft.DemographicTransition(
-            history.prepare(
-                backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
-            ),
-            method=drifft.RationalKrylov(),
-            frequency_map=drifft.FrequencyMap(lambda x: x),
-        )
+    custom = drifft.DemographicTransition(
+        history.prepare(
+            backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+        ),
+        method=drifft.RationalKrylov(),
+        frequency_map=drifft.FrequencyMap(lambda x: x),
+    )
+    assert jnp.allclose(custom.advance(initial).distribution, expected, atol=2e-12)
 
 
 def test_failed_power_status_survives_demography_and_batching():
@@ -126,9 +126,9 @@ def test_inner_shifted_solve_failure_is_reported():
     assert result.status == drifft.EvolutionStatus.linear_solve_failed
 
 
-@pytest.mark.parametrize("generations", [[], [1]])
-def test_jacobi_domain_validation_survives_no_hold_histories(generations):
-    """Selection outside prepared geometry remains invalid without a hold action."""
+@pytest.mark.parametrize("generations", [[], [1], [2]])
+def test_jacobi_domain_validation_applies_only_to_scheduled_holds(generations):
+    """Validate reduced domains only when the history actually uses Jacobi holds."""
     sizes = [8] if not generations else [8, 5]
     model = drifft.DemographicTransition(
         drifft.Demography(sizes, generations).prepare(
@@ -137,8 +137,18 @@ def test_jacobi_domain_validation_survives_no_hold_histories(generations):
         method=drifft.RationalKrylov(),
         frequency_map=drifft.Underdominance(0.2),
     )
-    with pytest.raises(eqx.EquinoxRuntimeError, match="selection strength"):
-        model.advance(jnp.ones(17), throw=False).distribution.block_until_ready()
+    if generations == [2]:
+        with pytest.raises(eqx.EquinoxRuntimeError, match="selection strength"):
+            model.advance(jnp.ones(17), throw=False).distribution.block_until_ready()
+    else:
+        expected = (
+            jnp.ones(17)
+            if not generations
+            else jnp.ones(17) @ dense_transition(8, 5, 0.2)
+        )
+        result = model.advance(jnp.ones(17), throw=False)
+        assert result.converged
+        assert jnp.allclose(result.distribution, expected, atol=2e-12)
 
 
 def test_method_configuration_has_no_geometry_arrays():

@@ -125,7 +125,7 @@ def _advance_history(model, distribution, *, segregating, singleton_rate, throw)
     size = 2 * model.demography.initial_pop_size + (-1 if segregating else 1)
     if distribution.shape != (size,):
         raise ValueError(f"distribution must have {size} entries")
-    # Validate every prepared domain even for identity/boundary-only histories.
+    # Validate reduced domains only for the prepared constant-size holds.
     for size in model.geometry:
         distribution = validate_domain(
             model.geometry[size],

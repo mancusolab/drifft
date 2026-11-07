@@ -501,3 +501,52 @@ def test_geometry_lookup_and_iteration_use_distinct_population_sizes():
         geometry[0]  # Population-size keys are not positional indices.
     with pytest.raises(KeyError):
         geometry[5]
+
+
+@pytest.mark.parametrize(
+    "sizes,durations,holds,boundaries",
+    [
+        ([4, 3, 5], [1, 1], [], [3, 5]),
+        ([4, 3, 5], [10, 10], [4, 3], [3, 5]),
+        ([4, 3, 4, 5], [1, 2, 3], [3, 4], [3, 4, 5]),
+        ([4, 4], [1], [], [4]),
+        ([4], [], [], []),
+    ],
+)
+@pytest.mark.parametrize("sharing", ["separate", "explicit", "default"])
+def test_geometry_prepares_only_scheduled_roles(
+    sizes, durations, holds, boundaries, sharing
+):
+    """Skip unused geometry while sharing each needed size across compatible roles."""
+    hold_calls, boundary_calls = [], []
+
+    def hold_factory(size):
+        """Record hold-factory construction requests."""
+        hold_calls.append(size)
+        return drifft.Dense(size)
+
+    def boundary_factory(size):
+        """Record separate boundary-factory construction requests."""
+        boundary_calls.append(size)
+        return drifft.Dense(size)
+
+    factory = {"separate": boundary_factory, "explicit": hold_factory, "default": None}[
+        sharing
+    ]
+    geometry = drifft.Demography(sizes, durations).prepare(
+        backend_factory=hold_factory, boundary_backend_factory=factory
+    )
+    assert list(geometry) == holds
+    assert len(geometry) == len(holds)
+    assert list(geometry._boundary_backends) == boundaries
+    if sharing == "separate":
+        assert hold_calls == holds
+        assert boundary_calls == boundaries
+    else:
+        assert hold_calls == list(dict.fromkeys([*holds, *boundaries]))
+        assert boundary_calls == []
+        for size in set(holds) & set(boundaries):
+            assert geometry[size] is geometry._boundary_backends[size]
+    for size in set(sizes) - set(holds):
+        with pytest.raises(KeyError):
+            geometry[size]

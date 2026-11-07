@@ -730,7 +730,7 @@ class Jacobi(AbstractTransitionBackend):
     def _validate_parameters(
         self, distribution: jax.Array, frequency_map: AbstractFrequencyMap
     ) -> jax.Array:
-        """Check process parameters even for identity and boundary-only histories."""
+        """Check reduced-epoch process parameters, including zero-step epochs."""
         self._validate_reduced_map(frequency_map)
         if not isinstance(frequency_map, (Neutral, Underdominance)):
             components = (

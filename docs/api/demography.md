@@ -10,6 +10,13 @@ history. The resulting geometry can be shared across frequency maps and evolutio
 methods. Bind `frequency_map` and `method` when constructing a transition;
 parameter-dependent operators are evaluated using that bound process.
 
+Preparation builds hold backends only for source sizes whose intervals last more
+than one generation, and boundary backends only for destination sizes. When both
+roles use the same factory, a size used in both shares one backend. Identity
+histories prepare no backends. Lookup, iteration, and `len(geometry)` expose only
+hold sizes; lookup of a boundary-only size raises `KeyError`. Reduced-method
+compatibility and parameter-domain checks apply only to scheduled holds.
+
 ::: drifft.Demography
     options:
         members: [__init__, prepare]
