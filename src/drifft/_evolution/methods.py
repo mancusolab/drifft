@@ -353,7 +353,7 @@ No arguments. Supply geometry separately to `advance` or [`DemographicTransition
 
 
 class AbstractKrylovMethod(AbstractEpochMethod):
-    r"""Shared interface for polynomial and rational Krylov power approximations.
+    r"""Shared interface for polynomial and rational [Krylov](https://en.wikipedia.org/wiki/Krylov_subspace) power approximations.
 
     Krylov methods approximate a prepared power $A^k z$ in a smaller subspace,
     then reconstruct population mass. The concrete method determines how the
@@ -522,7 +522,7 @@ class AbstractKrylovMethod(AbstractEpochMethod):
 
 @final
 class RationalKrylov(AbstractKrylovMethod):
-    r"""Approximate a prepared power action in a Krylov space built by shifted solves:
+    r"""Approximate a prepared power action in a [Krylov space](https://en.wikipedia.org/wiki/Krylov_subspace) built by shifted solves:
 
     $$
     R=[I+\tau(I-A)]^{-1},\qquad\tau=k/8,\qquad
@@ -555,7 +555,7 @@ class RationalKrylov(AbstractKrylovMethod):
 
 @final
 class PolynomialKrylov(AbstractKrylovMethod):
-    r"""Approximate a prepared power action in a polynomial Krylov space:
+    r"""Approximate a prepared power action in a polynomial [Krylov space](https://en.wikipedia.org/wiki/Krylov_subspace):
 
     $$
     \mathcal K_m(A,z)=\operatorname{span}\{z,Az,\ldots,A^{m-1}z\},

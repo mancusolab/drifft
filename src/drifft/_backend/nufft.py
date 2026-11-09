@@ -19,7 +19,8 @@ from ._spectral import _evaluate, sample_bernstein
 
 @final
 class NUFFT(AbstractTransitionBackend):
-    r"""Approximate binomial expectations by a Chebyshev series evaluated with a NUFFT:
+    r"""Approximate binomial expectations by a Chebyshev series evaluated with a
+    [Non-uniform Fast Fourier Transform](https://en.wikipedia.org/wiki/Non-uniform_discrete_Fourier_transform#Nonuniform_fast_Fourier_transform) (NUFFT):
 
     $$
     (Pv)_i\approx\sum_{k=0}^L c_kT_k(1-2q_i)

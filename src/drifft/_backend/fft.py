@@ -133,7 +133,8 @@ class _FFTBucket(eqx.Module):
 
 @final
 class FFT(AbstractTransitionBackend):
-    r"""Evaluate binomial expectations by factoring local kernels into convolutions:
+    r"""Evaluate binomial expectations by factoring local kernels into convolutions
+    computed with the [Fast Fourier Transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform) (FFT):
 
     $$
     y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jv_j.

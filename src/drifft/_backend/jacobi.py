@@ -533,7 +533,8 @@ class _JacobiGeometry(eqx.Module):
 
 @final
 class Jacobi(AbstractTransitionBackend):
-    r"""Approximate binomial expectations with an endpoint interpolant and Jacobi expansion:
+    r"""Approximate binomial expectations with an endpoint interpolant and an expansion
+    in [Jacobi polynomials](https://en.wikipedia.org/wiki/Jacobi_polynomials):
 
     $$
     (Pv)_i\approx(1-q_i)v_0+q_iv_M
