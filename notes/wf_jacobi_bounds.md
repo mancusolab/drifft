@@ -22,6 +22,14 @@ The relevant basis is Jacobi with parameters $(1,1)$, equivalently Gegenbauer wi
 
 This note derives the ideal projection bound used by the current rank selector, gives separate bounds for sampled coefficients and padded assembly, and explains their implications for repeated transitions. The resulting sufficient rank is $O(\sqrt{M\log(M/\varepsilon)})$, capped at the exact finite dimension. A bound with a dimension-independent Gaussian prefactor is **not established here**. The larger sufficient rank is a limitation of the certificate, not a proof that the Jacobi approximation needs that many modes.
 
+Implementation update: `Jacobi` now accepts `atol` in place of the historical
+`one_step_tolerance` below. It uses (9), (13), and (14) to plan projection,
+quadrature, and sampled tails separately. The quadrature order is at least
+`rank + 32` and increases when (13) requires it. `error_report` keeps arithmetic
+uncertified; reduced assembly has a separate coefficient-space tolerance.
+Optional `grad_atol` planning uses the degree-$M$ angular Bernstein inequality
+with a caller-supplied parameter-domain angular-sensitivity bound.
+
 The implementation discussed is [src/drifft/_jacobi.py](../src/drifft/_jacobi.py), specifically `Jacobi`, `_choose_rank`, `_JacobiGeometry`, and `_assemble`. Sections 5–6 analyze neutral evolution and symmetric underdominance without recurrent mutation. Section 8 describes the extension to diploid selection composed with mutation and its separate assembly bound. Source mass is a separate affine forcing. All mathematical certificates below are in exact arithmetic unless an additional numerical error is stated explicitly.
 
 ## 1. Setup and notation

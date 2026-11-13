@@ -7,6 +7,13 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
+from ._accuracy import (
+    BackendErrorReport,
+    ErrorComponent,
+    _gradient_coordinate,
+    _validate_atol,
+    _validate_gradient,
+)
 from ._base import AbstractTransitionBackend
 
 
@@ -37,25 +44,60 @@ class Dense(AbstractTransitionBackend):
     """
 
     pop_size: int = eqx.field(static=True)
+    atol: float = eqx.field(static=True)
+    grad_atol: float | None = eqx.field(static=True)
+    angular_sensitivity: float | None = eqx.field(static=True)
 
-    def __init__(self, pop_size: int) -> None:
+    def __init__(
+        self,
+        pop_size: int,
+        *,
+        atol: float = 1e-10,
+        grad_atol: float | None = None,
+        angular_sensitivity: float | None = None,
+    ) -> None:
         r"""Configure the destination count grid outside JIT.
 
-        Only the static count is stored; matrices are formed on application.
+        Only static configuration is stored; matrices are formed on application.
 
         **Arguments:**
 
         - `pop_size`: Diploid effective population size, a Python integer at least one.
+        - `atol`: Requested one-step maximum row L1 error, in `(0, 1)`.
+          Dense has no approximation to tune; roundoff is not certified.
+        - `grad_atol`, `angular_sensitivity`: Optional derivative target and
+          parameter-domain bound, as in [`NUFFT`][drifft.NUFFT]. Analytic
+          approximation error is zero; derivative roundoff remains uncertified.
 
         **Raises:**
 
         `ValueError` for invalid counts or if JAX x64 is disabled.
         """
+        _validate_atol(atol)
+        _validate_gradient(grad_atol, angular_sensitivity)
         if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 1:
             raise ValueError("pop_size must be a Python integer >= 1")
         if not jax.config.x64_enabled:
             raise ValueError("Dense requires jax_enable_x64=True")
         self.pop_size = pop_size
+        self.atol = float(atol)
+        self.grad_atol = None if grad_atol is None else float(grad_atol)
+        self.angular_sensitivity = (
+            None if angular_sensitivity is None else float(angular_sensitivity)
+        )
+
+    @property
+    def error_report(self) -> BackendErrorReport:
+        """Report zero analytic approximation error and unbounded roundoff."""
+        return BackendErrorReport(
+            self.atol,
+            self.grad_atol,
+            (
+                ErrorComponent("approximation", 0.0, 0.0),
+                ErrorComponent("roundoff", None),
+            ),
+            _gradient_coordinate(self.angular_sensitivity),
+        )
 
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
         r"""Form binomial rows and multiply by destination values.

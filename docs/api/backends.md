@@ -7,11 +7,16 @@ contract and inherit [`advance`](#drifft.AbstractTransitionBackend.advance) by
 transposition unless they provide a specialized implementation. Concrete classes
 document their configuration and numerical limitations.
 
+All built-in backends accept `atol` and expose `error_report`. The target is
+one-step maximum row L1 error; it is not a total floating-point certificate.
+See [accuracy and differentiation](../guide/numerics.md) for gradient targets,
+parameter-domain bounds, and the distinction between bounds and budgets.
+
 ??? abstract "AbstractTransitionBackend"
 
     ::: drifft.AbstractTransitionBackend
         options:
-            members: [expect, advance]
+            members: [expect, advance, error_report]
 
 ---
 
@@ -36,3 +41,9 @@ document their configuration and numerical limitations.
 ::: drifft.Dense
     options:
         members: [__init__]
+
+---
+
+::: drifft.BackendErrorReport
+
+::: drifft.ErrorComponent

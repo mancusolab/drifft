@@ -22,6 +22,13 @@ from .._frequency import (
     _selection_parameters,
 )
 from .._polynomial import gegenbauer_beta, gegenbauer_moments, gegenbauer_values
+from ._accuracy import (
+    BackendErrorReport,
+    ErrorComponent,
+    _gradient_coordinate,
+    _validate_atol,
+    _validate_gradient,
+)
 from ._base import AbstractTransitionBackend
 
 
@@ -290,6 +297,21 @@ def _choose_rank(copies: int, tolerance: float) -> int:
     return rank
 
 
+def _projection_bound(copies: int, rank: int) -> float:
+    """Evaluate the ideal row-L1 tail certificate, including the endpoint lift."""
+    scale = 1.0
+    tail = 0.0
+    for degree in range(copies - 1):
+        if degree:
+            ratio = (degree + 1) / copies
+            scale *= (1 - ratio) / (1 + ratio)
+        if degree >= rank:
+            tail += scale * (degree + 1) * (degree + 2) * (2 * degree + 3) / 6
+    harmonic = sum(1 / index for index in range(1, copies))
+    lift = math.sqrt(3 * copies**2 / (copies**2 - 1) * harmonic)
+    return (1 - 1 / copies) * lift * math.sqrt(tail)
+
+
 def _padded_rank(copies: int, rank: int, max_strength: float, tolerance: float) -> int:
     """Choose [`Jacobi`][drifft.Jacobi] padding using a Bernstein-ellipse assembly bound."""
     # math operates on fixed geometry and the configured strength bound, not
@@ -422,11 +444,18 @@ class _JacobiGeometry(eqx.Module):
     envelope: jax.Array
     endpoint_correction: jax.Array
 
-    def __init__(self, copies: int, rank: int):
+    def __init__(
+        self,
+        copies: int,
+        rank: int,
+        *,
+        node_count: int | None = None,
+        tail_tol: float = 1e-15,
+    ):
         """Prepare Gauss–Jacobi nodes on the host and all runtime geometry in JAX."""
         self.copies, self.rank = copies, rank
         # SciPy supplies a host-only Gaussian quadrature rule absent from JAX.
-        node_count = rank + 32
+        node_count = rank + 32 if node_count is None else node_count
         nodes, weights = roots_jacobi(node_count, 1, 1)
         retained = (node_count + 1) // 2
         nodes = jnp.asarray(nodes[:retained])
@@ -440,7 +469,10 @@ class _JacobiGeometry(eqx.Module):
         trials = copies - 2
         # trials is a host count: math produces the fixed stencil width, while
         # the node-dependent stencil values below are computed with JAX.
-        radius = min(trials, math.ceil(math.sqrt(trials * math.log(2e15) / 2)) + 2)
+        radius = min(
+            trials,
+            math.ceil(math.sqrt(trials * (math.log(2) - math.log(tail_tol)) / 2)) + 2,
+        )
         mode = jnp.floor((trials + 1) * probability).astype(jnp.int32)
         self.starts = mode - radius
         raw = self.starts[:, None] + jnp.arange(2 * radius + 1, dtype=jnp.int32)
@@ -573,6 +605,13 @@ class Jacobi(AbstractTransitionBackend):
     max_strength: float = eqx.field(static=True)
     _diploid_padded_rank: int = eqx.field(static=True)
     _geometry: _JacobiGeometry
+    atol: float = eqx.field(static=True)
+    spectral_bound: float = eqx.field(static=True)
+    quadrature_bound: float = eqx.field(static=True)
+    sampling_bound: float = eqx.field(static=True)
+    assembly_tolerance: float = eqx.field(static=True)
+    grad_atol: float | None = eqx.field(static=True)
+    angular_sensitivity: float | None = eqx.field(static=True)
 
     def __init__(
         self,
@@ -580,7 +619,9 @@ class Jacobi(AbstractTransitionBackend):
         *,
         rank: int | None = None,
         max_strength: float = 0.1,
-        one_step_tolerance: float = 1e-13,
+        atol: float = 1e-10,
+        grad_atol: float | None = None,
+        angular_sensitivity: float | None = None,
     ) -> None:
         r"""Prepare process-independent geometry outside JIT.
 
@@ -596,8 +637,17 @@ class Jacobi(AbstractTransitionBackend):
           both diploid fitness reductions, used for reduced Krylov padding.
           In reduced assembly, [`Underdominance`][drifft.Underdominance] and [`Overdominance`][drifft.Overdominance] retain their
           finite, nonnegative strength domains, including in mutation compositions.
-        - `one_step_tolerance`: Planning tolerance in `(0, 1)` for polynomial
-          truncation and [`Jacobi`][drifft.Jacobi] padding separately; not a total error guarantee.
+        - `atol`: Requested one-step maximum row L1 error, in `(0, 1)`.
+          Budgets projection, quadrature, and sampled tails separately, reserving
+          one quarter for arithmetic. Arithmetic remains uncertified. An explicit
+          `rank` overrides projection planning; inspect `error_report`.
+          Reduced assembly uses at most `atol / 4` in its own coefficient-space norm;
+          this is separate from the one-step population-space report.
+        - `grad_atol`, `angular_sensitivity`: Optional first-derivative target and
+          parameter-domain angular-sensitivity bound, with the same meaning as
+          [`NUFFT`][drifft.NUFFT]. Plans projection, quadrature, and sampling using
+          the degree-$M$ angular Bernstein inequality. Reduced assembly and
+          numerical arithmetic derivatives are not certified.
 
         **Raises:**
 
@@ -612,10 +662,15 @@ class Jacobi(AbstractTransitionBackend):
         # a dynamic JAX value checked separately when assembling the operator.
         if not math.isfinite(max_strength) or not 0 <= max_strength < 1:
             raise ValueError("max_strength must lie in [0, 1)")
-        if not math.isfinite(one_step_tolerance) or not 0 < one_step_tolerance < 1:
-            raise ValueError("one_step_tolerance must lie in (0, 1)")
+        _validate_atol(atol)
+        _validate_gradient(grad_atol, angular_sensitivity)
+        budget = atol / 4
+        if grad_atol is not None and angular_sensitivity:
+            budget = min(budget, grad_atol / 4 / angular_sensitivity / gene_copies)
+        if budget == 0:
+            raise ValueError("grad_atol is too small for floating-point planning")
         if rank is None:
-            rank = _choose_rank(gene_copies, one_step_tolerance)
+            rank = _choose_rank(gene_copies, budget)
         if (
             isinstance(rank, bool)
             or not isinstance(rank, int)
@@ -625,14 +680,72 @@ class Jacobi(AbstractTransitionBackend):
         if not jax.config.x64_enabled:
             raise ValueError("Jacobi requires jax_enable_x64=True")
         self.pop_size, self.rank = pop_size, rank
-        self.padded_rank = _padded_rank(
-            gene_copies, rank, max_strength, one_step_tolerance
+        self.atol = float(atol)
+        self.grad_atol = None if grad_atol is None else float(grad_atol)
+        self.angular_sensitivity = (
+            None if angular_sensitivity is None else float(angular_sensitivity)
         )
+        self.assembly_tolerance = budget
+        self.padded_rank = _padded_rank(gene_copies, rank, max_strength, budget)
         self.max_strength = float(max_strength)
         self._diploid_padded_rank = _diploid_padding(
-            gene_copies, rank, max_strength, one_step_tolerance
+            gene_copies, rank, max_strength, budget
         )
-        self._geometry = _JacobiGeometry(gene_copies, rank)
+        # Notes (13)-(15): quadrature aliases only degrees >= 2N-r+1;
+        # retained-mode evaluation amplifies coefficient errors by A_r.
+        evaluation = math.sqrt(rank * (rank + 1) ** 2 * (rank + 2) / 12)
+        first_aliased = _choose_rank(gene_copies, budget / evaluation)
+        node_count = max(rank + 32, math.ceil((first_aliased + rank - 1) / 2))
+        amplification = (
+            (1 - 1 / gene_copies)
+            * evaluation
+            * (gene_copies**2 / (2 * (gene_copies - 1)))
+        )
+        tail_tol = min(1e-15, budget / (2 * amplification))
+        if tail_tol == 0:
+            raise ValueError("tolerance is too small for floating-point planning")
+        self._geometry = _JacobiGeometry(
+            gene_copies, rank, node_count=node_count, tail_tol=tail_tol
+        )
+        self.spectral_bound = _projection_bound(gene_copies, rank)
+        self.quadrature_bound = evaluation * _projection_bound(
+            gene_copies, 2 * node_count - rank + 1
+        )
+        full_stencil = self._geometry.stencil.shape[1] >= 2 * (gene_copies - 2) + 1
+        self.sampling_bound = 0.0 if full_stencil else 2 * amplification * tail_tol
+
+    @property
+    def error_report(self) -> BackendErrorReport:
+        """Report one-step errors; reduced assembly and evolution are separate."""
+        budget = self.atol / 4
+        grad_budget = None if self.grad_atol is None else self.grad_atol / 4
+        scale = (
+            None
+            if self.angular_sensitivity is None
+            else self._gene_copies * self.angular_sensitivity
+        )
+        return BackendErrorReport(
+            self.atol,
+            self.grad_atol,
+            (
+                *(
+                    ErrorComponent(
+                        name,
+                        bound,
+                        None if scale is None else scale * bound,
+                        budget,
+                        grad_budget,
+                    )
+                    for name, bound in (
+                        ("projection", self.spectral_bound),
+                        ("quadrature", self.quadrature_bound),
+                        ("sampling", self.sampling_bound),
+                    )
+                ),
+                ErrorComponent("roundoff", None, None, budget, grad_budget),
+            ),
+            _gradient_coordinate(self.angular_sensitivity),
+        )
 
     def expect(self, probabilities: jax.Array, values: jax.Array) -> jax.Array:
         r"""Evaluate the binomial expectation at arbitrary offspring probabilities.

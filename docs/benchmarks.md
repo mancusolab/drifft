@@ -19,7 +19,7 @@ uv run --group fastdtwf python benchmarks/compare_fastdtwf.py --sizes 64 256 102
 The spectral benchmark reports compilation, warm execution, sampled forward and
 selection-JVP accuracy, backend storage, XLA temporary storage, mass defects and
 small-system solve diagnostics. Use `--source-gene-copies` for rectangular
-transitions, and `--derivative-accuracy` to evaluate the larger-degree policy.
+transitions, and `--grad-atol` with `--angular-sensitivity` to evaluate joint value/derivative planning.
 Multiple RHS use `jax.vmap`; this processes independent vectors rather than
 claiming a shared batched NUFFT speedup.
 
@@ -44,7 +44,7 @@ encoding order reversed on alternate trials.
 `lobatto` uses the sharper interpolation bound; `filtered` adds tapering and
 polynomial endpoint correction. An optional `--variants lobatto filtered-matched`
 comparison matches polynomial degree except at exact-fallback boundaries; check
-the reported degrees. `--derivative-accuracy` enables the larger-degree heuristic.
+the reported degrees. `--grad-atol` with `--angular-sensitivity` enables derivative-target planning.
 These planner overrides exist only inside benchmark construction.
 
 `--diagnostics` checks full rows and probability derivatives at a finite set of
@@ -57,6 +57,8 @@ and uniform mass, at selection strength 0.1.
 The [encoding comparison report](https://github.com/mancusolab/drifft/blob/main/benchmarks/ENCODINGS.md)
 records the CPU measurements and numerical tradeoffs for the filtered option,
 including matched-degree and larger-degree derivative experiments.
+Historical reports retain the former `accuracy` and `derivative_accuracy` names;
+their larger-degree heuristic experiments differ from current `grad_atol` planning.
 
 Use `benchmarks/compare_demography.py` to compare Sequential FFT with Jacobi and
 RationalKrylov on a neutral history with singleton mutation input. Its

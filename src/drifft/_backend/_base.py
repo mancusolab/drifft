@@ -8,6 +8,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
+from ._accuracy import BackendErrorReport
+
 
 class AbstractTransitionBackend(eqx.Module):
     r"""Interface for prepared geometry with a linear expectation operation.
@@ -28,6 +30,16 @@ class AbstractTransitionBackend(eqx.Module):
     """
 
     pop_size: eqx.AbstractVar[int]
+
+    @property
+    def error_report(self) -> BackendErrorReport | None:
+        """Preparation error accounting, or None for an unreported custom backend.
+
+        Built-in backends expose the requested `atol` in maximum row L1 norm.
+        A report distinguishes established analytic bounds from allocations and
+        uncovered contributions. It is not a runtime convergence diagnostic.
+        """
+        return None
 
     @property
     def _gene_copies(self) -> int:

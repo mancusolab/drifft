@@ -13,6 +13,13 @@ import jax
 import jax.numpy as jnp
 
 from .._polynomial import compute_cosine_coefficients, filter_cosine_coefficients
+from ._accuracy import (
+    BackendErrorReport,
+    ErrorComponent,
+    _gradient_coordinate,
+    _validate_atol,
+    _validate_gradient,
+)
 from ._base import AbstractTransitionBackend
 from ._spectral import _evaluate, sample_bernstein
 
@@ -49,25 +56,29 @@ class NUFFT(AbstractTransitionBackend):
     taper_width: int = eqx.field(static=True)
     batch_size: int = eqx.field(static=True)
     radius: int = eqx.field(static=True)
-    accuracy: float = eqx.field(static=True)
+    atol: float = eqx.field(static=True)
     spectral_tol: float = eqx.field(static=True)
     spectral_bound: float = eqx.field(static=True)
     tail_tol: float = eqx.field(static=True)
     sampling_bound: float = eqx.field(static=True)
     nufft_tol: float = eqx.field(static=True)
     roundoff_budget: float = eqx.field(static=True)
-    derivative_accuracy: bool = eqx.field(static=True)
+    grad_atol: float | None = eqx.field(static=True)
+    angular_sensitivity: float | None = eqx.field(static=True)
+    spectral_grad_bound: float | None = eqx.field(static=True)
+    sampling_grad_bound: float | None = eqx.field(static=True)
 
     def __init__(
         self,
         pop_size: int,
         *,
-        accuracy: float = 1e-10,
+        atol: float = 1e-10,
         encoding: Literal["lobatto", "filtered"] = "lobatto",
         tail_tol: float | None = None,
         nufft_tol: float | None = None,
         batch_size: int = 32,
-        derivative_accuracy: bool = False,
+        grad_atol: float | None = None,
+        angular_sensitivity: float | None = None,
     ) -> None:
         r"""Prepare a fixed-degree Bernstein/Chebyshev/NUFFT transition.
 
@@ -79,7 +90,10 @@ class NUFFT(AbstractTransitionBackend):
         **Arguments:**
 
         - `pop_size`: Diploid effective population size, a Python integer at least one.
-        - `accuracy`: Nominal value-error budget, in `[1e-13, 0.1)`.
+        - `atol`: Requested one-step maximum row L1 error, in `[1e-13, 0.1)`.
+          This bounds expectation errors for unit-bounded observables and forward
+          L1 errors for unit-L1 mass when all contributions are controlled.
+          `error_report` exposes the uncertified transform and arithmetic terms.
         - `encoding`: `"lobatto"` (default) interpolates the samples;
           `"filtered"` tapers them and corrects endpoints as a polynomial.
           Both use the exact degree without tapering when compression cannot
@@ -87,8 +101,15 @@ class NUFFT(AbstractTransitionBackend):
         - `tail_tol`: Optional stricter per-node discarded binomial mass tolerance.
         - `nufft_tol`: Optional stricter FINUFFT tolerance (at least `1e-15`).
         - `batch_size`: Number of sampling nodes processed together.
-        - `derivative_accuracy`: Increase the fixed degree by 50 percent (capped at
-          the exact degree). This is a conservative heuristic, not a derivative bound.
+        - `grad_atol`: Optional absolute first-derivative operator-error target,
+          in `(0, 1)`. Requires `angular_sensitivity`; None plans only values.
+        - `angular_sensitivity`: A finite nonnegative bound on
+          $|\partial_s q|/\sqrt{q(1-q)}$ over the entire parameter domain.
+          Here $s$ is the chosen parameter coordinate (for example, selection
+          strength or its logarithm), or a unit direction in a specified parameter
+          norm. Constant absorbing rows have zero sensitivity. The caller must
+          establish this bound; support-changing endpoints are not covered.
+          Geometry is fixed across this domain and is never replanned inside AD.
 
         **Raises:**
 
@@ -105,33 +126,40 @@ class NUFFT(AbstractTransitionBackend):
             or batch_size < 1
         ):
             raise ValueError("batch_size must be a positive integer")
-        if not isinstance(derivative_accuracy, bool):
-            raise ValueError("derivative_accuracy must be bool")
+        _validate_gradient(grad_atol, angular_sensitivity)
         if encoding not in ("lobatto", "filtered"):
             raise ValueError('encoding must be "lobatto" or "filtered"')
         # Validate and plan with Python scalars before allocating JAX geometry;
         # these tolerances and dimensions are not differentiable model inputs.
-        if not math.isfinite(accuracy) or not 1e-13 <= accuracy < 0.1:
-            raise ValueError("accuracy must be finite and in [1e-13, 0.1)")
+        _validate_atol(atol)
+        if not math.isfinite(atol) or not 1e-13 <= atol < 0.1:
+            raise ValueError("atol must be finite and in [1e-13, 0.1)")
         if not jax.config.x64_enabled:
             raise ValueError("NUFFT requires jax_enable_x64=True")
         # Bound planners act on unit-bounded input values; allocating the budget
         # does not certify FINUFFT or roundoff errors for a particular device.
-        budget = accuracy / 4
+        budget = atol / 4
+        grad_budget = None if grad_atol is None else grad_atol / 4
         taper_width = 0
         if encoding == "filtered":
-            modes = _choose_filtered_modes(gene_copies, budget)
-            if derivative_accuracy:
-                modes = min(gene_copies, math.ceil(1.5 * (modes - 1)) + 1)
+            modes = _choose_filtered_joint_modes(
+                gene_copies, budget, grad_budget, angular_sensitivity
+            )
             if modes < gene_copies:
                 taper_width = math.ceil(1 / math.atanh(modes / gene_copies))
                 degree = modes - 1
             else:
                 degree = gene_copies
         else:
-            degree = _choose_degree(gene_copies, budget)
-            if derivative_accuracy:
-                degree = min(gene_copies, math.ceil(1.5 * degree))
+            spectral_target = budget
+            if grad_budget is not None and angular_sensitivity:
+                # The residual is a trigonometric polynomial of degree M.
+                # Bernstein's inequality bounds its angular derivative by M
+                # times its uniform norm, including interpolation aliasing.
+                spectral_target = min(
+                    spectral_target, grad_budget / angular_sensitivity / gene_copies
+                )
+            degree = _choose_degree(gene_copies, spectral_target)
         sample_degree = degree + (taper_width > 0)
         # Lambda_L <= 1 + (2/pi) log(L+1) is deliberately loose at small L.
         lebesgue = 1 + 2 / math.pi * math.log(degree + 1)
@@ -142,19 +170,59 @@ class NUFFT(AbstractTransitionBackend):
                 5 + math.log(sample_degree / taper_width),
             )
             bound = 12 * math.exp(-_rate(gene_copies, sample_degree))
+            grad_bound = (
+                None
+                if angular_sensitivity is None
+                else (
+                    0.0
+                    if angular_sensitivity == 0
+                    else math.exp(
+                        math.log(angular_sensitivity)
+                        + math.log(9 * sample_degree + 6)
+                        - _rate(gene_copies, sample_degree)
+                    )
+                )
+            )
         else:
             amplification = lebesgue
             bound = _lobatto_bound(gene_copies, degree)
+            grad_bound = (
+                None
+                if angular_sensitivity is None
+                else angular_sensitivity * (gene_copies * bound)
+            )
         allocated_tail = budget / (2 * amplification)
+        if grad_budget is not None and angular_sensitivity:
+            # Sample perturbations produce a degree-d polynomial. The same
+            # fixed polynomial (including endpoint correction) is differentiated.
+            allocated_tail = min(
+                allocated_tail,
+                grad_budget / angular_sensitivity / degree / (2 * amplification),
+            )
+        if allocated_tail == 0:
+            raise ValueError("grad_atol is too small for floating-point planning")
         if tail_tol is None:
             tail_tol = allocated_tail
         if not math.isfinite(tail_tol) or not 0 < tail_tol < 0.1:
             raise ValueError("tail_tol must be finite and in (0, 0.1)")
         tail_tol = min(tail_tol, allocated_tail)
         if nufft_tol is None:
-            nufft_tol = min(1e-13, budget)
+            # Conditional coefficient-L1 model: derivative coefficients in q
+            # grow by at most 2d²; |dq/ds| <= angular_sensitivity/2.
+            # FINUFFT's tolerance floor is not a proof of this model, so these
+            # remain requests, not reported bounds.
+            coefficient_norm = math.sqrt(2 * degree + 1) * (
+                1 + bound + 2 * tail_tol * amplification
+            )
+            requested = min(1e-13, budget / coefficient_norm)
+            if grad_budget is not None and angular_sensitivity:
+                requested = min(
+                    requested,
+                    grad_budget / angular_sensitivity / degree**2 / coefficient_norm,
+                )
+            nufft_tol = max(1e-15, requested)
         if not math.isfinite(nufft_tol) or not 1e-15 <= nufft_tol <= budget:
-            raise ValueError("nufft_tol must be in [1e-15, accuracy / 4]")
+            raise ValueError("nufft_tol must be in [1e-15, atol / 4]")
         # Bernstein: P(|J-Mp| >= t) <= 2 exp(-t²/(2(var+t/3))).
         # t=sqrt(2 var A)+2A/3 suffices. var<=M/4; mode differs
         # from Mp by <=1. The extra 1 covers centering and integer rounding.
@@ -182,14 +250,54 @@ class NUFFT(AbstractTransitionBackend):
         self.taper_width = taper_width
         self.batch_size = min(batch_size, sample_degree + 1)
         self.radius = radius
-        self.accuracy = accuracy
+        self.atol = float(atol)
         self.spectral_tol = budget
         self.spectral_bound = bound
         self.tail_tol = tail_tol
         self.sampling_bound = 2 * tail_tol * amplification
         self.nufft_tol = nufft_tol
         self.roundoff_budget = budget
-        self.derivative_accuracy = derivative_accuracy
+        self.grad_atol = None if grad_atol is None else float(grad_atol)
+        self.angular_sensitivity = (
+            None if angular_sensitivity is None else float(angular_sensitivity)
+        )
+        self.spectral_grad_bound = grad_bound
+        if radius == gene_copies:
+            self.sampling_bound = 0.0
+        self.sampling_grad_bound = (
+            None
+            if angular_sensitivity is None
+            else angular_sensitivity * (degree * self.sampling_bound)
+        )
+
+    @property
+    def error_report(self) -> BackendErrorReport:
+        """Report analytic bounds separately from numerical budget allocations."""
+        grad_budget = None if self.grad_atol is None else self.grad_atol / 4
+        budget = self.atol / 4
+        return BackendErrorReport(
+            self.atol,
+            self.grad_atol,
+            (
+                ErrorComponent(
+                    "spectral",
+                    self.spectral_bound,
+                    self.spectral_grad_bound,
+                    budget,
+                    grad_budget,
+                ),
+                ErrorComponent(
+                    "sampling",
+                    self.sampling_bound,
+                    self.sampling_grad_bound,
+                    budget,
+                    grad_budget,
+                ),
+                ErrorComponent("transform", None, None, budget, grad_budget),
+                ErrorComponent("roundoff", None, None, budget, grad_budget),
+            ),
+            _gradient_coordinate(self.angular_sensitivity),
+        )
 
     def __check_init__(self) -> None:
         """Reject inconsistent dimensions without inspecting array values."""
@@ -308,6 +416,28 @@ def _choose_filtered_modes(size: int, tolerance: float) -> int:
     while lo < hi:
         mid = (lo + hi) // 2
         if _rate(size, mid) >= target:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
+
+def _choose_filtered_joint_modes(
+    size: int, atol: float, grad_atol: float | None, sensitivity: float | None
+) -> int:
+    """Plan the same endpoint-corrected filter for values and first derivatives.
+
+    The joint note gives raw bounds 6 exp(-rate) and 9L exp(-rate).
+    Endpoint correction doubles the value bound and adds the raw value bound
+    to the angular derivative bound. Both decrease for L >= sqrt(M).
+    """
+    lo, hi = _choose_filtered_modes(size, atol), size
+    if grad_atol is None or not sensitivity:
+        return lo
+    while lo < hi:
+        mid = (lo + hi) // 2
+        log_bound = math.log(sensitivity) + math.log(9 * mid + 6) - _rate(size, mid)
+        if log_bound <= math.log(grad_atol):
             hi = mid
         else:
             lo = mid + 1

@@ -100,15 +100,27 @@ power approximation.
 | Control | Role |
 | --- | --- |
 | `rank` | Retained interior polynomial modes |
-| `one_step_tolerance` | Plans ideal truncation and assembly padding separately |
+| `atol` | Plans projection, quadrature, sampled tails, and separate assembly padding |
+| `grad_atol`, `angular_sensitivity` | Optional first-derivative target and parameter-domain sensitivity bound |
 | `max_strength` | Static absolute bound on both diploid coefficients, used to plan padding |
 
 The `max_strength` bound and supported-map restrictions apply to reduced Krylov
 assembly. One-generation operations and Sequential evaluate the frequency map
 directly and accept any map producing valid probabilities.
 
-The default rank certificate covers ideal one-step projection. Quadrature,
-binomial stencil truncation, padded assembly, and arithmetic add further errors.
+The one-step `error_report` separates ideal projection, coefficient quadrature,
+and sampled-tail bounds. Numerical arithmetic remains uncertified. Explicit
+`rank` overrides projection planning and can exceed the requested target. Reduced
+assembly uses a separate coefficient-space budget; its error and subsequent
+power-action errors are not included in the one-step report.
+
+For `grad_atol`, the exact residual and the projected, quadrature, and sampled
+polynomials have angular degree at most $M$. Bernstein's inequality therefore
+bounds each parameter-derivative contribution by $\Theta M$ times its value
+bound, where $\Theta$ is `angular_sensitivity`. This conservative rule sizes the
+same geometry for values and derivatives; it is not a derivative bound for
+reduced assembly or the subsequent Krylov action.
+
 Increase rank and compare with a small Dense reference or a tightened FFT/NUFFT
 calculation, following the [accuracy guide](../guide/numerics.md).
 

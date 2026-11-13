@@ -47,10 +47,10 @@ def run_worker(args: argparse.Namespace) -> dict[str, Any]:
         started = time.perf_counter()
         options = {"tail_tol": 1e-12}
         if backend_name == "reference":
-            options = {"accuracy": 1e-13, "tail_tol": 1e-15, "nufft_tol": 1e-15}
+            options = {"atol": 1e-13, "tail_tol": 1e-15, "nufft_tol": 1e-15}
         if backend_name == "reference":
             backend = drifft.NUFFT(
-                size // 2, accuracy=1e-13, tail_tol=1e-15, nufft_tol=1e-15
+                size // 2, atol=1e-13, tail_tol=1e-15, nufft_tol=1e-15
             )
         else:
             backend = (drifft.FFT if backend_name == "fft" else drifft.NUFFT)(
@@ -262,7 +262,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()
         },
         "timing_repeats": 1,
-        "reference": "Chebyshev/NUFFT accuracy=1e-13; cross-check FFT independently",
+        "reference": "Chebyshev/NUFFT atol=1e-13; cross-check FFT independently",
         "thread_environment": {
             k: os.environ.get(k)
             for k in (

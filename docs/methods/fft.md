@@ -78,11 +78,42 @@ A tail tolerance does not bound interpolation or arithmetic error. For small
 populations, the backend uses direct sums throughout. Check final results under
 tighter settings and against dense binomial rows where feasible.
 
+`backend.diagnostics()` evaluates host-side analytic bounds for the current
+geometry. It reports maximum row L1 value error, branchwise angular derivative
+error, per-block interpolation and sampling contributions, and value jumps at
+direct/interior, block, or direct-only reflection interfaces. The angular
+coordinate is $\theta=2\arcsin\sqrt q$, so a parameter derivative bound also
+needs a bound on $|\partial_s q|/\sqrt{q(1-q)}$.
+
+The calculation bounds binomial derivative energies with exact rational
+Bernstein polynomial enclosures. It includes signed interpolation-weight
+amplification and uses conservative Chernoff tail bounds, with outward
+enclosures for logarithms and exponentials. It can therefore exceed both the
+measured error and the requested `atol`. It does not retune the geometry.
+Diagnostics run outside JIT and can cost more than backend construction.
+
+These are exact-arithmetic bounds for binomial nodes at the stored grid
+coordinates. They exclude errors from coordinate arithmetic, diagonal-factor
+construction, cached kernel construction, and FFT application.
+`error_report` includes the analytic value bound but leaves `roundoff` and
+the total bound unknown. The separate `amplification_estimate` measures
+$\sqrt{n_b}\|a_b\|_\infty\|k_b\|_2\|b_b\|_2$, maximized over blocks,
+using the stored factors and cached kernel. It is a conditioning estimate,
+not a roundoff bound. Small boundary cutoffs can produce severe cancellation
+even when every stored factor is finite; increasing order or tightening tails
+does not necessarily improve numerical accuracy.
+
 ## Differentiation and adjoints
 
 Forward propagation uses the transpose of the same expectation approximation,
 so the two operations remain paired. Parameter derivatives follow the changing
 interpolation and scaling, with geometry held fixed.
+
+Within-block stencil switches have zero value jump but can have derivative
+kinks; each block diagnostic bounds those derivative jumps. Other interfaces
+can have value jumps, reported separately in `diagnostics().switches`.
+The branchwise derivative bound excludes these jumps and does not establish
+global Sobolev regularity. `grad_atol` planning remains unsupported.
 
 At the endpoints, direct binomial sums use the polynomial derivative identity
 

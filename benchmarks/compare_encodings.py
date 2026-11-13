@@ -146,9 +146,10 @@ def run_worker(args):
             )
         backend = drifft.NUFFT(
             size // 2,
-            accuracy=args.accuracies[0],
+            atol=args.accuracies[0],
             encoding="filtered" if args.worker.startswith("filtered") else "lobatto",
-            derivative_accuracy=args.derivative_accuracy,
+            grad_atol=args.grad_atol,
+            angular_sensitivity=args.angular_sensitivity,
         )
     model = drifft.Transition(backend, drifft.Underdominance(args.selection))
     counts = jnp.arange(size + 1, dtype=jnp.float64)
@@ -228,8 +229,15 @@ def measure_process(args, variant, size, accuracy, operation, trial):
     ]
     if args.diagnostics and operation == "advance" and trial == 0:
         command.append("--diagnostics")
-    if args.derivative_accuracy:
-        command.append("--derivative-accuracy")
+    if args.grad_atol is not None:
+        command.extend(
+            [
+                "--grad-atol",
+                str(args.grad_atol),
+                "--angular-sensitivity",
+                str(args.angular_sensitivity),
+            ]
+        )
     environment = os.environ.copy()
     environment["JAX_PLATFORMS"] = "cpu"
     environment["JAX_ENABLE_COMPILATION_CACHE"] = "false"
@@ -277,7 +285,7 @@ def run(args):
                         )
                         samples[variant].append(sample)
                         LOGGER.info(
-                            "%s M=%d accuracy=%g %s cold=%.3fs warm=%.3fms",
+                            "%s M=%d atol=%g %s cold=%.3fs warm=%.3fms",
                             variant,
                             size,
                             accuracy,
@@ -341,7 +349,8 @@ def main(argv=None):
     parser.add_argument("--cold-repeats", type=int, default=3)
     parser.add_argument("--warm-repeats", type=int, default=5)
     parser.add_argument("--diagnostics", action="store_true")
-    parser.add_argument("--derivative-accuracy", action="store_true")
+    parser.add_argument("--grad-atol", type=float)
+    parser.add_argument("--angular-sensitivity", type=float)
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--worker",
@@ -355,6 +364,17 @@ def main(argv=None):
         help=argparse.SUPPRESS,
     )
     args = parser.parse_args(argv)
+    # Keep numerical imports inside run_worker: import time is measured there.
+    if (args.grad_atol is None) != (args.angular_sensitivity is None):
+        parser.error("grad-atol and angular-sensitivity must be supplied together")
+    if args.grad_atol is not None and (
+        not math.isfinite(args.grad_atol) or not 0 < args.grad_atol < 1
+    ):
+        parser.error("grad-atol must be finite and in (0, 1)")
+    if args.angular_sensitivity is not None and (
+        not math.isfinite(args.angular_sensitivity) or args.angular_sensitivity < 0
+    ):
+        parser.error("angular-sensitivity must be finite and nonnegative")
     if any(size % 2 for size in args.sizes):
         parser.error("gene-copy sizes must be even for diploid populations")
     if min(args.sizes) < 2 or min(args.cold_repeats, args.warm_repeats) < 1:

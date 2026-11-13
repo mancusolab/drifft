@@ -14,12 +14,12 @@ jax.config.update("jax_enable_x64", True)
 
 def test_spectral_backend_degree_and_storage():
     """Increase degree with accuracy while retaining only vector geometry."""
-    backend = drifft.NUFFT(5000, accuracy=1e-10)
+    backend = drifft.NUFFT(5000, atol=1e-10)
     assert 1 <= backend.degree < 10000
     assert backend.spectral_bound <= backend.spectral_tol
     assert all(a.ndim <= 1 for a in jax.tree.leaves(backend))
-    tighter = drifft.NUFFT(5000, accuracy=1e-12)
-    derivative = drifft.NUFFT(5000, derivative_accuracy=True)
+    tighter = drifft.NUFFT(5000, atol=1e-12)
+    derivative = drifft.NUFFT(5000, grad_atol=1e-10, angular_sensitivity=1.0)
     assert tighter.degree >= backend.degree
     assert derivative.degree >= backend.degree
 
@@ -82,7 +82,7 @@ def test_endpoint_derivatives_and_nufft_modes():
 
 def test_full_endpoint_probability_derivative():
     """Match full transition probability derivatives at loss and fixation."""
-    backend = drifft.NUFFT(16, derivative_accuracy=True)
+    backend = drifft.NUFFT(16)
     values = jnp.asarray(np.random.default_rng(2).normal(size=33))
     q = jnp.array([0.0, 1e-12, 0.2, 0.5, 1 - 1e-12, 1.0])
 
@@ -101,7 +101,7 @@ def test_full_endpoint_probability_derivative():
 
 def test_transpose_endpoint_gradients_match_bernstein_identity():
     """Preserve endpoint derivative identities through the algebraic transpose."""
-    backend = drifft.NUFFT(8, derivative_accuracy=True)
+    backend = drifft.NUFFT(8)
     values = jnp.asarray(np.random.default_rng(19).normal(size=17))
     q = jnp.array([0.0, 1e-12, 0.2, 0.7, 1 - 1e-12, 1.0])
     mass = jnp.array([0.1, -0.2, 0.3, 0.4, -0.5, 0.6])
@@ -122,7 +122,7 @@ def test_transpose_endpoint_gradients_match_bernstein_identity():
 @pytest.mark.parametrize("strength", [0.0, 1e-4, 0.2])
 def test_expected_visits_implicit_derivative(strength):
     """Compare implicit occupation gradients with a dense differentiated solve."""
-    backend = drifft.NUFFT(8, derivative_accuracy=True)
+    backend = drifft.NUFFT(8)
 
     def total(s):
         """Compute total expected visits for the implicit derivative comparison."""

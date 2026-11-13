@@ -73,9 +73,10 @@ def run(args: argparse.Namespace) -> None:
         start = time.perf_counter()
         backend = drifft.NUFFT(
             size // 2,
-            accuracy=args.accuracy,
+            atol=args.accuracy,
             batch_size=args.batch_size,
-            derivative_accuracy=args.derivative_accuracy,
+            grad_atol=args.grad_atol,
+            angular_sensitivity=args.angular_sensitivity,
         )
         jax.block_until_ready(backend)
         planning = time.perf_counter() - start
@@ -223,7 +224,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--selections", type=float, nargs="+", default=[0.0, 1e-4])
     parser.add_argument("--accuracy", type=float, default=1e-10)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--derivative-accuracy", action="store_true")
+    parser.add_argument("--grad-atol", type=float)
+    parser.add_argument("--angular-sensitivity", type=float)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--dense-max-m", type=int, default=512)
     parser.add_argument("--solve-max-m", type=int, default=512)
@@ -232,6 +234,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--device", choices=["cpu", "gpu"])
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
+    from drifft._backend._accuracy import _validate_gradient
+
+    try:
+        _validate_gradient(args.grad_atol, args.angular_sensitivity)
+    except ValueError as error:
+        parser.error(str(error))
     if any(size % 2 for size in args.sizes):
         parser.error("gene-copy sizes must be even for diploid populations")
     if args.repeats < 1 or min(args.sizes) < 2 or args.batch_size < 1:

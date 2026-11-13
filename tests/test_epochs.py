@@ -193,7 +193,6 @@ def test_krylov_reports_and_throws_on_underresolved_power(generations):
         {"dimension": 1},
         {"max_strength": 1},
         {"max_strength": float("nan")},
-        {"one_step_tolerance": 0},
         {"rtol": -1},
         {"atol": float("inf")},
     ],

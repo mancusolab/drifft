@@ -18,7 +18,14 @@ from jax.scipy.special import xlog1py, xlogy
 from scipy.special import expit, logit
 from scipy.stats import binom
 
+from ._accuracy import (
+    BackendErrorReport,
+    ErrorComponent,
+    _validate_atol,
+    _validate_gradient,
+)
 from ._base import AbstractTransitionBackend
+from ._fft_bounds import FFTDiagnostics, fft_diagnostics
 
 
 @final
@@ -167,6 +174,7 @@ class FFT(AbstractTransitionBackend):
     boundary_logchoose: jax.Array
     max_tail_mass: jax.Array
     pop_size: int = eqx.field(static=True)
+    atol: float = eqx.field(static=True)
     tail_tol: float = eqx.field(static=True)
     interp_order: int = eqx.field(static=True)
     min_mode_count: int = eqx.field(static=True)
@@ -179,6 +187,9 @@ class FFT(AbstractTransitionBackend):
         self,
         pop_size: int,
         *,
+        atol: float = 1e-10,
+        grad_atol: float | None = None,
+        angular_sensitivity: float | None = None,
         tail_tol: float = 1e-12,
         interp_order: int = 12,
         min_mode_count: int = 128,
@@ -195,7 +206,16 @@ class FFT(AbstractTransitionBackend):
         **Arguments:**
 
         - `pop_size`: Diploid effective population size, a Python integer at least one.
-        - `tail_tol`: Discarded mass budget in `[1e-15, .1)`, default `1e-12`.
+        - `atol`: Requested one-step maximum row L1 error, in `[4e-15, 1)`.
+          Allocates at most one quarter to discarded mass. Interpolation and
+          roundoff are not controlled by the planner; this is not a certificate.
+        - `grad_atol`, `angular_sensitivity`: Reserved shared derivative controls.
+          Non-None requests raise `NotImplementedError`: local interpolation
+          currently has no derivative-error planner. Differentiation itself
+          remains available without a gradient-accuracy target.
+        - `tail_tol`: Discarded mass budget in `[1e-15, .1)`, default `1e-12`;
+          tightened to `atol / 4` when needed. Does not include amplification
+          by interpolation weights.
         - `interp_order`: Even polynomial stencil size from 2 through 16, default 12.
         - `min_mode_count`: Boundary cutoff in expected copies, at least 8, default 128.
         - `block_spacing`: Center separation in local standard deviations, `(0, 4]`.
@@ -204,15 +224,23 @@ class FFT(AbstractTransitionBackend):
         **Raises:**
 
         `ValueError` for invalid configuration, disabled x64 or nonfinite factors;
+        `NotImplementedError` for gradient-tolerance planning;
         `TypeError` if `balance` is not boolean. Results are deterministic for a
         fixed environment but need not be bitwise identical across platforms.
         """
+        _validate_atol(atol)
+        _validate_gradient(grad_atol, angular_sensitivity)
+        if grad_atol is not None:
+            raise NotImplementedError("FFT grad_atol planning is not implemented")
+        if atol / 4 < 1e-15:
+            raise ValueError("FFT atol must be at least 4e-15")
         if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 1:
             raise ValueError("pop_size must be a Python integer >= 1")
         gene_copies = 2 * pop_size
         # These are host configuration checks, not operations on traced values.
         if not (np.isfinite(tail_tol) and 1e-15 <= tail_tol < 0.1):
             raise ValueError("tail_tol must be finite and in [1e-15, 0.1)")
+        tail_tol = min(tail_tol, atol / 4)
         if (
             not isinstance(interp_order, int)
             or interp_order < 2
@@ -333,6 +361,7 @@ class FFT(AbstractTransitionBackend):
         self.boundary_logchoose = jnp.asarray(logchoose)
         self.max_tail_mass = jnp.asarray(max_tail)
         self.pop_size = pop_size
+        self.atol = float(atol)
         self.tail_tol = tail_tol
         self.interp_order = interp_order
         self.min_mode_count = min_mode_count
@@ -340,6 +369,38 @@ class FFT(AbstractTransitionBackend):
         self.balance = balance
         self.total_nodes = total
         self.boundary_width = width
+
+    @property
+    def error_report(self) -> BackendErrorReport:
+        """Report analytic row error while leaving arithmetic error unbounded.
+
+        Evaluates host-side diagnostics; unavailable inside JIT tracing.
+        """
+        diagnostics = self.diagnostics()
+        return BackendErrorReport(
+            self.atol,
+            None,
+            (
+                ErrorComponent(
+                    "interpolation_and_sampling",
+                    diagnostics.value_bound,
+                    budget=self.atol / 2,
+                ),
+                ErrorComponent("roundoff", None),
+            ),
+        )
+
+    def diagnostics(self) -> FFTDiagnostics:
+        """Bound exact-arithmetic interpolation, tails and branch-switch jumps.
+
+        This host-only calculation can be substantially slower than construction.
+        Derivatives use theta = 2 asin(sqrt(q)) and hold branchwise; switch
+        jumps are reported separately. Within-block stencil switches have zero
+        value jump and derivative jumps bounded by each block's diagnostic.
+        The FFT amplification estimate is not a floating-point error bound.
+        Geometry and application are unchanged, even if bounds exceed `atol`.
+        """
+        return fft_diagnostics(self)
 
     def __check_init__(self) -> None:
         """Check structural invariants without inspecting traced array values."""

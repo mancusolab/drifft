@@ -125,14 +125,19 @@ different errors. The controls below adjust those stages separately.
 
 | Control | Role |
 | --- | --- |
-| `accuracy` | Nominal budget used to choose polynomial degree |
+| `atol` | Requested one-step maximum row L1 error |
 | `encoding` | Ordinary interpolation or filtered approximation |
 | `tail_tol` | Omitted binomial mass at sampling nodes |
 | `nufft_tol` | Requested FINUFFT evaluation tolerance |
-| `derivative_accuracy` | Larger-degree heuristic for derivatives |
+| `grad_atol` | Optional absolute parameter-derivative operator-error target |
+| `angular_sensitivity` | Required parameter-domain sensitivity bound when using `grad_atol` |
 | `batch_size` | Sampling workspace and batching tradeoff |
 
-Neither encoding guarantees positivity or derivative accuracy. A FINUFFT
+Neither encoding guarantees positivity. With `grad_atol`, filtered encoding uses
+the joint value/derivative certificate including polynomial endpoint correction;
+Lobatto uses the degree-$M$ angular Bernstein inequality. Both allocate sampled
+tail error separately and report analytic contributions in `error_report`.
+The transform and roundoff contributions remain uncertified. A FINUFFT
 tolerance is not an operator-error certificate: coefficient norms can amplify
 its effect. Validate final quantities with the [accuracy guide](../guide/numerics.md).
 
@@ -146,6 +151,14 @@ its effect. Validate final quantities with the [accuracy guide](../guide/numeric
     representation. These certificates exclude floating-point and actual NUFFT
     errors; the [analysis note](https://github.com/mancusolab/drifft/blob/main/notes/wf_filtered_chebyshev_bounds.md)
     gives the interpolation, filtering, and sampling bounds and their assumptions.
+
+    With angular sensitivity bounded by $\Theta$, the endpoint-corrected filtered
+    derivative bound is $\Theta(9n_{\mathrm{modes}}+6)\exp[-M\Psi(n_{\mathrm{modes}}/M)]$.
+    Lobatto instead uses $\Theta M$ times its value bound: its residual is an
+    angular trigonometric polynomial of degree at most $M$. Sample perturbations
+    have degree at most the output degree $L$, so their derivative contribution
+    is bounded by $\Theta L$ times the sample-error bound. These are bounds for
+    a fixed codec in exact arithmetic, with the specified parameter-domain bound.
 
 ## Differentiation and adjoints
 

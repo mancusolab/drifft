@@ -1,7 +1,15 @@
 """Wright–Fisher transitions with reusable Equinox models."""
 
 # pattern: Functional Core
-from ._backend import FFT, NUFFT, AbstractTransitionBackend, Dense, Jacobi
+from ._backend import (
+    FFT,
+    NUFFT,
+    AbstractTransitionBackend,
+    BackendErrorReport,
+    Dense,
+    ErrorComponent,
+    Jacobi,
+)
 from ._demography import (
     DemographicExpectation,
     DemographicGeometry,
@@ -44,6 +52,7 @@ __all__ = [
     "AbstractKrylovMethod",
     "AbstractTransitionBackend",
     "AdditiveSelection",
+    "BackendErrorReport",
     "Composition",
     "DemographicExpectation",
     "DemographicGeometry",
@@ -57,6 +66,7 @@ __all__ = [
     "EpochProblem",
     "EpochResult",
     "EvolutionStatus",
+    "ErrorComponent",
     "ExpectedVisitsResult",
     "ExpectedVisitsStatus",
     "FFT",

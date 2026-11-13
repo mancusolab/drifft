@@ -15,7 +15,7 @@ jax.config.update("jax_enable_x64", True)
 @pytest.mark.parametrize("size,accuracy", [(2, 1e-10), (16, 1e-10), (128, 1e-3)])
 def test_filtered_rows_mass_endpoints_and_certificate(size, accuracy):
     """Cover exact fallback and compression, including near-boundary rows."""
-    backend = drifft.NUFFT(size // 2, accuracy=accuracy, encoding="filtered")
+    backend = drifft.NUFFT(size // 2, atol=accuracy, encoding="filtered")
     q = jnp.asarray(
         np.unique(np.r_[0, 1e-12, 1 / size, np.linspace(0, 1, 41), 1 - 1e-12])
     )
@@ -38,7 +38,7 @@ def test_filtered_rows_mass_endpoints_and_certificate(size, accuracy):
 
 def test_filtered_derivatives_are_of_one_endpoint_corrected_polynomial():
     """Interpolation away from endpoints independently determines endpoint slopes."""
-    backend = drifft.NUFFT(64, accuracy=1e-3, encoding="filtered")
+    backend = drifft.NUFFT(64, atol=1e-3, encoding="filtered")
     values = jnp.asarray(np.random.default_rng(9).uniform(-1, 1, 129))
     # Interior Chebyshev roots determine the output polynomial without using
     # production sampling, coefficient transforms, or endpoint substitutions.
@@ -102,7 +102,7 @@ def test_lobatto_default_and_sharper_planning():
 
 def test_filtered_matches_sampled_fourier_definition():
     """Verify taper weights and alias conventions by an explicit Fourier sum."""
-    backend = drifft.NUFFT(64, accuracy=1e-3, encoding="filtered")
+    backend = drifft.NUFFT(64, atol=1e-3, encoding="filtered")
     size, modes, width = 128, backend.degree + 1, backend.taper_width
     values = np.random.default_rng(14).uniform(-1, 1, size + 1)
     theta = np.pi * np.arange(2 * modes) / modes
@@ -166,12 +166,20 @@ def test_lobatto_planner_does_not_skip_sharp_bound_near_exact_degree(size, toler
     assert _choose_degree(size, tolerance) == expected
 
 
-def test_filtered_derivative_padding_uses_output_degree():
-    """Use the same degree convention for both encoding variants."""
-    import math
-
-    base = drifft.NUFFT(128, accuracy=1e-6, encoding="filtered")
-    padded = drifft.NUFFT(
-        128, accuracy=1e-6, encoding="filtered", derivative_accuracy=True
+def test_filtered_gradient_target_plans_value_and_derivative_together():
+    """Tightening the derivative target changes the same fixed codec."""
+    base = drifft.NUFFT(128, atol=1e-6, encoding="filtered")
+    planned = drifft.NUFFT(
+        128,
+        atol=1e-6,
+        encoding="filtered",
+        grad_atol=1e-9,
+        angular_sensitivity=1.0,
     )
-    assert padded.degree == math.ceil(1.5 * base.degree)
+    assert planned.degree > base.degree
+    assert planned.spectral_bound <= planned.atol / 4
+    assert planned.grad_atol is not None
+    assert planned.spectral_grad_bound is not None
+    assert planned.sampling_grad_bound is not None
+    assert planned.spectral_grad_bound <= planned.grad_atol / 4
+    assert planned.sampling_grad_bound <= planned.grad_atol / 4
