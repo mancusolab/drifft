@@ -51,14 +51,16 @@ def test_jacobi_sampled_row_certificate(rank):
         assert backend.spectral_bound > backend.atol
 
 
-def test_fft_target_tightens_discarded_mass_without_claiming_interpolation_bound():
-    """Expose the missing interpolation certificate rather than calling tails total."""
+def test_fft_target_tightens_discarded_mass_without_claiming_roundoff_bound():
+    """An analytic approximation bound does not certify floating-point error."""
     backend = drifft.FFT(8, atol=1e-10, tail_tol=1e-5)
     assert backend.tail_tol <= backend.atol / 4
     assert backend.error_report.bound is None
 
 
-@pytest.mark.parametrize("backend_type", [drifft.NUFFT, drifft.Jacobi, drifft.Dense])
+@pytest.mark.parametrize(
+    "backend_type", [drifft.NUFFT, drifft.Jacobi, drifft.Dense, drifft.FFT]
+)
 @pytest.mark.parametrize(
     "options",
     [
@@ -76,10 +78,11 @@ def test_gradient_planning_requires_a_valid_parameter_domain(backend_type, optio
         backend_type(8, **options)
 
 
-def test_fft_rejects_unsupported_gradient_planning():
-    """Unavailable derivative certificates cannot silently become heuristics."""
-    with pytest.raises(NotImplementedError, match="grad_atol"):
-        drifft.FFT(8, grad_atol=1e-6, angular_sensitivity=1)
+def test_fft_exact_gradient_fallback():
+    """Full-support direct evaluation has zero analytic gradient error."""
+    backend = drifft.FFT(8, grad_atol=1e-6, angular_sensitivity=1)
+    assert backend.interpolation_grad_bound == backend.sampling_grad_bound == 0
+    assert backend.error_report.grad_bound is None
 
 
 def test_jacobi_quadrature_is_planned_independently_of_manual_rank():

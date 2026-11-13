@@ -68,9 +68,10 @@ binomial tails, interpolation, and floating-point arithmetic.
 
 | Control | Role |
 | --- | --- |
+| `atol`, `grad_atol` | Joint value and branchwise parameter-derivative targets |
 | `tail_tol` | Omitted probability mass in retained binomial windows |
-| `interp_order` | Local polynomial interpolation stencil size |
-| `min_mode_count` | Extent of direct evaluation near endpoints |
+| `interp_order` | Optional explicit stencil size; overrides interpolation planning |
+| `min_mode_count` | Initial extent of direct evaluation; automatic planning may enlarge it |
 | `block_spacing` | Separation of local grids |
 | `balance` | Recenter diagonal scaling factors |
 
@@ -78,30 +79,35 @@ A tail tolerance does not bound interpolation or arithmetic error. For small
 populations, the backend uses direct sums throughout. Check final results under
 tighter settings and against dense binomial rows where feasible.
 
-`backend.diagnostics()` evaluates host-side analytic bounds for the current
-geometry. It reports maximum row L1 value error, branchwise angular derivative
-error, per-block interpolation and sampling contributions, and value jumps at
-direct/interior, block, or direct-only reflection interfaces. The angular
-coordinate is $\theta=2\arcsin\sqrt q$, so a parameter derivative bound also
-needs a bound on $|\partial_s q|/\sqrt{q(1-q)}$.
+`FFT(pop_size, atol=...)` plans interpolation and sampling on the host, with
+one quarter of `atol` allocated to each. With `interp_order=None` (the default),
+it tries orders 12, 14, and 16. If none meets the interpolation budget, it doubles
+the boundary cutoff and retries, up to direct-only evaluation. This finite
+search does not assume that higher order always improves the bound.
+An explicit even `interp_order` from 2 through 16 preserves the requested
+geometry and may produce an interpolation bound above the target, analogous
+to an explicit Jacobi rank. If `grad_atol` is supplied, an explicit order
+exceeding its interpolation-gradient budget raises `ValueError`.
 
-The calculation bounds binomial derivative energies with exact rational
-Bernstein polynomial enclosures. It includes signed interpolation-weight
-amplification and uses conservative Chernoff tail bounds, with outward
-enclosures for logarithms and exponentials. It can therefore exceed both the
-measured error and the requested `atol`. It does not retune the geometry.
-Diagnostics run outside JIT and can cost more than backend construction.
+Preparation stores `interpolation_bound` and `sampling_bound`.
+`backend.error_report` reads these scalars without recomputing geometry or
+transferring arrays to the host, using the same report type as NUFFT and Jacobi.
+There is no separate diagnostic API.
 
-These are exact-arithmetic bounds for binomial nodes at the stored grid
-coordinates. They exclude errors from coordinate arithmetic, diagonal-factor
-construction, cached kernel construction, and FFT application.
-`error_report` includes the analytic value bound but leaves `roundoff` and
-the total bound unknown. The separate `amplification_estimate` measures
-$\sqrt{n_b}\|a_b\|_\infty\|k_b\|_2\|b_b\|_2$, maximized over blocks,
-using the stored factors and cached kernel. It is a conditioning estimate,
-not a roundoff bound. Small boundary cutoffs can produce severe cancellation
-even when every stored factor is finite; increasing order or tightening tails
-does not necessarily improve numerical accuracy.
+The interpolation calculation bounds binomial derivative energies using exact
+rational Bernstein polynomial enclosures. Sampling uses binomial tail
+probabilities evaluated by SciPy, with a uniform factor of two covering the
+signed interpolation weights for all supported orders. The node tail target
+is at most `atol / 8`; boundary and node windows are enlarged if their computed
+tail bounds exceed that target. Bound evaluation and tail probabilities still
+have floating-point error; they are not an interval certificate for the entire
+calculation.
+
+The analytic bounds exclude errors from coordinate arithmetic, diagonal-factor
+construction, cached kernels, and FFT application. `error_report` therefore
+leaves `roundoff` and the total bound unknown. Small boundary cutoffs can produce
+severe cancellation even when every stored factor is finite; increasing order
+or tightening tails does not necessarily improve numerical accuracy.
 
 ## Differentiation and adjoints
 
@@ -110,10 +116,33 @@ so the two operations remain paired. Parameter derivatives follow the changing
 interpolation and scaling, with geometry held fixed.
 
 Within-block stencil switches have zero value jump but can have derivative
-kinks; each block diagnostic bounds those derivative jumps. Other interfaces
-can have value jumps, reported separately in `diagnostics().switches`.
-The branchwise derivative bound excludes these jumps and does not establish
-global Sobolev regularity. `grad_atol` planning remains unsupported.
+kinks. Direct/interior, block, and direct-only reflection interfaces can have
+value jumps. Their size is bounded by twice the sum of the reported analytic
+value contributions, but this does not establish global Sobolev regularity.
+`grad_atol` promises branchwise analytic derivative accuracy; it does not bound
+sensitivities across a value jump or imply a classical derivative at every
+switch. `error_report.grad_coordinate` explicitly records this scope.
+
+Supply `grad_atol` together with an `angular_sensitivity` bound on
+$|\partial_s q|/\sqrt{q(1-q)}$ over the parameter domain, using the same
+parameter-coordinate convention as NUFFT and Jacobi. Construction selects one
+geometry satisfying both value and gradient allocations. There are no runtime
+accuracy checks. Zero angular sensitivity preserves the value-only plan and
+has zero analytic parameter-derivative error.
+
+The derivative interpolation bound uses the differentiated divided-difference
+estimate and the same binomial energy polynomials, at orders $m$ and $m+1$.
+A uniform bound of four on the sum of absolute derivatives of interpolation
+weights controls node-tail amplification. Direct-boundary derivative tails
+use the binomial score identity and an analytic maximum over the boundary
+interval. Each gradient contribution receives `grad_atol / 4`.
+Preparation widens tail windows or increases order/cutoff as needed; numerical
+planning failures raise `ValueError`. These targets exclude arithmetic error,
+just as the value targets do. Absorbing endpoints must be parameter independent.
+
+`interpolation_grad_bound` and `sampling_grad_bound` store parameter-derivative
+bounds when requested, otherwise `None`. The shared report reads these cached
+scalars; its total gradient bound remains `None` because roundoff is unbounded.
 
 At the endpoints, direct binomial sums use the polynomial derivative identity
 

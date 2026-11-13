@@ -65,7 +65,7 @@ not only a one-generation transition.
 
 | Component | How to tighten the approximation |
 | --- | --- |
-| FFT | Lower `atol` to tighten the tail budget; inspect `diagnostics()` for analytic interpolation bounds and numerical amplification before changing geometry. |
+| FFT | Lower `atol` or branchwise `grad_atol` to jointly plan interpolation order, direct-region cutoff, and sampled tails. An explicit `interp_order` overrides value planning but must satisfy any gradient target. |
 | NUFFT | Lower `atol` for values and `grad_atol` for parameter derivatives; `tail_tol` and `nufft_tol` can request stricter numerical evaluation. |
 | Jacobi | Lower `atol` or `grad_atol` for automatic rank, quadrature, and sampling; explicit `rank` overrides projection planning. |
 | Krylov | Increase `dimension`; lower `rtol` and `atol`. |
@@ -89,17 +89,19 @@ of `None` means that contribution is not certified. A `budget` is only an
 allocation. In particular, transform and roundoff allowances do not establish
 a total floating-point error bound.
 
-NUFFT and Jacobi accept `grad_atol` with an explicit `angular_sensitivity` bound
+NUFFT, Jacobi, and FFT accept `grad_atol` with an explicit `angular_sensitivity` bound
 on $|\partial_s q|/\sqrt{q(1-q)}$ over the parameter domain. The coordinate $s$
 may be a physical parameter or its logarithm; the bound must match that choice
 and the full composed frequency map. For several parameters, bound all unit
 directions in the chosen parameter norm. Constant absorbing endpoints contribute
 zero; support-changing endpoints need a separate argument. Preparation uses
 one fixed geometry for values and derivatives. `grad_atol=None` plans values only.
-FFT currently rejects gradient-tolerance requests: its diagnostics bound
-branchwise angular derivatives, but branch switches can have value jumps and
-there is no automatic gradient planner. Dense has zero analytic approximation error, with
-uncertified arithmetic error for both values and derivatives.
+FFT's derivative promise is branchwise: it excludes sensitivities across value
+jumps at branch switches. The report labels this scope explicitly. Its planner
+jointly enforces the analytic budgets at construction, with no runtime checks;
+an incompatible explicit order or numerical planning failure raises `ValueError`.
+Dense has zero analytic approximation error, with uncertified arithmetic error
+for both values and derivatives.
 
 `grad_atol` replaces the removed NUFFT `derivative_accuracy` heuristic. NUFFT's
 `accuracy` and Jacobi's `one_step_tolerance` are replaced by `atol`. The new

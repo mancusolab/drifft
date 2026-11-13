@@ -6,6 +6,9 @@
 # variable host-side sizes. The constructor converts the prepared geometry to JAX
 # arrays; this module's construction routines never run inside a matvec or solve.
 import math
+from decimal import Context, Decimal, localcontext
+from fractions import Fraction as F
+from functools import lru_cache
 from typing import cast, final
 
 import equinox as eqx
@@ -21,11 +24,241 @@ from scipy.stats import binom
 from ._accuracy import (
     BackendErrorReport,
     ErrorComponent,
+    _gradient_coordinate,
     _validate_atol,
     _validate_gradient,
 )
 from ._base import AbstractTransitionBackend
-from ._fft_bounds import FFTDiagnostics, fft_diagnostics
+
+
+def _trim(p):
+    while len(p) > 1 and p[-1] == 0:
+        p = p[:-1]
+    return p
+
+
+def _add(a, b):
+    return _trim(
+        tuple(
+            (a[i] if i < len(a) else 0) + (b[i] if i < len(b) else 0)
+            for i in range(max(len(a), len(b)))
+        )
+    )
+
+
+def _mul(a, b):
+    out = [F(0)] * (len(a) + len(b) - 1)
+    for i, x in enumerate(a):
+        for j, y in enumerate(b):
+            out[i + j] += x * y
+    return _trim(tuple(out))
+
+
+def _derivative(a):
+    return tuple(i * a[i] for i in range(1, len(a))) or (F(0),)
+
+
+@lru_cache(maxsize=128)
+def _energy(M: int, n: int):
+    """Exact coefficients of H_n as a polynomial in v=q(1-q)."""
+    a = {1: (F(1),)}
+    for order in range(1, n):
+        nxt = {}
+        for k in range(1, min(order + 1, M) + 1):
+            p = a.get(k, (F(0),))
+            if (order - k) % 2 == 0:
+                term = _add(tuple(k * x for x in p), (0, *_derivative(p)))
+            else:
+                term = _add(_mul((k, -4 * k - 2), p), _mul((0, 1, -4), _derivative(p)))
+            nxt[k] = _add(term, a.get(k - 1, (F(0),)))
+        a = nxt
+    result = (F(0),)
+    falling = 1
+    for k in range(1, min(n, M) + 1):
+        falling *= M - k + 1
+        p = _mul(a[k], a[k])
+        if (n - k) % 2:
+            p = _mul(p, (1, -4))
+        result = _add(
+            result, (F(0),) * k + tuple(math.factorial(k) * falling * x for x in p)
+        )
+    return result
+
+
+def _bernstein(p, lo: F, hi: F):
+    """Convert power coefficients to exact Bernstein coefficients on [lo,hi]."""
+    n = len(p) - 1
+    power = [
+        sum(p[j] * math.comb(j, k) * lo ** (j - k) for j in range(k, n + 1))
+        * (hi - lo) ** k
+        for k in range(n + 1)
+    ]
+    return tuple(
+        sum(power[k] * F(math.comb(j, k), math.comb(n, k)) for k in range(j + 1))
+        for j in range(n + 1)
+    )
+
+
+def _split(b):
+    left, right = [b[0]], [b[-1]]
+    while len(b) > 1:
+        b = tuple((x + y) / 2 for x, y in zip(b[:-1], b[1:], strict=True))
+        left.append(b[0])
+        right.append(b[-1])
+    return tuple(left), tuple(reversed(right))
+
+
+def _range(p, lo: F, hi: F, depth: int = 3):
+    pieces = [_bernstein(p, lo, hi)]
+    for _ in range(depth):
+        pieces = [child for b in pieces for child in _split(b)]
+    return min(min(b) for b in pieces), max(max(b) for b in pieces)
+
+
+def _logistic(x: F):
+    """Enclose the halo endpoints with correctly rounded Decimal exponentials."""
+    # Bound evaluation must not inherit the caller's rounding or trap settings.
+    with localcontext(Context(prec=70)):
+        d = Decimal(x.numerator) / Decimal(x.denominator)
+        a = F(d.next_minus().exp().next_minus())
+        b = F(d.next_plus().exp().next_plus())
+    return a / (1 + a), b / (1 + b)
+
+
+def _variance_interval(lo: F, hi: F):
+    lower = min(lo * (1 - lo), hi * (1 - hi))
+    upper = F(1, 4) if lo <= F(1, 2) <= hi else max(lo * (1 - lo), hi * (1 - hi))
+    # Outward dyadic rounding keeps subsequent exact polynomial arithmetic cheap.
+    scale = 2**48
+    return F(lower * scale // 1, scale), F(-(-upper * scale // 1), scale)
+
+
+def _upper(x: F):
+    try:
+        value = float(x)
+    except OverflowError:
+        return math.inf
+    if math.isfinite(value) and F(value) < x:
+        value = math.nextafter(value, math.inf)
+    return value
+
+
+def _sqrt_upper(x: F):
+    value = math.sqrt(_upper(x))
+    if math.isfinite(value) and F(value) ** 2 < x:
+        value = math.nextafter(value, math.inf)
+    return value
+
+
+@lru_cache(maxsize=4096)
+def _interpolation_bound(
+    M: int,
+    m: int,
+    eta: float,
+    variance: float,
+    rlo: int,
+    rhi: int,
+    gradient: bool = False,
+) -> tuple[float, float, float]:
+    """Value/angular-derivative remainders and derivative-tail amplification."""
+    V, e = F(variance), F(eta)
+    qlo = _logistic(e + rlo / V)[0]
+    qhi = _logistic(e + rhi / V)[1]
+    vlo, vhi = _variance_interval(qlo, qhi)
+    energy = max(F(0), _range(_energy(M, m), vlo, vhi)[1])
+    derivative = F(_sqrt_upper(energy / V ** (2 * m)))
+    alpha = F(math.comb(m, m // 2), 4**m)
+    value = _upper(alpha * derivative)
+    if not gradient:
+        return value, 0.0, 0.0
+    # Differentiated divided-difference bound (analysis eq. 4.7), not
+    # differentiation of an unspecified scalar remainder point.
+    next_energy = max(F(0), _range(_energy(M, m + 1), vlo, vhi)[1])
+    next_derivative = F(_sqrt_upper(next_energy / V ** (2 * (m + 1))))
+    gamma = F(1, (m // 2) * math.comb(m, m // 2))
+    # The halo contains the core. Its minimum variance gives a conservative
+    # angular conversion over every selected branch, without query-time checks.
+    min_variance = min(qlo * (1 - qlo), qhi * (1 - qhi))
+    scale = F(_sqrt_upper(V * V / min_variance))
+    grad = scale * (gamma * derivative + alpha * next_derivative / (m + 1))
+    # sum |lambda'_k| <= 4 for every supported central stencil (tested exactly).
+    return value, _upper(grad), _upper(4 * scale)
+
+
+def _tail_bound(M: int, lo: int, hi: int, qlo: float, qhi: float) -> float:
+    """Bound omitted mass over a probability interval, rejecting numerical failures."""
+    lower = 0.0 if lo <= 0 else float(binom.cdf(lo - 1, M, qlo))
+    upper = 0.0 if hi >= M else float(binom.sf(hi, M, qhi))
+    # NaN comparisons otherwise let window loops stop and max(0, NaN) hide
+    # a failed tail evaluation as an apparent zero error bound.
+    if not (0 <= lower <= 1 and 0 <= upper <= 1):
+        raise ValueError("invalid binomial tail probability during FFT planning")
+    return lower + upper
+
+
+def _direct_grad_bound(
+    M: int, width: int, cutoff: float, sensitivity: float, tail: float
+) -> float:
+    """Uniform parameter-derivative tail error on a direct boundary branch."""
+    if width > M or sensitivity == 0:
+        return 0.0
+    if width < M * cutoff:
+        return sensitivity * math.sqrt(M * tail)
+    # Omitted derivative entries have one sign, so their sum telescopes to
+    # M*b_(M-1,W-1). Maximize its angular version analytically on [0,cutoff].
+    q = min(cutoff, (width - 0.5) / M)
+    log_bound = (
+        math.log(sensitivity)
+        + math.log(M)
+        + 0.5 * (math.log(q) + math.log1p(-q))
+        + float(binom.logpmf(width - 1, M - 1, q))
+    )
+    return (
+        math.exp(log_bound) if log_bound < math.log(np.finfo(float).max) else math.inf
+    )
+
+
+def _fft_grid(
+    M: int, cutoff_count: int, spacing: float, order: int, sensitivity: float = 0.0
+):
+    """Prepare local geometry and value/gradient bounds on the host."""
+    centers = []
+    if M > 2 * cutoff_count:
+        centers = [cutoff_count]
+        while centers[-1] < M - cutoff_count:
+            j = centers[-1]
+            centers.append(
+                min(
+                    M - cutoff_count,
+                    j + max(1, int(spacing * np.sqrt(j * (1 - j / M)))),
+                )
+            )
+    eta = logit(np.asarray(centers, dtype=float) / M)
+    variance = np.asarray(centers, dtype=float) * (
+        1 - np.asarray(centers, dtype=float) / M
+    )
+    edges = (eta[:-1] + eta[1:]) / 2
+    core = (
+        np.r_[logit(cutoff_count / M), edges, logit(1 - cutoff_count / M)]
+        if centers
+        else []
+    )
+    intervals, bound, grad_bound, grad_amplification = [], 0.0, 0.0, 0.0
+    for i in range(len(centers)):
+        lo = int(np.floor((core[i] - eta[i]) * variance[i])) - order // 2
+        hi = int(np.ceil((core[i + 1] - eta[i]) * variance[i])) + order // 2
+        intervals.append((lo, hi))
+        value, grad, amplification = _interpolation_bound(
+            M, order, float(eta[i]), float(variance[i]), lo, hi, bool(sensitivity)
+        )
+        bound = max(bound, value)
+        grad_bound = max(grad_bound, sensitivity * grad)
+        grad_amplification = max(grad_amplification, sensitivity * amplification)
+    return (centers, eta, variance, edges, intervals), (
+        bound,
+        grad_bound,
+        grad_amplification,
+    )
 
 
 @final
@@ -75,7 +308,7 @@ def _stirling_correction(n: int) -> float:
 def _build_block(
     M: int, j0: int, lo: int, hi: int, rlo: int, rhi: int, *, balance: bool = True
 ) -> _FFTBlock:
-    """Construct exact DTD factors with recurrence and stable modal normalization."""
+    """Construct local DTD factors with recurrence and stable modal normalization."""
     if not (0 < j0 < M and 0 <= lo <= hi <= M and rlo <= rhi):
         raise ValueError("Invalid block intervals or reference count")
     # Build variable-sized blocks on the host in float64, matching stored factors.
@@ -85,7 +318,7 @@ def _build_block(
     r = np.arange(rlo, rhi + 1, dtype=np.float64)
     delta = h * r
     loga = delta * j0 - M * np.log1p(p * np.expm1(delta)) + h * r**2 / 2
-    # Build the recurrence through zero even when the requested window excludes it.
+    # Include the reference count even when the requested window excludes it.
     left, right = min(lo, j0), max(hi, j0)
     j = np.arange(left, right, dtype=np.float64)
     increments = np.log(M - j) - np.log(j + 1) + eta + h * (j - j0 + 0.5)
@@ -175,6 +408,12 @@ class FFT(AbstractTransitionBackend):
     max_tail_mass: jax.Array
     pop_size: int = eqx.field(static=True)
     atol: float = eqx.field(static=True)
+    interpolation_bound: float = eqx.field(static=True)
+    sampling_bound: float = eqx.field(static=True)
+    grad_atol: float | None = eqx.field(static=True)
+    angular_sensitivity: float | None = eqx.field(static=True)
+    interpolation_grad_bound: float | None = eqx.field(static=True)
+    sampling_grad_bound: float | None = eqx.field(static=True)
     tail_tol: float = eqx.field(static=True)
     interp_order: int = eqx.field(static=True)
     min_mode_count: int = eqx.field(static=True)
@@ -191,7 +430,7 @@ class FFT(AbstractTransitionBackend):
         grad_atol: float | None = None,
         angular_sensitivity: float | None = None,
         tail_tol: float = 1e-12,
-        interp_order: int = 12,
+        interp_order: int | None = None,
         min_mode_count: int = 128,
         block_spacing: float = 1.0,
         balance: bool = True,
@@ -207,31 +446,38 @@ class FFT(AbstractTransitionBackend):
 
         - `pop_size`: Diploid effective population size, a Python integer at least one.
         - `atol`: Requested one-step maximum row L1 error, in `[4e-15, 1)`.
-          Allocates at most one quarter to discarded mass. Interpolation and
-          roundoff are not controlled by the planner; this is not a certificate.
-        - `grad_atol`, `angular_sensitivity`: Reserved shared derivative controls.
-          Non-None requests raise `NotImplementedError`: local interpolation
-          currently has no derivative-error planner. Differentiation itself
-          remains available without a gradient-accuracy target.
+          Automatic preparation budgets one quarter each for interpolation and
+          sampling. Floating-point error remains uncertified.
+        - `grad_atol`, `angular_sensitivity`: Optional branchwise first-derivative
+          error target and bound on abs(dq/ds) / sqrt(q(1-q)), as in NUFFT/Jacobi.
+          Preparation jointly plans interpolation and tail bounds. The promise
+          applies within selected branches, excludes value jumps and arithmetic
+          error, and assumes parameter-independent absorbing endpoints.
         - `tail_tol`: Discarded mass budget in `[1e-15, .1)`, default `1e-12`;
-          tightened to `atol / 4` when needed. Does not include amplification
-          by interpolation weights.
-        - `interp_order`: Even polynomial stencil size from 2 through 16, default 12.
-        - `min_mode_count`: Boundary cutoff in expected copies, at least 8, default 128.
+          tightened to `atol / 8` to account for signed interpolation weights.
+        - `interp_order`: None selects order 12, 14, or 16 from the analytic bound.
+          An explicit even order from 2 through 16 overrides interpolation planning;
+          its reported value bound may exceed `atol`. An explicit order that
+          cannot meet `grad_atol` raises `ValueError`.
+        - `min_mode_count`: Initial boundary cutoff in expected copies, at least 8,
+          default 128. Automatic planning can enlarge it, up to direct-only
+          evaluation, if no candidate order meets both interpolation budgets.
         - `block_spacing`: Center separation in local standard deviations, `(0, 4]`.
         - `balance`: Whether to recenter the diagonal multipliers, default true.
 
         **Raises:**
 
-        `ValueError` for invalid configuration, disabled x64 or nonfinite factors;
-        `NotImplementedError` for gradient-tolerance planning;
+        `ValueError` for invalid configuration, disabled x64, nonfinite factors,
+        or a gradient target incompatible with explicit geometry or numerical planning;
         `TypeError` if `balance` is not boolean. Results are deterministic for a
         fixed environment but need not be bitwise identical across platforms.
         """
         _validate_atol(atol)
         _validate_gradient(grad_atol, angular_sensitivity)
-        if grad_atol is not None:
-            raise NotImplementedError("FFT grad_atol planning is not implemented")
+        grad_budget = math.inf if grad_atol is None else grad_atol / 4
+        if grad_budget == 0:
+            raise ValueError("grad_atol is too small for floating-point planning")
+        sensitivity = 0.0 if angular_sensitivity is None else float(angular_sensitivity)
         if atol / 4 < 1e-15:
             raise ValueError("FFT atol must be at least 4e-15")
         if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 1:
@@ -240,9 +486,13 @@ class FFT(AbstractTransitionBackend):
         # These are host configuration checks, not operations on traced values.
         if not (np.isfinite(tail_tol) and 1e-15 <= tail_tol < 0.1):
             raise ValueError("tail_tol must be finite and in [1e-15, 0.1)")
-        tail_tol = min(tail_tol, atol / 4)
-        if (
-            not isinstance(interp_order, int)
+        # Central Lagrange stencils of all supported orders have Lebesgue
+        # constant <= 2 (verified with rational enclosures in test_fft_bounds).
+        # Allocate half the sampling budget to each node's tail.
+        tail_tol = min(tail_tol, atol / 8)
+        if interp_order is not None and (
+            isinstance(interp_order, bool)
+            or not isinstance(interp_order, int)
             or interp_order < 2
             or interp_order > 16
             or interp_order % 2
@@ -256,54 +506,55 @@ class FFT(AbstractTransitionBackend):
             raise TypeError("balance must be a bool")
         if not jax.config.x64_enabled:
             raise ValueError("FFT requires jax_enable_x64=True")
+        # A fixed order is an explicit approximation override, like Jacobi.rank.
+        # Automatic search is finite; direct-only evaluation is the final fallback.
+        if interp_order is None:
+            while True:
+                for order in (12, 14, 16):
+                    geometry, bounds = _fft_grid(
+                        gene_copies, min_mode_count, block_spacing, order, sensitivity
+                    )
+                    value_bound, grad_bound, _ = bounds
+                    if value_bound <= atol / 4 and grad_bound <= grad_budget:
+                        break
+                if value_bound <= atol / 4 and grad_bound <= grad_budget:
+                    interp_order = order
+                    break
+                min_mode_count = min(pop_size, 2 * min_mode_count)
+        else:
+            geometry, bounds = _fft_grid(
+                gene_copies, min_mode_count, block_spacing, interp_order, sensitivity
+            )
+            _, grad_bound, _ = bounds
+            if grad_bound > grad_budget:
+                raise ValueError(
+                    "explicit interp_order cannot meet grad_atol; use interp_order=None"
+                )
+        centers, eta0, variance, edges, intervals = geometry
+        interpolation_bound, interpolation_grad_bound, grad_amplification = bounds
+        if grad_amplification:
+            tail_tol = min(tail_tol, grad_budget / grad_amplification)
+            if tail_tol == 0:
+                raise ValueError(
+                    "grad_atol is too small for floating-point tail planning"
+                )
+        # Quantile APIs lose resolution for sub-epsilon probabilities. Start
+        # from a representable quantile and enlarge windows by checking tails.
+        quantile_tail = max(tail_tol, 2 * np.finfo(float).eps)
         cutoff = min_mode_count / gene_copies
         groups: dict[int, list[tuple[int, _FFTBlock, int]]] = {}
         offsets, rmins = [], []
-        centers: list[int] = []
-        if gene_copies > 2 * min_mode_count:
-            centers = [min_mode_count]
-            while centers[-1] < gene_copies - min_mode_count:
-                j = centers[-1]
-                centers.append(
-                    min(
-                        gene_copies - min_mode_count,
-                        j
-                        + max(
-                            1, int(block_spacing * np.sqrt(j * (1 - j / gene_copies)))
-                        ),
-                    )
-                )
-        eta0 = logit(np.asarray(centers, dtype=float) / gene_copies)
-        variance = np.asarray(centers, dtype=float) * (
-            1 - np.asarray(centers, dtype=float) / gene_copies
-        )
-        edges = (eta0[:-1] + eta0[1:]) / 2
-        core_edges = (
-            np.r_[logit(cutoff), edges, logit(1 - cutoff)] if centers else np.array([])
-        )
         total, max_tail = 0, 0.0
         for i, j0 in enumerate(centers):
-            rlo = (
-                int(np.floor((core_edges[i] - eta0[i]) * variance[i]))
-                - interp_order // 2
-            )
-            rhi = (
-                int(np.ceil((core_edges[i + 1] - eta0[i]) * variance[i]))
-                + interp_order // 2
-            )
+            rlo, rhi = intervals[i]
             pmin, pmax = expit(eta0[i] + np.array([rlo, rhi]) / variance[i])
-            lo = max(0, int(binom.ppf(tail_tol / 2, gene_copies, pmin)))
-            hi = min(gene_copies, int(binom.isf(tail_tol / 2, gene_copies, pmax)))
-            tail = max(
-                float(
-                    binom.cdf(lo - 1, gene_copies, pmin)
-                    + binom.sf(hi, gene_copies, pmin)
-                ),
-                float(
-                    binom.cdf(lo - 1, gene_copies, pmax)
-                    + binom.sf(hi, gene_copies, pmax)
-                ),
-            )
+            lo = max(0, int(binom.ppf(quantile_tail / 2, gene_copies, pmin)))
+            hi = min(gene_copies, int(binom.isf(quantile_tail / 2, gene_copies, pmax)))
+            # Monotonic tails give a uniform bound throughout the node halo.
+            tail = _tail_bound(gene_copies, lo, hi, pmin, pmax)
+            while tail > tail_tol:
+                lo, hi = max(0, lo - 1), min(gene_copies, hi + 1)
+                tail = _tail_bound(gene_copies, lo, hi, pmin, pmax)
             max_tail = max(max_tail, tail)
             block = _build_block(gene_copies, j0, lo, hi, rlo, rhi, balance=balance)
             groups.setdefault(block.nfft, []).append((lo, block, total))
@@ -343,15 +594,30 @@ class FFT(AbstractTransitionBackend):
         # Stochastic monotonicity makes the upper quantile at the cutoff sufficient
         # for all boundary probabilities. Reflect the upper boundary onto the lower.
         width = min(
-            gene_copies + 1, int(binom.isf(tail_tol, gene_copies, min(cutoff, 0.5))) + 1
+            gene_copies + 1,
+            int(binom.isf(quantile_tail, gene_copies, min(cutoff, 0.5))) + 1,
         )
+        direct_tail = _tail_bound(gene_copies, 0, width - 1, 0.0, min(cutoff, 0.5))
+        direct_grad = _direct_grad_bound(
+            gene_copies, width, min(cutoff, 0.5), sensitivity, direct_tail
+        )
+        while direct_tail > tail_tol or direct_grad > grad_budget:
+            width += 1
+            direct_tail = _tail_bound(gene_copies, 0, width - 1, 0.0, min(cutoff, 0.5))
+            direct_grad = _direct_grad_bound(
+                gene_copies, width, min(cutoff, 0.5), sensitivity, direct_tail
+            )
+        sampling_bound = max(2 * max_tail, direct_tail)
+        sampling_grad_bound = max(grad_amplification * max_tail, direct_grad)
+        if grad_atol is not None and not (
+            interpolation_grad_bound <= grad_budget
+            and sampling_grad_bound <= grad_budget
+        ):
+            raise ValueError("cannot meet grad_atol in floating-point planning")
         j = np.arange(width, dtype=float)
         # Recurrence is accurate for small boundary counts, even at very large gene_copies.
         logchoose = np.r_[0.0, np.cumsum(np.log(gene_copies - j[:-1]) - np.log(j[1:]))]
-        if not centers:
-            max_tail = float(binom.sf(width - 1, gene_copies, 0.5))
-        else:
-            max_tail = max(max_tail, float(binom.sf(width - 1, gene_copies, cutoff)))
+        max_tail = max(max_tail, direct_tail)
         self.buckets = tuple(buckets)
         self.edges = jnp.asarray(edges)
         self.eta0 = jnp.asarray(eta0)
@@ -362,6 +628,14 @@ class FFT(AbstractTransitionBackend):
         self.max_tail_mass = jnp.asarray(max_tail)
         self.pop_size = pop_size
         self.atol = float(atol)
+        self.interpolation_bound = interpolation_bound
+        self.sampling_bound = sampling_bound
+        self.grad_atol = None if grad_atol is None else float(grad_atol)
+        self.angular_sensitivity = None if angular_sensitivity is None else sensitivity
+        self.interpolation_grad_bound = (
+            None if grad_atol is None else interpolation_grad_bound
+        )
+        self.sampling_grad_bound = None if grad_atol is None else sampling_grad_bound
         self.tail_tol = tail_tol
         self.interp_order = interp_order
         self.min_mode_count = min_mode_count
@@ -372,35 +646,37 @@ class FFT(AbstractTransitionBackend):
 
     @property
     def error_report(self) -> BackendErrorReport:
-        """Report analytic row error while leaving arithmetic error unbounded.
-
-        Evaluates host-side diagnostics; unavailable inside JIT tracing.
-        """
-        diagnostics = self.diagnostics()
+        """Read prepared analytic row bounds; arithmetic error remains unknown."""
+        grad_budget = None if self.grad_atol is None else self.grad_atol / 4
+        coordinate = _gradient_coordinate(self.angular_sensitivity)
         return BackendErrorReport(
             self.atol,
-            None,
+            self.grad_atol,
             (
                 ErrorComponent(
-                    "interpolation_and_sampling",
-                    diagnostics.value_bound,
-                    budget=self.atol / 2,
+                    "interpolation",
+                    self.interpolation_bound,
+                    self.interpolation_grad_bound,
+                    self.atol / 4,
+                    grad_budget,
                 ),
-                ErrorComponent("roundoff", None),
+                ErrorComponent(
+                    "sampling",
+                    self.sampling_bound,
+                    self.sampling_grad_bound,
+                    self.atol / 4,
+                    grad_budget,
+                ),
+                ErrorComponent(
+                    "roundoff",
+                    None,
+                    None,
+                    self.atol / 2,
+                    None if self.grad_atol is None else self.grad_atol / 2,
+                ),
             ),
+            None if coordinate is None else "branchwise; " + coordinate,
         )
-
-    def diagnostics(self) -> FFTDiagnostics:
-        """Bound exact-arithmetic interpolation, tails and branch-switch jumps.
-
-        This host-only calculation can be substantially slower than construction.
-        Derivatives use theta = 2 asin(sqrt(q)) and hold branchwise; switch
-        jumps are reported separately. Within-block stencil switches have zero
-        value jump and derivative jumps bounded by each block's diagnostic.
-        The FFT amplification estimate is not a floating-point error bound.
-        Geometry and application are unchanged, even if bounds exceed `atol`.
-        """
-        return fft_diagnostics(self)
 
     def __check_init__(self) -> None:
         """Check structural invariants without inspecting traced array values."""
