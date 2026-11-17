@@ -1,4 +1,4 @@
-"""Selection-independent, host-side [`FFT`][drifft.FFT] geometry construction."""
+"""Local binomial FFTs with host-side planning and differentiable JAX application."""
 
 # pattern: Functional Core
 # Deterministic planning, no file or network I/O.
@@ -9,7 +9,7 @@ import math
 from decimal import Context, Decimal, localcontext
 from fractions import Fraction as F
 from functools import lru_cache
-from typing import cast, final
+from typing import NamedTuple, cast, final
 
 import equinox as eqx
 import jax
@@ -32,12 +32,14 @@ from ._base import AbstractTransitionBackend
 
 
 def _trim(p):
+    """Remove trailing zeros from ascending power coefficients, retaining a constant."""
     while len(p) > 1 and p[-1] == 0:
         p = p[:-1]
     return p
 
 
 def _add(a, b):
+    """Add polynomials stored as ascending exact power coefficients."""
     return _trim(
         tuple(
             (a[i] if i < len(a) else 0) + (b[i] if i < len(b) else 0)
@@ -47,6 +49,7 @@ def _add(a, b):
 
 
 def _mul(a, b):
+    """Multiply ascending power coefficients by exact discrete convolution."""
     out = [F(0)] * (len(a) + len(b) - 1)
     for i, x in enumerate(a):
         for j, y in enumerate(b):
@@ -55,12 +58,17 @@ def _mul(a, b):
 
 
 def _derivative(a):
+    """Differentiate ascending power coefficients, including constant polynomials."""
     return tuple(i * a[i] for i in range(1, len(a))) or (F(0),)
 
 
 @lru_cache(maxsize=128)
 def _energy(M: int, n: int):
-    """Exact coefficients of H_n as a polynomial in v=q(1-q)."""
+    """Return exact ascending coefficients of the binomial derivative energy H_n.
+
+    With D=q(1-q)d/dq and binomial weights B_j, H_n=sum_j (D^n B_j)^2/B_j
+    is a polynomial in v=q(1-q). Its square root bounds the row L1 derivative.
+    """
     a = {1: (F(1),)}
     for order in range(1, n):
         nxt = {}
@@ -100,6 +108,7 @@ def _bernstein(p, lo: F, hi: F):
 
 
 def _split(b):
+    """Bisect Bernstein coefficients with exact de Casteljau subdivision."""
     left, right = [b[0]], [b[-1]]
     while len(b) > 1:
         b = tuple((x + y) / 2 for x, y in zip(b[:-1], b[1:], strict=True))
@@ -109,6 +118,7 @@ def _split(b):
 
 
 def _range(p, lo: F, hi: F, depth: int = 3):
+    """Enclose a polynomial on [lo,hi] using subdivided Bernstein coefficients."""
     pieces = [_bernstein(p, lo, hi)]
     for _ in range(depth):
         pieces = [child for b in pieces for child in _split(b)]
@@ -126,6 +136,7 @@ def _logistic(x: F):
 
 
 def _variance_interval(lo: F, hi: F):
+    """Enclose q(1-q) on [lo,hi], rounding outwards to a dyadic grid."""
     lower = min(lo * (1 - lo), hi * (1 - hi))
     upper = F(1, 4) if lo <= F(1, 2) <= hi else max(lo * (1 - lo), hi * (1 - hi))
     # Outward dyadic rounding keeps subsequent exact polynomial arithmetic cheap.
@@ -134,6 +145,7 @@ def _variance_interval(lo: F, hi: F):
 
 
 def _upper(x: F):
+    """Round an exact rational upwards to binary64; allow infinity on overflow."""
     try:
         value = float(x)
     except OverflowError:
@@ -144,6 +156,7 @@ def _upper(x: F):
 
 
 def _sqrt_upper(x: F):
+    """Round the square root of a nonnegative rational upwards to binary64."""
     value = math.sqrt(_upper(x))
     if math.isfinite(value) and F(value) ** 2 < x:
         value = math.nextafter(value, math.inf)
@@ -155,13 +168,18 @@ def _interpolation_bound(
     M: int,
     m: int,
     eta: float,
-    variance: float,
+    inverse_step: float,
     rlo: int,
     rhi: int,
     gradient: bool = False,
 ) -> tuple[float, float, float]:
-    """Value/angular-derivative remainders and derivative-tail amplification."""
-    V, e = F(variance), F(eta)
+    """Bound value/gradient remainders and gradient amplification of node tails.
+
+    The inclusive node halo has log-odds eta + r/inverse_step. Returned bounds
+    use the angular coordinate before applying parameter sensitivity; the last
+    two entries are zero when gradient planning is disabled.
+    """
+    V, e = F(inverse_step), F(eta)
     qlo = _logistic(e + rlo / V)[0]
     qhi = _logistic(e + rhi / V)[1]
     vlo, vhi = _variance_interval(qlo, qhi)
@@ -219,9 +237,26 @@ def _direct_grad_bound(
 
 
 def _fft_grid(
-    M: int, cutoff_count: int, spacing: float, order: int, sensitivity: float = 0.0
+    M: int,
+    cutoff_count: int,
+    spacing: float,
+    order: int,
+    sensitivity: float = 0.0,
+    *,
+    atol: float = 1e-10,
+    grad_atol: float | None = None,
 ):
-    """Prepare local geometry and value/gradient bounds on the host."""
+    """Choose coarse interpolation grids over quarter-step convolution grids.
+
+    H/h is a power of two, at most 64 before final-window curvature refinement.
+    Each candidate includes its full stencil halo in both analytic bounds.
+    The finest candidate can exceed the budgets; the caller then changes order
+    or cutoff, or reports the explicit-order override.
+
+    Returns (centers, log-odds centers, 1/H, core edges, coarse node intervals,
+    strides) and the maximum value, parameter-gradient, and tail-amplification
+    bounds. Direct-only geometry has empty arrays/lists and zero bounds.
+    """
     centers = []
     if M > 2 * cutoff_count:
         centers = [cutoff_count]
@@ -233,47 +268,67 @@ def _fft_grid(
                     j + max(1, int(spacing * np.sqrt(j * (1 - j / M)))),
                 )
             )
-    eta = logit(np.asarray(centers, dtype=float) / M)
-    variance = np.asarray(centers, dtype=float) * (
-        1 - np.asarray(centers, dtype=float) / M
-    )
+    counts = np.asarray(centers, dtype=float)
+    p = counts / M
+    eta = logit(p)
+    inverse_step = 4 * counts * (1 - p)
     edges = (eta[:-1] + eta[1:]) / 2
     core = (
         np.r_[logit(cutoff_count / M), edges, logit(1 - cutoff_count / M)]
         if centers
         else []
     )
-    intervals, bound, grad_bound, grad_amplification = [], 0.0, 0.0, 0.0
+    intervals, strides = [], []
+    bounds = np.zeros(3)
+    grad_budget = math.inf if grad_atol is None else grad_atol / 4
     for i in range(len(centers)):
-        lo = int(np.floor((core[i] - eta[i]) * variance[i])) - order // 2
-        hi = int(np.ceil((core[i + 1] - eta[i]) * variance[i])) + order // 2
+
+        def candidate(stride, i=i):
+            """Enclose one interpolation halo at the proposed dyadic spacing."""
+            inverse = inverse_step[i] / stride
+            lo = math.floor((core[i] - eta[i]) * inverse) - order // 2
+            hi = math.ceil((core[i + 1] - eta[i]) * inverse) + order // 2
+            bound = np.asarray(
+                _interpolation_bound(
+                    M, order, float(eta[i]), float(inverse), lo, hi, bool(sensitivity)
+                )
+            )
+            bound[1:] *= sensitivity
+            return lo, hi, bound
+
+        stride = 1
+        lo, hi, bound = candidate(stride)
+        while stride < 64:
+            next_lo, next_hi, next_bound = candidate(2 * stride)
+            if next_bound[0] > atol / 4 or next_bound[1] > grad_budget:
+                break
+            stride *= 2
+            lo, hi, bound = next_lo, next_hi, next_bound
+        inverse_step[i] /= stride
+        strides.append(stride)
         intervals.append((lo, hi))
-        value, grad, amplification = _interpolation_bound(
-            M, order, float(eta[i]), float(variance[i]), lo, hi, bool(sensitivity)
-        )
-        bound = max(bound, value)
-        grad_bound = max(grad_bound, sensitivity * grad)
-        grad_amplification = max(grad_amplification, sensitivity * amplification)
-    return (centers, eta, variance, edges, intervals), (
-        bound,
-        grad_bound,
-        grad_amplification,
+        bounds = np.maximum(bounds, bound)
+    return (centers, eta, inverse_step, edges, intervals, strides), tuple(
+        map(float, bounds)
     )
 
 
 @final
-class _FFTBlock(eqx.Module):
-    """One local factorization with inclusive input and output intervals.
+class _FFTBlock(NamedTuple):
+    """One temporary host factorization with inclusive input and output intervals.
 
     `b` scales input columns; `a` includes the modal probability and scales
     output nodes. `kernel_fft` represents the zero-padded convolution kernel.
-    Shapes and transform lengths are static; numerical arrays are PyTree leaves.
+    Successive output nodes are `stride` convolution indices apart.
+    Arrays remain in NumPy until blocks are packed into JAX buckets. This
+    planning-only record is never retained in the runtime backend.
     """
 
-    b: jax.Array
-    a: jax.Array
-    kernel_fft: jax.Array
-    nfft: int = eqx.field(static=True)
+    b: np.ndarray
+    a: np.ndarray
+    kernel_fft: np.ndarray
+    nfft: int
+    stride: int = 1
 
     @property
     def length(self) -> int:
@@ -305,36 +360,97 @@ def _stirling_correction(n: int) -> float:
     )
 
 
+_EXPM1_REMAINDER = tuple(1 / math.factorial(k + 2) for k in range(26))
+_LOG1P_REMAINDER = tuple((-1.0) ** (k + 1) / (k + 2) for k in range(64))
+
+
+def _centered_cumulant(p: float, delta: np.ndarray) -> np.ndarray:
+    """Evaluate log(1-p+p*exp(delta))-p*delta without first-order cancellation.
+
+    For 0<p<1, reflect to p <= 1/2. Near zero, combine expm1(delta)-delta
+    with log1p(t)-t, t=p*expm1(delta); both start quadratically. The Taylor
+    tails on |delta|<=1 and |t|<=1/2 are below binary64 rounding. For |delta|>1
+    use logaddexp directly: combining the exponential remainders would
+    cancel large terms. Clip inactive series arguments to avoid overflow.
+    """
+    if p > 0.5:
+        p, delta = 1 - p, -delta
+    d = np.clip(delta, -1, 1)
+    t = p * np.expm1(d)
+    small_exp = d**2 * np.polynomial.polynomial.polyval(d, _EXPM1_REMAINDER)
+    z = np.clip(t, -0.5, 0.5)
+    small_log = z**2 * np.polynomial.polynomial.polyval(z, _LOG1P_REMAINDER)
+    log_remainder = np.where(abs(t) <= 0.5, small_log, np.log1p(t) - t)
+    small = p * small_exp + log_remainder
+    large = np.logaddexp(np.log1p(-p), np.log(p) + delta) - p * delta
+    return np.where(abs(delta) <= 1, small, large)
+
+
 def _build_block(
-    M: int, j0: int, lo: int, hi: int, rlo: int, rhi: int, *, balance: bool = True
+    M: int,
+    j0: int,
+    lo: int,
+    hi: int,
+    rlo: int,
+    rhi: int,
+    *,
+    step: float,
+    stride: int = 1,
+    balance: bool = True,
 ) -> _FFTBlock:
-    """Construct local DTD factors with recurrence and stable modal normalization."""
+    """Build stable DTD factors on a fine grid, retaining coarse output nodes.
+
+    Output indices rlo/rhi use interpolation spacing H=stride*step. Refine the
+    convolution step if the final input window lacks a strict log-concavity
+    margin, doubling the stride to preserve H and every interpolation node.
+    This structural guard is not a bound on all floating-point errors.
+    """
     if not (0 < j0 < M and 0 <= lo <= hi <= M and rlo <= rhi):
         raise ValueError("Invalid block intervals or reference count")
     # Build variable-sized blocks on the host in float64, matching stored factors.
     p = np.float64(j0) / M
-    eta = np.log(p) - np.log1p(-p)
-    h = 1 / (M * p * (1 - p))
-    r = np.arange(rlo, rhi + 1, dtype=np.float64)
-    delta = h * r
-    loga = delta * j0 - M * np.log1p(p * np.expm1(delta)) + h * r**2 / 2
-    # Include the reference count even when the requested window excludes it.
+    if not (
+        math.isfinite(step) and step > 0 and isinstance(stride, int) and stride >= 1
+    ):
+        raise ValueError(
+            "step must be positive and finite and stride a positive integer"
+        )
+    # kappa_j >= 1/(j+1)+1/(M-j+1); its minimum is nearest M/2.
+    # Use the final tail window, including the center needed by the recurrence.
     left, right = min(lo, j0), max(hi, j0)
+    middle = min(max(M // 2, max(1, left)), min(M - 1, right))
+    curvature_lower = F(1, middle + 1) + F(1, M - middle + 1)
+    h = step
+    while F(h) >= curvature_lower:
+        h /= 2
+        stride *= 2
+    r = stride * np.arange(rlo, rhi + 1, dtype=np.float64)
+    delta = h * r
+    loga = -M * _centered_cumulant(p, delta) + h * r**2 / 2
+    # Include the reference count even when the requested window excludes it.
     j = np.arange(left, right, dtype=np.float64)
-    increments = np.log(M - j) - np.log(j + 1) + eta + h * (j - j0 + 0.5)
-    cumulative = np.r_[np.float64(0), np.cumsum(increments)]
-    logb = (cumulative - cumulative[j0 - left])[lo - left : hi - left + 1]
+    x = j - j0
+    increments = np.log1p(-x / (M - j0)) - np.log1p((x + 1) / j0) + h * (x + 0.5)
+    center = j0 - left
+    cumulative = np.r_[
+        -np.cumsum(increments[:center][::-1])[::-1],
+        0.0,
+        np.cumsum(increments[center:]),
+    ]
+    logb = cumulative[lo - left : hi - left + 1]
     logB = (
         -0.5 * np.log(2 * np.pi * M * p * (1 - p))
         + _stirling_correction(M)
         - _stirling_correction(j0)
         - _stirling_correction(M - j0)
     )
-    # Opposite shifts in log(a) and log(b) preserve the exact product while
-    # centering log(b)'s range, limiting large intermediate diagonal factors.
-    shift = (np.max(logb) + np.min(logb)) / 2 if balance else 0.0
+    # Normalize the log-concave input factor to max(b)=1. Centering its entire
+    # log range instead can overflow b when very small tails are retained.
+    # Opposite shifts preserve the product and its norm amplification.
+    shift = np.max(logb) if balance else 0.0
     a = np.exp(logB + loga + shift).astype(np.float64)
     b = np.exp(logb - shift).astype(np.float64)
+    rlo, rhi = stride * rlo, stride * rhi
     L, R = hi - lo + 1, rhi - rlo + 1
     nfft = 1 << (R + 2 * L - 3).bit_length()
     # The kernel has R+L-1 entries; convolution with L inputs needs R+2L-2
@@ -346,10 +462,11 @@ def _build_block(
             "Nonfinite local factors; use narrower blocks or a larger cutoff"
         )
     return _FFTBlock(
-        jnp.asarray(b),
-        jnp.asarray(a),
-        jnp.asarray(np.fft.rfft(kernel, nfft)),
+        b,
+        a,
+        np.fft.rfft(kernel, nfft),
         nfft,
+        stride,
     )
 
 
@@ -377,14 +494,14 @@ class FFT(AbstractTransitionBackend):
     computed with the [Fast Fourier Transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform) (FFT):
 
     $$
-    y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jv_j.
+    y_t=a_t\sum_j e^{-h(kt-(j-j_0))^2/2}\,b_jv_j.
     $$
 
     Here $v_j$ are destination values at counts $j=0,\ldots,M$, with $M=2N$
     for diploid destination population size $N$ (`pop_size`). The intermediate
-    values $y_r$ are expectations on a local grid, $j_0$ is a reference allele count,
-    $\Delta_{\mathrm{logit}}$ is the local log-odds spacing, and $a_r,b_j$ are
-    diagonal scaling weights. Zero-padded FFTs evaluate the convolution;
+    values $y_t$ are expectations on a local grid, $j_0$ is a reference allele count,
+    $h$ is the fine convolution spacing, $k$ is an integer output stride, and
+    $a_t,b_j$ are diagonal scaling weights. Zero-padded FFTs evaluate the convolution;
     polynomial interpolation approximates $(Pv)_i$ at the supplied offspring
     allele probabilities $q_i$ for source rows $i$. Near zero and one, direct
     binomial sums replace interpolation.
@@ -401,7 +518,7 @@ class FFT(AbstractTransitionBackend):
     buckets: tuple[_FFTBucket, ...]
     edges: jax.Array
     eta0: jax.Array
-    variance: jax.Array
+    inverse_step: jax.Array
     rmin: jax.Array
     offsets: jax.Array
     boundary_logchoose: jax.Array
@@ -431,13 +548,15 @@ class FFT(AbstractTransitionBackend):
         angular_sensitivity: float | None = None,
         tail_tol: float = 1e-12,
         interp_order: int | None = None,
-        min_mode_count: int = 128,
+        min_mode_count: int = 32,
         block_spacing: float = 1.0,
         balance: bool = True,
     ) -> None:
         r"""Plan local binomial FFTs over all success probabilities, independent of selection.
 
         Initializes host-computed quantile windows and cached kernel FFTs.
+        Convolution starts at h=1/(4 M p(1-p)); interpolation uses H=k h, with
+        dyadic k selected from the analytic value and gradient budgets.
         Construction is not JIT-compatible. Core intervals partition log-odds;
         halos support interpolation. For `pop_size <= min_mode_count` all rows use the
         direct fallback. Tail tolerance does not bound interpolation or roundoff.
@@ -456,14 +575,15 @@ class FFT(AbstractTransitionBackend):
         - `tail_tol`: Discarded mass budget in `[1e-15, .1)`, default `1e-12`;
           tightened to `atol / 8` to account for signed interpolation weights.
         - `interp_order`: None selects order 12, 14, or 16 from the analytic bound.
-          An explicit even order from 2 through 16 overrides interpolation planning;
+          An explicit even order from 2 through 16 overrides order selection;
           its reported value bound may exceed `atol`. An explicit order that
           cannot meet `grad_atol` raises `ValueError`.
         - `min_mode_count`: Initial boundary cutoff in expected copies, at least 8,
-          default 128. Automatic planning can enlarge it, up to direct-only
+          default 32. Automatic planning can enlarge it, up to direct-only
           evaluation, if no candidate order meets both interpolation budgets.
         - `block_spacing`: Center separation in local standard deviations, `(0, 4]`.
-        - `balance`: Whether to recenter the diagonal multipliers, default true.
+        - `balance`: Normalize each input factor to maximum one, compensating in
+          its output factor, default true. This preserves the exact operator.
 
         **Raises:**
 
@@ -512,7 +632,13 @@ class FFT(AbstractTransitionBackend):
             while True:
                 for order in (12, 14, 16):
                     geometry, bounds = _fft_grid(
-                        gene_copies, min_mode_count, block_spacing, order, sensitivity
+                        gene_copies,
+                        min_mode_count,
+                        block_spacing,
+                        order,
+                        sensitivity,
+                        atol=atol,
+                        grad_atol=grad_atol,
                     )
                     value_bound, grad_bound, _ = bounds
                     if value_bound <= atol / 4 and grad_bound <= grad_budget:
@@ -523,14 +649,20 @@ class FFT(AbstractTransitionBackend):
                 min_mode_count = min(pop_size, 2 * min_mode_count)
         else:
             geometry, bounds = _fft_grid(
-                gene_copies, min_mode_count, block_spacing, interp_order, sensitivity
+                gene_copies,
+                min_mode_count,
+                block_spacing,
+                interp_order,
+                sensitivity,
+                atol=atol,
+                grad_atol=grad_atol,
             )
             _, grad_bound, _ = bounds
             if grad_bound > grad_budget:
                 raise ValueError(
                     "explicit interp_order cannot meet grad_atol; use interp_order=None"
                 )
-        centers, eta0, variance, edges, intervals = geometry
+        centers, eta0, inverse_step, edges, intervals, strides = geometry
         interpolation_bound, interpolation_grad_bound, grad_amplification = bounds
         if grad_amplification:
             tail_tol = min(tail_tol, grad_budget / grad_amplification)
@@ -547,7 +679,7 @@ class FFT(AbstractTransitionBackend):
         total, max_tail = 0, 0.0
         for i, j0 in enumerate(centers):
             rlo, rhi = intervals[i]
-            pmin, pmax = expit(eta0[i] + np.array([rlo, rhi]) / variance[i])
+            pmin, pmax = expit(eta0[i] + np.array([rlo, rhi]) / inverse_step[i])
             lo = max(0, int(binom.ppf(quantile_tail / 2, gene_copies, pmin)))
             hi = min(gene_copies, int(binom.isf(quantile_tail / 2, gene_copies, pmax)))
             # Monotonic tails give a uniform bound throughout the node halo.
@@ -556,7 +688,18 @@ class FFT(AbstractTransitionBackend):
                 lo, hi = max(0, lo - 1), min(gene_copies, hi + 1)
                 tail = _tail_bound(gene_copies, lo, hi, pmin, pmax)
             max_tail = max(max_tail, tail)
-            block = _build_block(gene_copies, j0, lo, hi, rlo, rhi, balance=balance)
+            block = _build_block(
+                gene_copies,
+                j0,
+                lo,
+                hi,
+                rlo,
+                rhi,
+                # Derive both grids from the same stored reciprocal spacing.
+                step=1 / (inverse_step[i] * strides[i]),
+                stride=strides[i],
+                balance=balance,
+            )
             groups.setdefault(block.nfft, []).append((lo, block, total))
             offsets.append(total)
             rmins.append(rlo)
@@ -576,8 +719,8 @@ class FFT(AbstractTransitionBackend):
                 indices[k, : block.length] = np.arange(lo, lo + block.length)
                 input_scale[k, : block.length] = block.b
                 output_scale[k, : block.rows] = block.a
-                conv_indices[k, : block.rows] = np.arange(
-                    block.length - 1, block.length - 1 + block.rows
+                conv_indices[k, : block.rows] = (
+                    block.length - 1 + block.stride * np.arange(block.rows)
                 )
                 output_indices[k, : block.rows] = np.arange(offset, offset + block.rows)
             buckets.append(
@@ -585,7 +728,9 @@ class FFT(AbstractTransitionBackend):
                     indices=jnp.asarray(indices),
                     b=jnp.asarray(input_scale),
                     a=jnp.asarray(output_scale),
-                    kernel_fft=jnp.stack([block.kernel_fft for _, block, _ in blocks]),
+                    kernel_fft=jnp.asarray(
+                        np.stack([block.kernel_fft for _, block, _ in blocks])
+                    ),
                     conv_indices=jnp.asarray(conv_indices),
                     output_indices=jnp.asarray(output_indices),
                     nfft=nfft,
@@ -621,7 +766,7 @@ class FFT(AbstractTransitionBackend):
         self.buckets = tuple(buckets)
         self.edges = jnp.asarray(edges)
         self.eta0 = jnp.asarray(eta0)
-        self.variance = jnp.asarray(variance)
+        self.inverse_step = jnp.asarray(inverse_step)
         self.rmin = jnp.asarray(rmins, dtype=jnp.int32)
         self.offsets = jnp.asarray(offsets, dtype=jnp.int32)
         self.boundary_logchoose = jnp.asarray(logchoose)
@@ -683,7 +828,7 @@ class FFT(AbstractTransitionBackend):
         block_count = self.eta0.size
         if (
             self.eta0.ndim != 1
-            or self.variance.shape != (block_count,)
+            or self.inverse_step.shape != (block_count,)
             or self.rmin.shape != (block_count,)
             or self.offsets.shape != (block_count,)
             or self.edges.shape != (max(0, block_count - 1),)
@@ -774,7 +919,7 @@ class FFT(AbstractTransitionBackend):
         safe_probabilities = jnp.clip(probabilities, cutoff, 1 - cutoff)
         eta = jnp.log(safe_probabilities) - jnp.log1p(-safe_probabilities)
         block = jnp.searchsorted(self.edges, eta, side="right")
-        r = (eta - self.eta0[block]) * self.variance[block]
+        r = (eta - self.eta0[block]) * self.inverse_step[block]
         start = jnp.floor(r).astype(jnp.int32) - self.interp_order // 2 + 1
         t = r - start
         k = jnp.arange(self.interp_order)

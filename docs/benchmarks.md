@@ -57,19 +57,42 @@ and uniform mass, at selection strength 0.1.
 The [encoding comparison report](https://github.com/mancusolab/drifft/blob/main/benchmarks/ENCODINGS.md)
 records the CPU measurements and numerical tradeoffs for the filtered option,
 including matched-degree and larger-degree derivative experiments.
-Historical reports retain the former `accuracy` and `derivative_accuracy` names;
-their larger-degree heuristic experiments differ from current `grad_atol` planning.
 
 Use `benchmarks/compare_demography.py` to compare Sequential FFT with Jacobi and
 RationalKrylov on a neutral history with singleton mutation input. Its
 [report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RATIONAL_KRYLOV.md)
 records the revision and workload for each measurement.
 
-See [historical replacement results](https://github.com/mancusolab/drifft/blob/main/benchmarks/BERNSTEIN.md) for measured limitations.
+See the [archived backend comparison](https://github.com/mancusolab/drifft/blob/main/benchmarks/BERNSTEIN.md) for measured limitations.
 The older [CPU report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RESULTS.md) and
 [fastDTWF comparison](https://github.com/mancusolab/drifft/blob/main/benchmarks/FASTDTWF.md) describe the previous backend and
 record earlier revisions. Interpret those measurements against their recorded
 implementations rather than the current code.
+
+## FFT numerical validation
+
+`drifft.FFT` uses separate convolution and interpolation grids in production.
+Use the existing backend comparison for performance measurements, and the
+production numerical regressions for stricter accuracy checks:
+
+```sh
+uv run python benchmarks/compare_backends.py \
+  --sizes 8192 32768 --repeats 7 --output fft_backends.json
+uv run pytest -p no:capture tests/test_fft_numerics.py -q
+```
+
+The benchmark uses default backend settings. The numerical tests explicitly
+request `atol=1e-12`, `grad_atol=1e-10` with angular sensitivity one and compare
+against a 60-digit binomial reference in `tests/_reference.py`. They retain the
+original physical probes at 8,192 and 32,768 gene copies, signed value/gradient
+actions, transpose checks, and small-system factorization and conditioning
+checks. These sampled errors are regression evidence, not uniform floating-point
+certificates. All numerical regressions run with the normal test suite.
+
+The derivations and recorded measurements are in
+`notes/fft_architecture_investigation.md` and `notes/fft_architecture_results.json`.
+The note identifies the commit and commands needed to reproduce the experiment
+in a separate checkout.
 
 ## Schiffels–Durbin likelihood calculation
 

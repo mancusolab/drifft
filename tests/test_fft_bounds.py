@@ -75,7 +75,7 @@ def test_rational_range_captures_interior_extremum():
 def _ideal_block(backend, i, q, *, start=None):
     """Build exact-node interpolants using SciPy PMFs, bypassing FFT factors."""
     M = 2 * backend.pop_size
-    eta, V = float(backend.eta0[i]), float(backend.variance[i])
+    eta, V = float(backend.eta0[i]), float(backend.inverse_step[i])
     r = (np.log(q) - np.log1p(-q) - eta) * V
     if start is None:
         start = math.floor(r) - backend.interp_order // 2 + 1
@@ -142,6 +142,7 @@ def test_actual_jax_rows_jvp_vjp_and_forward(M, atol):
     basis = jnp.eye(M + 1)
 
     def rows(p, basis):
+        """Extract coefficient rows by applying the operator to basis vectors."""
         return jax.vmap(lambda v: backend.expect(p, v))(basis).T
 
     actual, derivative = jax.jit(
@@ -202,10 +203,7 @@ def test_explicit_order_is_an_override():
 def test_tight_target_changes_geometry():
     """The tolerance affects interpolation preparation, not just tail windows."""
     loose, tight = FFT(512, atol=1e-6), FFT(512, atol=4e-15)
-    assert (loose.interp_order, loose.min_mode_count) != (
-        tight.interp_order,
-        tight.min_mode_count,
-    )
+    assert not np.array_equal(loose.inverse_step, tight.inverse_step)
     assert tight.interpolation_bound < loose.interpolation_bound
 
 
@@ -226,6 +224,7 @@ def test_report_reads_cached_bounds(monkeypatch, grad_atol):
     )
 
     def unexpected(*args, **kwargs):
+        """Fail if reading the cached report invokes host planning again."""
         raise AssertionError("report recomputed geometry")
 
     monkeypatch.setattr(module, "_fft_grid", unexpected)
@@ -301,10 +300,7 @@ def test_gradient_target_changes_geometry_and_tail_windows():
     """A gradient request must affect preparation, not merely attach a report."""
     base = FFT(512)
     joint = FFT(512, grad_atol=1e-10, angular_sensitivity=1)
-    assert (joint.interp_order, joint.min_mode_count) != (
-        base.interp_order,
-        base.min_mode_count,
-    )
+    assert not np.array_equal(joint.inverse_step, base.inverse_step)
     assert joint.tail_tol < base.tail_tol
     assert joint.grad_atol is not None
     assert joint.interpolation_grad_bound is not None
@@ -391,6 +387,7 @@ def test_actual_joint_jax_derivatives(grad_atol, sensitivity):
     tangent = sensitivity * jnp.sqrt(q * (1 - q))
 
     def rows(p, basis):
+        """Expose coefficients to differentiate the complete operator row."""
         return jax.vmap(lambda v: backend.expect(p, v))(basis).T
 
     _, derivative = jax.jit(
@@ -463,7 +460,8 @@ def test_manual_derivative_bounds_against_ideal_interpolants(order, grad_atol):
     assert backend.interpolation_grad_bound is not None
     assert backend.sampling_grad_bound is not None
     bound = backend.interpolation_grad_bound + backend.sampling_grad_bound
-    edges = np.r_[0.25, expit(np.asarray(backend.edges)), 0.75]
+    cutoff = backend.min_mode_count / M
+    edges = np.r_[cutoff, expit(np.asarray(backend.edges)), 1 - cutoff]
     for i in range(len(backend.eta0)):
         for q in np.linspace(edges[i], edges[i + 1], 7)[1:-1]:
             _, angular = _ideal_block(backend, i, q)

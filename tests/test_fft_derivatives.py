@@ -42,7 +42,9 @@ def test_fft_probability_derivatives_above_binomial_degree_vanish():
 @pytest.mark.parametrize("size", [16, 1024])
 def test_fft_probability_derivatives_and_transpose(size):
     """Match binomial first and second derivatives, including reflection endpoints."""
-    backend = FFT(size // 2)
+    # Resolve interpolation sufficiently to test second-order AD. A value-only
+    # 1e-10 plan can use coarser nodes; it makes no second-derivative error promise.
+    backend = FFT(size // 2, atol=1e-12, grad_atol=1e-10, angular_sensitivity=1)
     q = jnp.array([0.0, 1e-12, 0.03, 0.5, 0.97, 1 - 1e-12, 1.0])
     values = jnp.asarray(np.random.default_rng(size).normal(size=size + 1))
     mass = jnp.array([-0.2, 0.3, -0.7, 0.9, 0.4, -0.5, 0.8])

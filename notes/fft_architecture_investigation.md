@@ -2,10 +2,14 @@
 
 Research date: 2026-11-13. Baseline: `a1c2af9` on `fft_diagnostic`.
 
+Production integration: 2026-11-17. The two-grid construction is now in
+`src/drifft/_backend/fft.py`; the archived measurements below still describe the
+original research baseline and prototype.
+
 ## Recommendation and scope
 
 Keep the exact binomial diagonal–Toeplitz–diagonal (DTD) factorization, but
-separate two choices that the current implementation ties together:
+separate two choices that the baseline implementation tied together:
 
 1. Choose a **fine convolution spacing** `h` to control diagonal amplification.
 2. Choose a **coarser interpolation spacing** `H = k h`, with integer `k`, from
@@ -17,18 +21,18 @@ separate two choices that the current implementation ties together:
 
 This is a concrete candidate with provable analytic/conditioning properties
 and measured improvements, not a proof of universal optimality or a complete
-floating-point tolerance certificate. The production backend has **not** been
-modified. The research driver is
-[`benchmarks/investigate_fft_spacing.py`](../benchmarks/investigate_fft_spacing.py);
-its independent checks are in
-[`benchmarks/test_fft_spacing.py`](../benchmarks/test_fft_spacing.py).
+floating-point tolerance certificate. The research driver has been retired;
+the original experiment and its compatible baseline are recoverable at commit
+`c4e07c7`. Production regressions live in
+[`tests/test_fft_numerics.py`](../tests/test_fft_numerics.py), using the independent
+60-digit oracle in [`tests/_reference.py`](../tests/_reference.py). They construct
+production FFT backends directly and run in normal test discovery and CI shard 2.
 
-The prototype reuses the production `FFT` container, runtime `expect`, JVP/VJP,
-`advance`, and cached report. It temporarily substitutes two host builders during
-construction, then adjusts the cached convolution gather indices for strides.
-There is no monkeypatch during application, no custom derivative, and no
-accuracy checking in a matvec. This injection is an isolated research mechanism,
-not the proposed production implementation.
+The archived prototype reused the then-production `FFT` container, runtime
+`expect`, JVP/VJP, `advance`, and cached report. It substituted two host builders
+and adjusted convolution gather indices after construction. Those construction
+overrides were confined to the research driver; its application used the same
+runtime kernels.
 
 ## What can be proved
 
@@ -51,7 +55,7 @@ a_r=B_{M,j_0}(p)
 \]
 
 Proof: exponential tilting gives the factor `exp(hr*x)`, and
-`r*x = (r*r+x*x-(r-x)*(r-x))/2`. The current choice
+`r*x = (r*r+x*x-(r-x)*(r-x))/2`. The baseline choice
 `h = 1/[Mp(1-p)]` is therefore a parameterization, not a requirement for an exact
 convolution. Multiplying `h` by a constant preserves the exact binomial kernel.
 
@@ -115,7 +119,7 @@ For an interior count `j`, the exact second difference of `log b` is
 Over a retained interval, let `kappa_*` be the minimum of these curvatures. If
 `h < kappa_*`, then `b` is strongly log-concave with margin
 `mu=kappa_*-h>0`. This prevents the input factor from decreasing and then growing
-again in the retained tails, a failure mode allowed by the current spacing.
+again in the retained tails, a failure mode allowed by the baseline spacing.
 
 A conservative, exact rational lower bound is particularly cheap:
 
@@ -286,10 +290,9 @@ is used only by the independent validation oracle, not by the new factor builder
 ## Evidence and limitations
 
 Results are recorded in [`fft_architecture_results.json`](fft_architecture_results.json).
-The final comparison
-uses identical physical query points for both plans. Earlier ablations retain
-their original plan-specific query sets and should not be treated as paired
-uniform-domain tests.
+The final comparison uses identical physical query points for both plans.
+Earlier ablations retain their original plan-specific query sets and should not
+be treated as paired uniform-domain tests.
 
 The oracle constructs complete binomial rows by an independent normalized
 recurrence at 60 decimal digits, with exact conversion of the binary64 query.
@@ -309,6 +312,8 @@ Timing uses the same full population query grid `q=linspace(0,1,M+1)` for every
 plan, dynamic geometry arguments, synchronized outputs, and repeated warm runs.
 These are local CPU measurements on macOS ARM64, JAX/JAXLIB 0.11.2, Equinox
 0.13.8, NumPy 2.5.4, and SciPy 1.18.1. They are not GPU or cross-machine results.
+Planner caches are reused across candidates within an invocation. The paired
+reproduction commands use separate invocations to compare preparation costs.
 
 ### Paired results
 
@@ -317,7 +322,7 @@ Both plans requested `atol=1e-12`, `grad_atol=1e-10`, and
 including endpoints, both sides of direct cutoffs, representative block
 interfaces, and logit-spaced interiors. Timing uses 25 warm repetitions.
 
-The current planner selected order 16, cutoff 128, and `h=H=1/V`. The proposed
+The baseline planner selected order 16, cutoff 128, and `h=H=1/V`. The proposed
 candidate used order 12, cutoff 32, `h=1/(4V)`, stable factors, and per-block
 strides 1–8 (`M=8192`) or 1–16 (`M=32768`). These are two candidate selections,
 not a claim that those constants are optimal for every tolerance or population.
@@ -332,8 +337,8 @@ not a claim that those constants are optimal for every tolerance or population.
 The proposal reduced these observed gradient errors by 123× and 236×, and the
 amplification proxy by 3,511× and 6,241×. Its curvature-ratio **upper bounds**
 were 0.730 and 0.741, so every retained input factor has a positive proved
-log-concavity margin. The current plans' upper ratios were 1.91 and 1.95 and
-do not meet this sufficient gate.
+log-concavity margin. The baseline plans' upper ratios round outward to 1.909 and
+1.954; these plans do not meet this sufficient gate.
 
 Actual signed forward/JVP actions also improved. At `M=32768`, the largest
 tested gradient action error fell from 3.84e-9 to 2.66e-11, and signed
@@ -359,7 +364,7 @@ or a strict speed win on every operation.
 
 Earlier `M=8192` runs used 42 plan-specific probes. At cutoff 128:
 
-| Change from current plan | Maximum angular-gradient row L1 error |
+| Change from baseline plan | Maximum angular-gradient row L1 error |
 | --- | ---: |
 | Current, order 16 | 7.14e-10 |
 | Stable factors only, order 16 | 4.92e-10 |
@@ -373,7 +378,7 @@ separate interpolation spacing reduced the sampled **interior** gradient error
 from 1.34e-11 to 5.69e-12; direct rows then dominated the total. Reducing the
 direct cutoff to 32 produced the final combined candidate.
 
-These larger errors in the current backend concern floating-point arithmetic;
+These larger errors in the baseline backend concern floating-point arithmetic;
 they do not refute its documented exact-arithmetic, branchwise component bounds.
 Likewise, the successful proposed runs are measurements, not a uniform proof
 over all probabilities, vectors, sizes, or machines. Even the reduced conservative
@@ -385,32 +390,94 @@ the requested tolerances in these experiments.
 
 ### Reproduction and checks
 
-Run the paired comparison from the repository root:
+To reproduce the original experiment, use a separate checkout of commit
+`c4e07c7` and its locked environment. Run these commands from that checkout,
+where the archived driver and its compatible production code are both present:
 
 ```sh
-.venv/bin/python benchmarks/investigate_fft_spacing.py \
+uv sync --locked
+mkdir -p .cache
+uv run python benchmarks/investigate_fft_spacing.py \
   --sizes 8192 32768 --scales 1 --cutoffs 128 \
   --atol 1e-12 --grad-atol 1e-10 --common-queries --repeats 25 \
   --output .cache/fft_spacing_current.json
 
-.venv/bin/python benchmarks/investigate_fft_spacing.py \
+uv run python benchmarks/investigate_fft_spacing.py \
   --sizes 8192 32768 --scales .25 --cutoffs 32 \
   --atol 1e-12 --grad-atol 1e-10 --common-queries --repeats 25 \
   --stable-factors --separate-grids \
   --output .cache/fft_spacing_proposed.json
 
-.venv/bin/python -m pytest -p no:capture benchmarks/test_fft_spacing.py -q
+uv run pytest -p no:capture benchmarks/test_fft_spacing.py -q
 ```
 
-The independent checks passed: **15 tests**. They include baseline equivalence
-to the production backend at power-of-two and non-power-of-two population sizes,
+The archived CLI saves a JSON report after each candidate and writes summaries
+to stdout. Inspect any `error` entries in the report; that historical CLI does
+not indicate rejected candidates with a nonzero exit status. The recorded
+2026-11-13 measurements retain their original capture format.
+
+Use `--plan-only` to inspect geometry without reference or timing work, and
+`--grad-atol none` to disable gradient planning. `--query-count` controls probe
+density; interface probes increase the actual reported count. With
+`--common-queries`, the default `--query-count 32` produces 61 queries at the
+paired study sizes.
+
+The original investigation passed **15 independent checks**, including baseline
+equivalence to the baseline backend at power-of-two and non-power-of-two sizes,
 high-precision factor identities and centered cumulants, the log-concavity
 envelope, the refinement bound, and signed JIT/JVP/VJP/batching/transpose actions
-for both single-grid and two-grid plans. The aggregate contains 45 candidate
-runs across 10 experiment batches, including planning-only and unsuccessful
-ablation cases. It does not claim that all 45 candidates improved on baseline.
+for both single-grid and two-grid plans. Current production regressions retain
+the factorization, conditioning, refinement, signed-action, and large-case
+accuracy checks, along with direct-only fallback, Decimal context isolation,
+probability validation, and nonfinite-factor rejection. Trial-only comparisons
+and CLI tests were removed with the driver. Run the retained checks from the
+current checkout with:
+
+```sh
+uv run pytest -p no:capture tests/test_fft_numerics.py -q
+```
+
+This retirement does not regenerate the recorded performance tables.
+The aggregate contains 45 candidate runs across 10 experiment batches, including
+planning-only and unsuccessful ablations. It does not claim that all 45
+candidates improved on baseline.
 
 ## Production design
+
+### Implemented construction
+
+The production backend starts at `h=1/(4V)` and `c=32`, tries orders 12/14/16,
+and selects dyadic interpolation strides up to 64 from the existing `atol` and
+`grad_atol` allocations. Explicit cutoffs remain honored as initial cutoffs.
+`inverse_step` stores `1/H`; the misleading `variance` field has been removed.
+Strided convolution gathers and dense-span FFT padding are prepared together.
+All production helpers remain in the FFT module, with no new public classes.
+
+After tail windows are final, the builder checks the rational curvature lower
+bound. If necessary it halves `h` and doubles the stride, preserving every
+interpolation node. Centered cumulants and outward `log1p` recurrences construct
+the factors. The default balancing now normalizes `max(b)=1`: centering the
+entire log range can overflow when a wide window includes very small tails.
+The driver at the historical checkpoint uses its original balancing.
+Production evaluates large centered-cumulant shifts with `logaddexp`, avoiding
+the exponential cancellation in the original helper outside its series range.
+Temporary block factors remain in NumPy until bucket packing; runtime geometry
+is converted to JAX only after that preparation.
+
+Independent production regressions at the two research sizes, using the same
+61 physical probabilities and 60-digit reference, measured:
+
+| Gene copies | Maximum row L1 error | Maximum angular-gradient row L1 error |
+| --- | --- | --- |
+| 8,192 | `8.95e-14` | `8.69e-12` |
+| 32,768 | `2.65e-14` | `2.66e-11` |
+
+Signed value/JVP actions and transpose propagation also passed the requested
+`atol=1e-12`, `grad_atol=1e-10` tolerances. These remain sampled CPU regressions.
+The tests separately verify factor identities, curvature refinement preserving
+nodes, strided padding/gathers, and second-order AD against binomial derivatives.
+
+### Further certified planning
 
 The public interface can remain `FFT(..., atol=..., grad_atol=...,
 angular_sensitivity=...)`, with the same report type. This does not require a
@@ -434,12 +501,10 @@ This search runs during construction. All selected geometry stays fixed during
 an application and its derivative. The experiments compare particular candidate
 plans; they do not implement this entire automatically certified search.
 
-Implementation changes are localized: pass `h` to the block builder; store
-`1/H` for interpolation (rename the currently misleading `variance` field);
-prepare strided convolution indices; integrate stable factor formulas; and
-extend the existing planner. The `c=32` start used in the strongest measured
-candidate is a proposal to test as a default, not a reason to ignore a caller's
-explicit `min_mode_count` setting.
+The integration implements the tested construction and final-window curvature
+guard, not this full arithmetic-certified or cost-optimized search. The report
+continues to leave roundoff and total bounds unknown. Input curvature alone
+does not certify output-factor amplification or arbitrary binary64 targets.
 
 For fixed tolerances and bounded refinement factors, local core spacing gives
 `O(sqrt(M))` blocks with `O(sqrt(M))` worst-case padded transforms: the same
@@ -465,7 +530,7 @@ derivative error terms. This study does not implement or validate that change.
 
 - **Only rebalance the two diagonals:** useful for exponent range, but leaves
   their product-norm amplification unchanged.
-- **Only raise interpolation order or tighten tails:** the current planner can
+- **Only raise interpolation order or tighten tails:** the baseline planner can
   improve its analytic bounds while making DTD arithmetic worse. The baseline
   tight-tolerance experiments exhibit this problem.
 - **Only halve spacing:** a useful first improvement, but dense interpolation

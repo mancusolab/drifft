@@ -32,17 +32,36 @@ $O(n)$, so they preserve this saving.
 Within a retained local grid, this diagonal–Toeplitz–diagonal factorization gives
 
 $$
-y_r=a_r\sum_j e^{-\Delta_{\mathrm{logit}}(r-(j-j_0))^2/2}\,b_jf_j.
+y_t=a_t\sum_j e^{-h(kt-(j-j_0))^2/2}\,b_jf_j.
 $$
 
-Here $j_0$ is a reference count, $\Delta_{\mathrm{logit}}$ is the log-odds spacing, and $a_r,b_j$
-are scaling weights. After scaling $f_j$ by $b_j$, the kernel depends only on
-$r-(j-j_0)$. FFTs turn this convolution into pointwise multiplication in Fourier
-space; an inverse FFT and scaling by $a_r$ recover the result. Zero-padding
+Here $j_0$ is a reference count, $h$ is the fine log-odds spacing, $k$ is an integer
+stride, and $a_t,b_j$ are scaling weights. After scaling $f_j$ by $b_j$, the kernel
+depends only on the difference between the fine output index $kt$ and $j-j_0$.
+FFTs turn this convolution into pointwise multiplication in Fourier
+space; an inverse FFT and scaling by $a_t$ recover the result. Zero-padding
 prevents circular wraparound, and no dense block is constructed.
 Local polynomial interpolation evaluates
 the result at the required offspring probabilities. Near the endpoints,
 direct binomial sums replace the log-odds interpolation.
+
+The two grids have separate roles. Convolution starts at
+$h=1/(4Mp(1-p))$, where $p=j_0/M$, to control diagonal-factor growth.
+Interpolation uses $H=kh$, selecting a power-of-two stride from the value and
+gradient bounds. Only these coarse nodes are retained. FFT padding covers the
+entire fine-grid span, and strided gathers select its coarse outputs without
+adding a transform.
+
+The input factors use outward `log1p` recurrences from the reference count.
+The output factors use a centered binomial cumulant: a series resolves its
+small quadratic terms, and log-space evaluation handles large shifts without
+overflow. On the final retained count window,
+the builder checks an exact-rational lower bound on binomial log curvature.
+If necessary, it halves $h$ and doubles $k$, preserving $H$ and all interpolation
+nodes while making the input factor strictly log-concave. By default it then
+normalizes the input factor to maximum one, with the opposite scaling in the
+output factor. These steps improve conditioning and exponent range; they do
+not provide a complete floating-point error certificate.
 
 ## Cost and reuse
 
@@ -55,7 +74,8 @@ scaling, interpolation at $n_{\mathrm{eval}}$ probabilities, and direct endpoint
 Their costs depend on the retained windows and interpolation stencil. There
 is no sublinear-in-output guarantee from the FFT length alone.
 
-Preparation caches binomial geometry, scaling factors, and kernel FFTs. They
+Preparation builds binomial geometry, scaling factors, and kernel FFTs in
+NumPy/SciPy, packs them into buckets, then creates the cached JAX arrays. They
 are reused across vectors and selection parameters at fixed sizes and settings.
 The transforms consume population-space values on each application; no dense
 population transition is stored.
@@ -70,10 +90,10 @@ binomial tails, interpolation, and floating-point arithmetic.
 | --- | --- |
 | `atol`, `grad_atol` | Joint value and branchwise parameter-derivative targets |
 | `tail_tol` | Omitted probability mass in retained binomial windows |
-| `interp_order` | Optional explicit stencil size; overrides interpolation planning |
+| `interp_order` | Optional explicit stencil size; overrides automatic order selection |
 | `min_mode_count` | Initial extent of direct evaluation; automatic planning may enlarge it |
 | `block_spacing` | Separation of local grids |
-| `balance` | Recenter diagonal scaling factors |
+| `balance` | Normalize the input factors, compensating in the output factors |
 
 A tail tolerance does not bound interpolation or arithmetic error. For small
 populations, the backend uses direct sums throughout. Check final results under
@@ -81,11 +101,14 @@ tighter settings and against dense binomial rows where feasible.
 
 `FFT(pop_size, atol=...)` plans interpolation and sampling on the host, with
 one quarter of `atol` allocated to each. With `interp_order=None` (the default),
-it tries orders 12, 14, and 16. If none meets the interpolation budget, it doubles
+it tries orders 12, 14, and 16, starting the direct region at 32 expected copies.
+Within each block it tests interpolation strides 1, 2, 4, up to 64 and retains
+the coarsest passing stride before the first failed candidate. Each candidate's
+full interpolation halo enters the bounds. If no order meets the budgets, it doubles
 the boundary cutoff and retries, up to direct-only evaluation. This finite
 search does not assume that higher order always improves the bound.
-An explicit even `interp_order` from 2 through 16 preserves the requested
-geometry and may produce an interpolation bound above the target, analogous
+An explicit even `interp_order` from 2 through 16 fixes the requested
+order and may produce an interpolation bound above the target, analogous
 to an explicit Jacobi rank. If `grad_atol` is supplied, an explicit order
 exceeding its interpolation-gradient budget raises `ValueError`.
 
@@ -105,9 +128,10 @@ calculation.
 
 The analytic bounds exclude errors from coordinate arithmetic, diagonal-factor
 construction, cached kernels, and FFT application. `error_report` therefore
-leaves `roundoff` and the total bound unknown. Small boundary cutoffs can produce
-severe cancellation even when every stored factor is finite; increasing order
-or tightening tails does not necessarily improve numerical accuracy.
+leaves `roundoff` and the total bound unknown. Small boundary cutoffs or wide
+explicit blocks can still amplify arithmetic error even when every stored
+factor is finite and the input factor is log-concave. Increasing order or
+tightening tails does not necessarily improve numerical accuracy.
 
 ## Differentiation and adjoints
 

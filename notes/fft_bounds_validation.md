@@ -3,7 +3,9 @@
 This records the diagnostic checkpoint at commit `0ad5f7c`. Its API and test
 counts are historical. The subsequent simplification integrates value bounds
 into `fft.py`, removes the separate diagnostic API, and uses `atol` to plan
-interpolation and sampling. See the current FFT method documentation.
+interpolation and sampling. For the current value/gradient interface and
+two-grid construction, see the [FFT method documentation](../docs/methods/fft.md)
+and [architecture investigation](fft_architecture_investigation.md).
 
 The implementation adds `FFT.diagnostics()` and an analytic value contribution
 to `FFT.error_report`. It preserves construction, interpolation, and application;

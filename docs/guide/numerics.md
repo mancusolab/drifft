@@ -65,7 +65,7 @@ not only a one-generation transition.
 
 | Component | How to tighten the approximation |
 | --- | --- |
-| FFT | Lower `atol` or branchwise `grad_atol` to jointly plan interpolation order, direct-region cutoff, and sampled tails. An explicit `interp_order` overrides value planning but must satisfy any gradient target. |
+| FFT | Lower `atol` or branchwise `grad_atol` to jointly plan interpolation spacing/order, direct-region cutoff, and sampled tails. An explicit `interp_order` fixes the order but spacing is still planned; the reported value bound may exceed the target, while any gradient target must be satisfied. |
 | NUFFT | Lower `atol` for values and `grad_atol` for parameter derivatives; `tail_tol` and `nufft_tol` can request stricter numerical evaluation. |
 | Jacobi | Lower `atol` or `grad_atol` for automatic rank, quadrature, and sampling; explicit `rank` overrides projection planning. |
 | Krylov | Increase `dimension`; lower `rtol` and `atol`. |
@@ -103,11 +103,9 @@ an incompatible explicit order or numerical planning failure raises `ValueError`
 Dense has zero analytic approximation error, with uncertified arithmetic error
 for both values and derivatives.
 
-`grad_atol` replaces the removed NUFFT `derivative_accuracy` heuristic. NUFFT's
-`accuracy` and Jacobi's `one_step_tolerance` are replaced by `atol`. The new
-derivative planning is independent of Krylov's `check_sensitivity` flag. Backend
-targets concern one generation; Krylov/solver tolerances retain their existing
-power-action/residual meanings. They are not end-to-end epoch guarantees. See the
+Backend derivative planning is independent of Krylov's `check_sensitivity` flag.
+Backend targets concern one generation; Krylov and solver tolerances apply to
+power-action estimates and residuals. They are not end-to-end epoch guarantees. See the
 [backend API](../api/backends.md) for defaults and encoding options.
 If a Krylov shifted solve fails, increasing the outer `dimension` does not fix
 it; see [Krylov controls](../methods/jacobi_krylov.md#accuracy-and-controls).

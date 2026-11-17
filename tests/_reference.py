@@ -1,9 +1,56 @@
-"""Independent dense binomial references shared by evolution tests."""
+"""Independent binomial references shared by backend and evolution tests."""
+
+from decimal import Context, Decimal, localcontext
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax.scipy.special import gammaln, xlog1py, xlogy
+
+
+def decimal_binomial_rows(M: int, probabilities) -> tuple[np.ndarray, np.ndarray]:
+    """Return independent binomial rows and angular derivatives at 60 digits.
+
+    Decimal avoids mistaking reference PMF/log-factorial error for a backend's
+    accuracy floor on platforms where longdouble is only binary64. The angular
+    derivative is evaluated in high precision before conversion to float64.
+    Inputs are a nonnegative integer degree and a finite one-dimensional vector
+    of probabilities in [0,1]; invalid inputs raise ValueError. Both outputs
+    have shape (len(probabilities), M+1), including empty query vectors. The
+    Decimal context is isolated from caller rounding and trap settings.
+    """
+    if isinstance(M, bool) or not isinstance(M, int) or M < 0:
+        raise ValueError("reference degree must be a nonnegative Python integer")
+    probabilities = np.asarray(probabilities, dtype=float)
+    if probabilities.ndim != 1 or not np.all(
+        np.isfinite(probabilities) & (probabilities >= 0) & (probabilities <= 1)
+    ):
+        raise ValueError("probabilities must be a finite vector in [0, 1]")
+    rows = np.zeros((len(probabilities), M + 1))
+    grads = np.zeros_like(rows)
+    with localcontext(Context(prec=60)):
+        for index, probability in enumerate(probabilities):
+            q = Decimal(float(probability))
+            if q == 0 or q == 1:
+                rows[index, 0 if q == 0 else M] = 1
+                continue
+            odds = q / (1 - q)
+            mode = int((M + 1) * q)
+            weights = [Decimal(0)] * (M + 1)
+            weights[mode] = Decimal(1)
+            for j in range(mode, M):
+                weights[j + 1] = weights[j] * (M - j) / ((j + 1) / odds)
+            for j in range(mode, 0, -1):
+                weights[j - 1] = weights[j] * j / ((M - j + 1) * odds)
+            total = sum(weights)
+            variance_root = (q * (1 - q)).sqrt()
+            rows[index] = [float(w / total) for w in weights]
+            grads[index] = [
+                float(w / total * (j - M * q) / variance_root)
+                for j, w in enumerate(weights)
+            ]
+    return rows, grads
 
 
 def dense_transition(source_pop_size, dest_pop_size, strength):
