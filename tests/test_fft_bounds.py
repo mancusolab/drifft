@@ -11,7 +11,7 @@ from scipy.special import expit
 from scipy.stats import binom
 
 from drifft import FFT
-from drifft._backend.fft import _energy, _range
+from drifft._backend.fft import _energy, _energy_upper, _range
 
 jax.config.update("jax_enable_x64", True)
 
@@ -70,6 +70,14 @@ def test_rational_range_captures_interior_extremum():
     lower, upper = _range((F(0), F(1), F(-1)), F(0), F(1))
     assert lower <= 0
     assert F(1, 4) <= upper <= F(17, 64)
+
+
+def test_energy_upper_handles_endpoint_and_interior_maxima():
+    """Check an increasing polynomial and a parabola peaking inside the halo."""
+    lo, hi = F(1, 16), F(1, 4)
+    assert _energy_upper((F(0), F(1), F(-1)), lo, hi) == hi * (1 - hi)
+    # v - 4v² peaks at v=1/8, where it is strictly above either endpoint.
+    assert _energy_upper((F(0), F(1), F(-4)), lo, hi) >= F(1, 16)
 
 
 def _ideal_block(backend, i, q, *, start=None):

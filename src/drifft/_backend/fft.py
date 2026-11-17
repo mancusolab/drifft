@@ -125,6 +125,23 @@ def _range(p, lo: F, hi: F, depth: int = 3):
     return min(min(b) for b in pieces), max(max(b) for b in pieces)
 
 
+@lru_cache(maxsize=128)
+def _increasing_on_variance_domain(p):
+    """Certify a nonnegative derivative on [0, 1/4] for a fixed polynomial."""
+    return min(_bernstein(_derivative(p), F(0), F(1, 4))) >= 0
+
+
+def _energy_upper(p, lo: F, hi: F):
+    """Bound energy on a variance interval produced by _variance_interval."""
+    if not _increasing_on_variance_domain(p):
+        return _range(p, lo, hi)[1]
+    # The maximum is attained at hi. Horner evaluation stays exact.
+    value = p[-1]
+    for coefficient in reversed(p[:-1]):
+        value = value * hi + coefficient
+    return value
+
+
 def _logistic(x: F):
     """Enclose the halo endpoints with correctly rounded Decimal exponentials."""
     # Bound evaluation must not inherit the caller's rounding or trap settings.
@@ -183,7 +200,7 @@ def _interpolation_bound(
     qlo = _logistic(e + rlo / V)[0]
     qhi = _logistic(e + rhi / V)[1]
     vlo, vhi = _variance_interval(qlo, qhi)
-    energy = max(F(0), _range(_energy(M, m), vlo, vhi)[1])
+    energy = max(F(0), _energy_upper(_energy(M, m), vlo, vhi))
     derivative = F(_sqrt_upper(energy / V ** (2 * m)))
     alpha = F(math.comb(m, m // 2), 4**m)
     value = _upper(alpha * derivative)
@@ -191,7 +208,7 @@ def _interpolation_bound(
         return value, 0.0, 0.0
     # Differentiated divided-difference bound (analysis eq. 4.7), not
     # differentiation of an unspecified scalar remainder point.
-    next_energy = max(F(0), _range(_energy(M, m + 1), vlo, vhi)[1])
+    next_energy = max(F(0), _energy_upper(_energy(M, m + 1), vlo, vhi))
     next_derivative = F(_sqrt_upper(next_energy / V ** (2 * (m + 1))))
     gamma = F(1, (m // 2) * math.comb(m, m // 2))
     # The halo contains the core. Its minimum variance gives a conservative
