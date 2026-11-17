@@ -88,10 +88,11 @@ A separate compilation-only probe at 28,896 gene copies (1,000 generations, 128 
 
 ## Run a new comparison
 
-The tracked driver compares Sequential FFT with Jacobi + RationalKrylov:
+The driver crosses the selected epoch backends and evolution methods. Each pair uses FFT at size changes. For example:
 
 ```bash
 uv run python benchmarks/compare_demography.py /path/to/history.tsv \
+  --backends fft jacobi --methods sequential rational \
   --cutoff 252 --initialization equilibrium --mutation-rate 1e-8 \
   --krylov-dimension 128 --rtol 1e-8 --atol 1e-12 \
   --equilibrium-rtol 1e-10 --equilibrium-atol 1e-12 \
@@ -100,9 +101,9 @@ uv run python benchmarks/compare_demography.py /path/to/history.tsv \
 
 The tab-separated input requires integer `Ne` (diploid population size) and `T_gen` (generations ago) columns, ordered from oldest to youngest with strictly decreasing times. Extra columns are ignored. The cutoff retains boundaries with `T_gen >= cutoff`; it does not interpolate a boundary at the cutoff. At least two boundaries must remain. Each interval applies `duration - 1` generations at its source size, then one FFT step to its destination size. The input is supplied by the user and is not copied into the repository.
 
-The driver uses neutral selection and singleton mutation input. `--initialization zero` starts with no segregating mass; the default computes FFT equilibrium once and shares that vector with both workers. `--rank` optionally overrides the Krylov rank. The other flags above expose solver tolerances and limits; FFT geometry uses package defaults, captured by the source hashes.
+The driver uses neutral selection and singleton mutation input. `--initialization zero` starts with no segregating mass; the default computes FFT equilibrium once and shares that vector with all workers. `--rank` optionally overrides the Jacobi rank. The other flags above expose solver tolerances and limits; FFT geometry uses package defaults, captured by the source hashes.
 
-Each backend runs in a fresh, serial CPU process with float64, persistent compilation caching disabled, and one BLAS/OpenMP thread. JAX CPU threading uses its default. Setup, initialization and propagation are timed separately; imports and process startup are excluded from these timers. One cold and one warm pass restart from the same initial vector. Outputs are synchronized after each hold and boundary. Full-pass timers include Python orchestration and interval diagnostics. This measures public per-method calls across changing shapes, not a single compiled `DemographicTransition` call.
+Each backend and method combination runs in a fresh, serial CPU process with float64, persistent compilation caching disabled, and one BLAS/OpenMP thread. JAX CPU threading uses its default. Setup, initialization and propagation are timed separately; imports and process startup are excluded from these timers. One cold and one warm pass restart from the same initial vector. Outputs are synchronized after each hold and boundary. Full-pass timers include Python orchestration and interval diagnostics. This measures public per-method calls across changing shapes, not a single compiled `DemographicTransition` call.
 
 The driver has been migrated to separate geometry and method construction.
 The original and geometry-compression measurements predate that API refactor

@@ -1,4 +1,4 @@
-"""Compare neutral demographic evaluation with Sequential FFT and RationalKrylov."""
+"""Compare transition backends and evolution methods on a shared neutral history."""
 
 # pattern: Imperative Shell
 # A standard-library parent isolates compilation and peak RSS in serial workers.
@@ -19,6 +19,9 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+BACKENDS = ("fft", "nufft", "jacobi")
+METHODS = ("sequential", "polynomial", "rational")
 
 
 def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, Any]:
@@ -61,22 +64,31 @@ def run_worker(config: dict[str, Any], mode: str, directory: Path) -> dict[str, 
 
     initial = jnp.asarray(json.loads((directory / "initial.json").read_text()))
     fft = {size: drifft.FFT(size) for size in dict.fromkeys(sizes)}
-    epochs = (
-        fft
-        if mode == "fft"
-        else {size: drifft.Jacobi(size, rank=settings["rank"]) for size in fft}
-    )
-    method = (
-        drifft.Sequential()
-        if mode == "fft"
-        else drifft.RationalKrylov(
+    backend_name, method_name = mode.split("-")
+    epochs = fft
+    if backend_name == "jacobi":
+        epochs = {
+            size: drifft.Jacobi(size, rank=settings["rank"]) for size in set(sizes[:-1])
+        }
+    elif backend_name == "nufft":
+        epochs = {size: drifft.NUFFT(size) for size in set(sizes[:-1])}
+    if method_name == "sequential":
+        method = drifft.Sequential()
+    else:
+        solver = (
+            drifft.RationalKrylov
+            if method_name == "rational"
+            else drifft.PolynomialKrylov
+        )
+        method = solver(
             dimension=settings["krylov_dimension"],
             rtol=settings["rtol"],
             atol=settings["atol"],
         )
-    )
     jax.block_until_ready((initial, fft, epochs))
     report: dict[str, Any] = {
+        "backend": backend_name,
+        "method": method_name,
         "setup_seconds": time.perf_counter() - start,
         "versions": {
             name: importlib.metadata.version(name)
@@ -180,7 +192,7 @@ def run_comparison(args: argparse.Namespace) -> dict[str, Any]:
         if key not in {"demography", "output", "worker", "directory"}
     }
     report: dict[str, Any] = dict(
-        schema_version=2,
+        schema_version=3,
         history=dict(
             pop_sizes=[row[0] for row in rows],
             generations=[a[1] - b[1] for a, b in zip(rows[:-1], rows[1:], strict=True)],
@@ -219,7 +231,12 @@ def run_comparison(args: argparse.Namespace) -> dict[str, Any]:
             VECLIB_MAXIMUM_THREADS="1",
             MKL_NUM_THREADS="1",
         )
-        for mode in ("initialize", "fft", "krylov"):
+        pairs = [
+            f"{backend}-{method}"
+            for backend in args.backends
+            for method in args.methods
+        ]
+        for mode in dict.fromkeys(["initialize", "fft-sequential", *pairs]):
             subprocess.run(
                 [
                     sys.executable,
@@ -237,14 +254,16 @@ def run_comparison(args: argparse.Namespace) -> dict[str, Any]:
                 report["initialization"] = result
             else:
                 report["backends"][mode] = result
-    reference = report["backends"]["fft"]["passes"][-1]["final"]
-    actual = report["backends"]["krylov"]["passes"][-1]["final"]
-    difference = sum(abs(a - b) for a, b in zip(actual, reference, strict=True))
+    report["reference"] = "fft-sequential"
+    reference = report["backends"][report["reference"]]["passes"][-1]["final"]
     denominator = sum(abs(value) for value in reference)
-    report["relative_l1_difference"] = difference / denominator if denominator else None
-    report["max_absolute_difference"] = max(
-        abs(a - b) for a, b in zip(actual, reference, strict=True)
-    )
+    for record in report["backends"].values():
+        actual = record["passes"][-1]["final"]
+        errors = [abs(a - b) for a, b in zip(actual, reference, strict=True)]
+        record["relative_l1_difference"] = (
+            sum(errors) / denominator if denominator else None
+        )
+        record["max_absolute_difference"] = max(errors)
     report["converged"] = all(
         timed_pass["failed_intervals"] == 0
         for backend in report["backends"].values()
@@ -285,11 +304,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--equilibrium-atol", type=float, default=1e-12)
     parser.add_argument("--equilibrium-max-steps", type=int, default=4000)
     parser.add_argument("--krylov-dimension", type=int, default=128)
+    parser.add_argument("--backends", choices=BACKENDS, nargs="+", default=BACKENDS)
+    parser.add_argument("--methods", choices=METHODS, nargs="+", default=METHODS)
     parser.add_argument("--rank", type=int)
     parser.add_argument("--rtol", type=float, default=1e-8)
     parser.add_argument("--atol", type=float, default=1e-12)
     parser.add_argument(
-        "--worker", choices=["initialize", "fft", "krylov"], help=argparse.SUPPRESS
+        "--worker",
+        choices=["initialize", *(f"{b}-{m}" for b in BACKENDS for m in METHODS)],
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("--directory", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)

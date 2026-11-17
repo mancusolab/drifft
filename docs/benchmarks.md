@@ -23,7 +23,7 @@ transitions, and `--grad-atol` with `--angular-sensitivity` to evaluate joint va
 Multiple RHS use `jax.vmap`; this processes independent vectors rather than
 claiming a shared batched NUFFT speedup.
 
-Use `benchmarks/compare_backends.py` to compare FFT and NUFFT.
+Use `benchmarks/compare_backends.py` to compare one-generation FFT, NUFFT, and Jacobi actions.
 `compare_startup.py` and `compare_epochs.py` also compare these against fastDTWF.
 
 Compare NUFFT encodings with:
@@ -58,8 +58,15 @@ The [encoding comparison report](https://github.com/mancusolab/drifft/blob/main/
 records the CPU measurements and numerical tradeoffs for the filtered option,
 including matched-degree and larger-degree derivative experiments.
 
-Use `benchmarks/compare_demography.py` to compare Sequential FFT with Jacobi and
-RationalKrylov on a neutral history with singleton mutation input. Its
+Use `benchmarks/compare_demography.py` to compare FFT, NUFFT, and Jacobi with Sequential,
+PolynomialKrylov, and RationalKrylov on the same neutral history. Select the epoch
+backends with `--backends` and the methods with `--methods`. Each pair runs in a
+fresh CPU worker with shared initial mass, singleton mutation input, and FFT size
+changes. The report gives cold and warm times, failed interval counts, and final
+relative L1 differences against sequential FFT.
+The [CPU results](https://github.com/mancusolab/drifft/blob/main/benchmarks/backend_method_cpu.json)
+cover all nine pairs on a 150-generation synthetic history and one-generation
+actions at 8,192 and 32,768 gene copies. Its
 [report](https://github.com/mancusolab/drifft/blob/main/benchmarks/RATIONAL_KRYLOV.md)
 records the revision and workload for each measurement.
 

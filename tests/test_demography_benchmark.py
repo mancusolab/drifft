@@ -12,7 +12,7 @@ pytestmark = pytest.mark.benchmark
 
 
 def test_demography_benchmark_runs_isolated_cold_and_warm_passes(tmp_path):
-    """Compare both backends on a small changing-size history and retain provenance."""
+    """Cross three backends and three methods on a small changing-size history and retain provenance."""
     history = tmp_path / "history.tsv"
     history.write_text("Ne\tT_gen\n12\t8\n10\t5\n14\t2\n20\t0\n")
     output = tmp_path / "result.json"
@@ -31,18 +31,25 @@ def test_demography_benchmark_runs_isolated_cold_and_warm_passes(tmp_path):
         ],
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=300,
     )
     assert result.returncode == 0, result.stderr
     report = json.loads(output.read_text())
     assert report["history"]["pop_sizes"] == [12, 10, 14]
     assert report["history"]["generations"] == [3, 3]
     assert report["initialization"]["converged"]
-    assert report["relative_l1_difference"] < 1e-7
     assert report["provenance"]["input_sha256"]
     assert "src/drifft/_backend/fft.py" in report["provenance"]["source_sha256"]
-    for name in ["fft", "krylov"]:
-        worker = report["backends"][name]
+    expected = {
+        (b, m)
+        for b in ("fft", "nufft", "jacobi")
+        for m in ("sequential", "polynomial", "rational")
+    }
+    assert {
+        (w["backend"], w["method"]) for w in report["backends"].values()
+    } == expected
+    for worker in report["backends"].values():
+        assert worker["relative_l1_difference"] < 1e-7
         assert worker["setup_seconds"] > 0
         assert worker["peak_rss_bytes"] > 0
         assert worker["versions"]["jax"]

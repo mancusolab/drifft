@@ -1,4 +1,4 @@
-"""Compare FFT and NUFFT in isolated processes."""
+"""Compare FFT, NUFFT, and Jacobi in isolated processes."""
 
 # Imperative Shell: imports isolated by backend, synchronized timings and JSON I/O.
 import argparse
@@ -9,6 +9,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+BACKENDS = ("fft", "nufft", "jacobi")
 
 
 def run_worker(args):
@@ -23,10 +25,13 @@ def run_worker(args):
 
     jax.config.update("jax_enable_x64", True)
     jax.config.update("jax_platform_name", "cpu")
+    backend_type = {"fft": drifft.FFT, "nufft": drifft.NUFFT, "jacobi": drifft.Jacobi}[
+        args.worker
+    ]
     runs = []
     for size in args.sizes:
         start = time.perf_counter()
-        backend = (drifft.FFT if args.worker == "fft" else drifft.NUFFT)(size // 2)
+        backend = backend_type(size // 2)
         jax.block_until_ready(backend)
         planning = time.perf_counter() - start
         values = jnp.asarray(np.random.default_rng(17).normal(size=size + 1))
@@ -111,7 +116,7 @@ def main():
     parser.add_argument("--selections", type=float, nargs="+", default=[0.0, 1e-4])
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--worker", choices=["fft", "nufft"], help=argparse.SUPPRESS)
+    parser.add_argument("--worker", choices=BACKENDS, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if any(size % 2 for size in args.sizes):
         parser.error("gene-copy sizes must be even for diploid populations")
@@ -130,7 +135,7 @@ def main():
     }
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
-    for name in ("fft", "nufft"):
+    for name in BACKENDS:
         command = [
             sys.executable,
             str(Path(__file__).resolve()),

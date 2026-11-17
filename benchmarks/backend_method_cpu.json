@@ -1,0 +1,1095 @@
+{
+  "one_generation": {
+    "config": {
+      "sizes": [
+        8192,
+        32768
+      ],
+      "selections": [
+        0.0001
+      ],
+      "repeats": 15,
+      "output": ".cache/fft-comparison/one-step-rerun.json",
+      "worker": null
+    },
+    "implementations": {
+      "fft": {
+        "versions": {
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1"
+        },
+        "runs": [
+          {
+            "M": 8192,
+            "s": 0.0001,
+            "plan_seconds": 0.44953012512996793,
+            "plan_bytes": 5630952,
+            "expect": {
+              "compile_seconds": 0.255922291893512,
+              "warm_seconds": [
+                0.0017921249382197857,
+                0.0017006660345941782,
+                0.0016762081068009138,
+                0.0016172919422388077,
+                0.0016733331140130758,
+                0.0016603749245405197,
+                0.0015225831884890795,
+                0.0014871249441057444,
+                0.0014642078895121813,
+                0.001375958090648055,
+                0.0014807500410825014,
+                0.001454707933589816,
+                0.001514666946604848,
+                0.0014152501244097948,
+                0.0013972909655421972
+              ],
+              "median_seconds": 0.001514666946604848,
+              "xla_temporary_bytes": 7307816
+            },
+            "sample_error": 4.0358016863434857e-14,
+            "advance": {
+              "compile_seconds": 0.3337611248716712,
+              "warm_seconds": [
+                0.002394333016127348,
+                0.0022905420046299696,
+                0.002271750010550022,
+                0.0023505829740315676,
+                0.0023940829560160637,
+                0.002259500091895461,
+                0.0022406659554690123,
+                0.0022182920947670937,
+                0.0022324160672724247,
+                0.002284875139594078,
+                0.0025410419330000877,
+                0.0022819170262664557,
+                0.0022353329695761204,
+                0.0021907079499214888,
+                0.002213667146861553
+              ],
+              "median_seconds": 0.002271750010550022,
+              "xla_temporary_bytes": 10200624
+            },
+            "mass_defect": 1.5543122344752192e-15
+          },
+          {
+            "M": 32768,
+            "s": 0.0001,
+            "plan_seconds": 0.9143617919180542,
+            "plan_bytes": 22272220,
+            "expect": {
+              "compile_seconds": 0.24687504209578037,
+              "warm_seconds": [
+                0.005498500075191259,
+                0.005328458035364747,
+                0.006161916069686413,
+                0.005313750123605132,
+                0.005111208185553551,
+                0.005594500107690692,
+                0.004829416982829571,
+                0.005104250041767955,
+                0.005655457964166999,
+                0.00564008392393589,
+                0.005517750047147274,
+                0.00556604191660881,
+                0.004947124980390072,
+                0.00510320789180696,
+                0.0058197081089019775
+              ],
+              "median_seconds": 0.005498500075191259,
+              "xla_temporary_bytes": 29034408
+            },
+            "sample_error": 8.526536474002524e-15,
+            "advance": {
+              "compile_seconds": 0.401814250042662,
+              "warm_seconds": [
+                0.009861874859780073,
+                0.00981554202735424,
+                0.0091692921705544,
+                0.009546208893880248,
+                0.009358166018500924,
+                0.009194832993671298,
+                0.009628832805901766,
+                0.009160707937553525,
+                0.00925258407369256,
+                0.01066345814615488,
+                0.010390209034085274,
+                0.00938979210332036,
+                0.009513499913737178,
+                0.009769666939973831,
+                0.008837375091388822
+              ],
+              "median_seconds": 0.009513499913737178,
+              "xla_temporary_bytes": 40261808
+            },
+            "mass_defect": 1.2212453270876722e-15
+          }
+        ]
+      },
+      "nufft": {
+        "versions": {
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1"
+        },
+        "runs": [
+          {
+            "M": 8192,
+            "s": 0.0001,
+            "plan_seconds": 0.15942370821721852,
+            "plan_bytes": 5384,
+            "expect": {
+              "compile_seconds": 0.1545238750986755,
+              "warm_seconds": [
+                0.007413917221128941,
+                0.007369792088866234,
+                0.007399624912068248,
+                0.007190041011199355,
+                0.007501458982005715,
+                0.007338665891438723,
+                0.0073302502278238535,
+                0.007390124956145883,
+                0.007484582951292396,
+                0.007353542139753699,
+                0.007651959080249071,
+                0.007509791990742087,
+                0.007337624905630946,
+                0.007350582862272859,
+                0.007337084040045738
+              ],
+              "median_seconds": 0.007369792088866234,
+              "xla_temporary_bytes": 649904
+            },
+            "sample_error": 1.661129628330681e-14,
+            "advance": {
+              "compile_seconds": 0.12780241621658206,
+              "warm_seconds": [
+                0.008273167070001364,
+                0.008265707874670625,
+                0.008280625101178885,
+                0.008276042062789202,
+                0.008192084031179547,
+                0.00821804185397923,
+                0.008328374940901995,
+                0.008312999969348311,
+                0.008337666979059577,
+                0.008184375008568168,
+                0.00840475014410913,
+                0.00825341697782278,
+                0.00817533303052187,
+                0.008197249844670296,
+                0.008349334122613072
+              ],
+              "median_seconds": 0.008273167070001364,
+              "xla_temporary_bytes": 501488
+            },
+            "mass_defect": 4.440892098500626e-16
+          },
+          {
+            "M": 32768,
+            "s": 0.0001,
+            "plan_seconds": 0.13985054194927216,
+            "plan_bytes": 10784,
+            "expect": {
+              "compile_seconds": 0.12172779184766114,
+              "warm_seconds": [
+                0.024040916934609413,
+                0.02418404188938439,
+                0.024013875052332878,
+                0.024869834072887897,
+                0.024364166893064976,
+                0.024244625121355057,
+                0.023891666904091835,
+                0.024972792016342282,
+                0.024502665968611836,
+                0.025589624885469675,
+                0.02460383391007781,
+                0.024957875022664666,
+                0.02526374999433756,
+                0.024231166113168,
+                0.024657791946083307
+              ],
+              "median_seconds": 0.024502665968611836,
+              "xla_temporary_bytes": 1375408
+            },
+            "sample_error": 2.74448104480647e-13,
+            "advance": {
+              "compile_seconds": 0.11864362517371774,
+              "warm_seconds": [
+                0.028254082892090082,
+                0.028449999867007136,
+                0.028639292111620307,
+                0.028605249943211675,
+                0.028372125001624227,
+                0.028329916996881366,
+                0.028753750026226044,
+                0.029062666930258274,
+                0.028589208144694567,
+                0.028276707977056503,
+                0.028623374877497554,
+                0.028341999975964427,
+                0.02858279086649418,
+                0.028808417031541467,
+                0.02858754200860858
+              ],
+              "median_seconds": 0.02858754200860858,
+              "xla_temporary_bytes": 1344304
+            },
+            "mass_defect": 0.0
+          }
+        ]
+      },
+      "jacobi": {
+        "versions": {
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1"
+        },
+        "runs": [
+          {
+            "M": 8192,
+            "s": 0.0001,
+            "plan_seconds": 1.4600194999948144,
+            "plan_bytes": 5626272,
+            "expect": {
+              "compile_seconds": 0.11081099999137223,
+              "warm_seconds": [
+                0.014481833204627037,
+                0.014351750025525689,
+                0.01452254201285541,
+                0.014222916914150119,
+                0.014554667053744197,
+                0.01419349992647767,
+                0.014521708944812417,
+                0.014400250045582652,
+                0.01435337495058775,
+                0.014464999781921506,
+                0.014870708109810948,
+                0.014484541956335306,
+                0.014368749922141433,
+                0.014167749788612127,
+                0.014436624944210052
+              ],
+              "median_seconds": 0.014436624944210052,
+              "xla_temporary_bytes": 8683400
+            },
+            "sample_error": 1.2491837406581506e-11,
+            "advance": {
+              "compile_seconds": 0.1130942078307271,
+              "warm_seconds": [
+                0.014471875037997961,
+                0.014860040973871946,
+                0.01438829186372459,
+                0.015021916013211012,
+                0.014827625127509236,
+                0.014678917126730084,
+                0.014491500100120902,
+                0.014587291050702333,
+                0.014522333163768053,
+                0.014651875011622906,
+                0.014959125081077218,
+                0.014969917014241219,
+                0.014529250096529722,
+                0.01491274987347424,
+                0.014366166898980737
+              ],
+              "median_seconds": 0.014651875011622906,
+              "xla_temporary_bytes": 8936136
+            },
+            "mass_defect": 0.0
+          },
+          {
+            "M": 32768,
+            "s": 0.0001,
+            "plan_seconds": 1.471038999967277,
+            "plan_bytes": 23563396,
+            "expect": {
+              "compile_seconds": 0.11133329104632139,
+              "warm_seconds": [
+                0.06826841598376632,
+                0.06761941709555686,
+                0.0661393329501152,
+                0.06558491685427725,
+                0.0669070000294596,
+                0.0668155001476407,
+                0.06608533300459385,
+                0.0667491250205785,
+                0.06580141605809331,
+                0.0663292920216918,
+                0.06635629199445248,
+                0.06666829204186797,
+                0.06673287507146597,
+                0.06895695813000202,
+                0.0711729999165982
+              ],
+              "median_seconds": 0.06673287507146597,
+              "xla_temporary_bytes": 36378504
+            },
+            "sample_error": 3.20247089239027e-11,
+            "advance": {
+              "compile_seconds": 0.1304364160168916,
+              "warm_seconds": [
+                0.07292470801621675,
+                0.07069825008511543,
+                0.07482425007037818,
+                0.07363816699944437,
+                0.07478912500664592,
+                0.07499179197475314,
+                0.0746493749320507,
+                0.07373337494209409,
+                0.0738457499537617,
+                0.07351783313788474,
+                0.0722442080732435,
+                0.08120145811699331,
+                0.08143670810386539,
+                0.07761995797045529,
+                0.07518987497314811
+              ],
+              "median_seconds": 0.0746493749320507,
+              "xla_temporary_bytes": 37581832
+            },
+            "mass_defect": 1.1102230246251565e-16
+          }
+        ]
+      }
+    }
+  },
+  "demography": {
+    "schema_version": 3,
+    "history": {
+      "pop_sizes": [
+        256,
+        224,
+        256
+      ],
+      "generations": [
+        100,
+        50
+      ],
+      "boundaries": [
+        150,
+        50,
+        0
+      ]
+    },
+    "settings": {
+      "cutoff": 0,
+      "initialization": "equilibrium",
+      "mutation_rate": 1e-08,
+      "equilibrium_rtol": 1e-10,
+      "equilibrium_atol": 1e-12,
+      "equilibrium_max_steps": 4000,
+      "krylov_dimension": 64,
+      "backends": [
+        "fft",
+        "nufft",
+        "jacobi"
+      ],
+      "methods": [
+        "sequential",
+        "polynomial",
+        "rational"
+      ],
+      "rank": null,
+      "rtol": 1e-08,
+      "atol": 1e-12
+    },
+    "provenance": {
+      "input_sha256": "6b2a282ea7dacf69bb4f138a761c17c6322e588b8768ba22ee47dc44a02ad23d",
+      "git_revision": "52f466ae392ae693c60a7970a22cb2071c70fe3e",
+      "source_sha256": {
+        "benchmarks/compare_demography.py": "c56e9464dddf7377a8cb923b2a21f40729f2b8a4320095814c2afa2fe8e4abda",
+        "src/drifft/__init__.py": "f979e5c80d3b117cf9268d1a33e84f97b422f6e5d725110cc913e8c9a9f94337",
+        "src/drifft/_backend/__init__.py": "0912ccdd797bb1aee72b7911b44825945fadd520f5c94d43460fac05397dd025",
+        "src/drifft/_backend/_accuracy.py": "1cb8054915309ddf3310072dd07b65dfd96e3402488afeef1fdec73dcb3d29a2",
+        "src/drifft/_backend/_base.py": "bf0c291fa06d0dddedc7892e4cfb6a27d5f2651377406dbae097edb109bec9d3",
+        "src/drifft/_backend/_spectral.py": "a03adc950a82243deff6da1c5f5dc7c28dad985b850459cea298e7d300c6ad05",
+        "src/drifft/_backend/dense.py": "299a988d5fb54b01daefbaf70b92506e59bb1007aab673a68be73dc07559cd65",
+        "src/drifft/_backend/fft.py": "c60f0aa3fd1a1fe2825cf983134de2615372cb01df0c64523f7ea902a65acc5f",
+        "src/drifft/_backend/jacobi.py": "f76cb3542c6f9965c491be35cf5f6e572a1466add5b49173c012d7ce17e2a515",
+        "src/drifft/_backend/nufft.py": "ad0d4e6a79c0735f877c07f1d71fa1e3d55e0768e39038396bcd2d04d9c7a26d",
+        "src/drifft/_banded.py": "47d02c0c043b50a67716082c7c631d0edce5a96c64bf6fd26aada93faef5f117",
+        "src/drifft/_demography/__init__.py": "97f9245c33eb8bd147cfabd2be2dad5873fff55f8cc2d7c9b199bd9b237101cb",
+        "src/drifft/_demography/actions.py": "475d0a3580535f4c14547eeb36446b2992cb122bd1e8ea3027b29badb514f92a",
+        "src/drifft/_demography/autodiff.py": "706c1f5bfd140b14002028346fdacead376c7be3acfbffedaf40809443752c03",
+        "src/drifft/_demography/geometry.py": "6fc95bd389e27b3eb08472d357eb2c0f614112d672a752bfead6e0d5f4c6dc90",
+        "src/drifft/_demography/transition.py": "af3f0e732ff06bbfefd70c954a2199d9a62cbf387be9c0974ae87ba2a98bf601",
+        "src/drifft/_evolution/__init__.py": "bf81827829d83adc548f3d1c8adaef32b2627dfdebdc79f3f6af37b4ddf0448f",
+        "src/drifft/_evolution/autodiff.py": "bd60f960a462c5a0abea474df231984da528fc3ad1ca95c0440604c37580a695",
+        "src/drifft/_evolution/methods.py": "d721e2c3cf848375a525460dc3753b12ec0f099a57be5d165378c3631d8edf60",
+        "src/drifft/_evolution/operators.py": "986a127b65b83f9e64da2115121780dde728e7c2519fc1ee12d9a5dd24fd6a9f",
+        "src/drifft/_evolution/parameterized.py": "6e7a74a2b860c3533649079aff4d83d1a69aa8a988fcbf3c44d541f7f848e17e",
+        "src/drifft/_evolution/preparation.py": "eeeef8f3b4de454256fbaeebbc87f5c8972d99cd6b9c2cac7e3f280babeb5689",
+        "src/drifft/_evolution/problem.py": "8878038a2549cafd3759f707413ced95459575d0977860387b90809b32b76ca6",
+        "src/drifft/_evolution/projection.py": "0f604408bce9f423d7ec1060f76eb7e2b264af9d64fb5ccf915d843e89630e5e",
+        "src/drifft/_evolution/sensitivity.py": "a5400d249716dbd8f64da4d819ad990dcc197177f12a90a6b49c3bc4e43cfc0a",
+        "src/drifft/_frequency.py": "52a86b038e1386a3bf8c189a10e19f2beddf689ec2488002239e1111f7b31479",
+        "src/drifft/_operator.py": "a51bea02ed30df0cc7a85414a287070a8da8ada39eb35b0fcad35917818ffc33",
+        "src/drifft/_polynomial.py": "cc7124f6781f05a084f888e8d34eccf265780bf76efdbf4119a5a9dda947294f",
+        "src/drifft/_sampling.py": "2c3fcadd023d50e05dd2cab24dd3c7fe512e4c4af89622bf15b40724c2f9bb62",
+        "src/drifft/_solve.py": "7936df87c734406f1b5799c6bca84176d738b7f47f075d6ae8519e2629a02966"
+      },
+      "python": "3.12.13 (main, Jun 23 2026, 15:44:24) [Clang 22.1.3 ]",
+      "platform": "macOS-26.4.1-arm64-arm-64bit",
+      "dtype": "float64",
+      "device": "cpu",
+      "compilation_cache": false,
+      "threads": {
+        "blas": 1,
+        "openmp": 1,
+        "jax": "default"
+      }
+    },
+    "backends": {
+      "fft-sequential": {
+        "backend": "fft",
+        "method": "sequential",
+        "setup_seconds": 0.22286091721616685,
+        "versions": {
+          "drifft": "0.1.0",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1",
+          "scipy": "1.18.1"
+        },
+        "devices": [
+          "cpu:0"
+        ],
+        "passes": [
+          {
+            "label": "cold",
+            "seconds": 1.4003519169054925,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.4619244169443846,
+                "boundary_seconds": 0.2737542090471834,
+                "converged": true,
+                "error_estimate": 0.0
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.36053862515836954,
+                "boundary_seconds": 0.23569595790468156,
+                "converged": true,
+                "error_estimate": 0.0
+              }
+            ],
+            "failed_intervals": 0
+          },
+          {
+            "label": "warm",
+            "seconds": 0.02661916706711054,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.016248832922428846,
+                "boundary_seconds": 0.0016410001553595066,
+                "converged": true,
+                "error_estimate": 0.0
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.0073305838741362095,
+                "boundary_seconds": 0.001274416921660304,
+                "converged": true,
+                "error_estimate": 0.0
+              }
+            ],
+            "failed_intervals": 0
+          }
+        ],
+        "peak_rss_bytes": 410107904,
+        "relative_l1_difference": 0.0,
+        "max_absolute_difference": 0.0
+      },
+      "fft-polynomial": {
+        "backend": "fft",
+        "method": "polynomial",
+        "setup_seconds": 0.23825125000439584,
+        "versions": {
+          "drifft": "0.1.0",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1",
+          "scipy": "1.18.1"
+        },
+        "devices": [
+          "cpu:0"
+        ],
+        "passes": [
+          {
+            "label": "cold",
+            "seconds": 1.7312558749690652,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.6309922500513494,
+                "boundary_seconds": 0.2759834169410169,
+                "converged": true,
+                "error_estimate": 2.1995633192540085e-14
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.5134270829148591,
+                "boundary_seconds": 0.24128612503409386,
+                "converged": true,
+                "error_estimate": 5.443889747597808e-15
+              }
+            ],
+            "failed_intervals": 0
+          },
+          {
+            "label": "warm",
+            "seconds": 0.029270707862451673,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.01619262481108308,
+                "boundary_seconds": 0.00148304202593863,
+                "converged": true,
+                "error_estimate": 2.1995633192540085e-14
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.010183250065892935,
+                "boundary_seconds": 0.0012917499989271164,
+                "converged": true,
+                "error_estimate": 5.443889747597808e-15
+              }
+            ],
+            "failed_intervals": 0
+          }
+        ],
+        "peak_rss_bytes": 456474624,
+        "relative_l1_difference": 1.0331694284776788e-14,
+        "max_absolute_difference": 4.743384504624082e-20
+      },
+      "fft-rational": {
+        "backend": "fft",
+        "method": "rational",
+        "setup_seconds": 0.2249343330040574,
+        "versions": {
+          "drifft": "0.1.0",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1",
+          "scipy": "1.18.1"
+        },
+        "devices": [
+          "cpu:0"
+        ],
+        "passes": [
+          {
+            "label": "cold",
+            "seconds": 3.5686018329579383,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 1.056001250166446,
+                "boundary_seconds": 0.32456520898267627,
+                "converged": true,
+                "error_estimate": 2.1995633192540085e-14
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 1.8690790839027613,
+                "boundary_seconds": 0.24830891704186797,
+                "converged": true,
+                "error_estimate": 5.445384342604474e-15
+              }
+            ],
+            "failed_intervals": 0
+          },
+          {
+            "label": "warm",
+            "seconds": 1.0652149999514222,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.06381533318199217,
+                "boundary_seconds": 0.001660916954278946,
+                "converged": true,
+                "error_estimate": 2.1995633192540085e-14
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.9977149998303503,
+                "boundary_seconds": 0.0018663329537957907,
+                "converged": true,
+                "error_estimate": 5.445384342604474e-15
+              }
+            ],
+            "failed_intervals": 0
+          }
+        ],
+        "peak_rss_bytes": 525910016,
+        "relative_l1_difference": 1.0109839379321718e-14,
+        "max_absolute_difference": 5.251604272976662e-20
+      },
+      "nufft-sequential": {
+        "backend": "nufft",
+        "method": "sequential",
+        "setup_seconds": 0.558928957907483,
+        "versions": {
+          "drifft": "0.1.0",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1",
+          "scipy": "1.18.1"
+        },
+        "devices": [
+          "cpu:0"
+        ],
+        "passes": [
+          {
+            "label": "cold",
+            "seconds": 1.1940900408662856,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.30947270803153515,
+                "boundary_seconds": 0.2990394998341799,
+                "converged": true,
+                "error_estimate": 0.0
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.22992579196579754,
+                "boundary_seconds": 0.285510083893314,
+                "converged": true,
+                "error_estimate": 0.0
+              }
+            ],
+            "failed_intervals": 0
+          },
+          {
+            "label": "warm",
+            "seconds": 0.13002050016075373,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.0894587910734117,
+                "boundary_seconds": 0.0016498342156410217,
+                "converged": true,
+                "error_estimate": 0.0
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.03723558411002159,
+                "boundary_seconds": 0.0015409581828862429,
+                "converged": true,
+                "error_estimate": 0.0
+              }
+            ],
+            "failed_intervals": 0
+          }
+        ],
+        "peak_rss_bytes": 394313728,
+        "relative_l1_difference": 7.788516313775409e-13,
+        "max_absolute_difference": 6.831320719605932e-19
+      },
+      "nufft-polynomial": {
+        "backend": "nufft",
+        "method": "polynomial",
+        "setup_seconds": 0.5607639579102397,
+        "versions": {
+          "drifft": "0.1.0",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1",
+          "scipy": "1.18.1"
+        },
+        "devices": [
+          "cpu:0"
+        ],
+        "passes": [
+          {
+            "label": "cold",
+            "seconds": 1.4418394579552114,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.4292929160874337,
+                "boundary_seconds": 0.29558470915071666,
+                "converged": true,
+                "error_estimate": 2.2529388953990697e-14
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.35850016702897847,
+                "boundary_seconds": 0.28754925006069243,
+                "converged": true,
+                "error_estimate": 5.443972825555118e-15
+              }
+            ],
+            "failed_intervals": 0
+          },
+          {
+            "label": "warm",
+            "seconds": 0.10832179198041558,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.06385262520052493,
+                "boundary_seconds": 0.0016331670340150595,
+                "converged": true,
+                "error_estimate": 2.2529388953990697e-14
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.04117633309215307,
+                "boundary_seconds": 0.0015236248727887869,
+                "converged": true,
+                "error_estimate": 5.443972825555118e-15
+              }
+            ],
+            "failed_intervals": 0
+          }
+        ],
+        "peak_rss_bytes": 415154176,
+        "relative_l1_difference": 4.720943877608767e-13,
+        "max_absolute_difference": 5.598887781350925e-19
+      },
+      "nufft-rational": {
+        "backend": "nufft",
+        "method": "rational",
+        "setup_seconds": 0.5894083750899881,
+        "versions": {
+          "drifft": "0.1.0",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1",
+          "scipy": "1.18.1"
+        },
+        "devices": [
+          "cpu:0"
+        ],
+        "passes": [
+          {
+            "label": "cold",
+            "seconds": 7.190559958806261,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.9290322500746697,
+                "boundary_seconds": 0.29337254213169217,
+                "converged": true,
+                "error_estimate": 2.2529388953990697e-14
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 5.56476041697897,
+                "boundary_seconds": 0.3314464169088751,
+                "converged": true,
+                "error_estimate": 5.445017486147468e-15
+              }
+            ],
+            "failed_intervals": 0
+          },
+          {
+            "label": "warm",
+            "seconds": 5.28063795901835,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.28388204192742705,
+                "boundary_seconds": 0.0016130830626934767,
+                "converged": true,
+                "error_estimate": 2.2529388953990697e-14
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 4.993323375005275,
+                "boundary_seconds": 0.001677083084359765,
+                "converged": true,
+                "error_estimate": 5.445017486147468e-15
+              }
+            ],
+            "failed_intervals": 0
+          }
+        ],
+        "peak_rss_bytes": 489029632,
+        "relative_l1_difference": 4.612825723639128e-13,
+        "max_absolute_difference": 5.13301966036106e-19
+      },
+      "jacobi-sequential": {
+        "backend": "jacobi",
+        "method": "sequential",
+        "setup_seconds": 2.669606584124267,
+        "versions": {
+          "drifft": "0.1.0",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1",
+          "scipy": "1.18.1"
+        },
+        "devices": [
+          "cpu:0"
+        ],
+        "passes": [
+          {
+            "label": "cold",
+            "seconds": 1.11956537514925,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.22854895796626806,
+                "boundary_seconds": 0.2991958330385387,
+                "converged": true,
+                "error_estimate": 0.0
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.1945555410347879,
+                "boundary_seconds": 0.3278365421574563,
+                "converged": true,
+                "error_estimate": 0.0
+              }
+            ],
+            "failed_intervals": 0
+          },
+          {
+            "label": "warm",
+            "seconds": 0.041259291814640164,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.026734666898846626,
+                "boundary_seconds": 0.001436959020793438,
+                "converged": true,
+                "error_estimate": 0.0
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.01154379197396338,
+                "boundary_seconds": 0.0014150419738143682,
+                "converged": true,
+                "error_estimate": 0.0
+              }
+            ],
+            "failed_intervals": 0
+          }
+        ],
+        "peak_rss_bytes": 447365120,
+        "relative_l1_difference": 1.1176973429023399e-12,
+        "max_absolute_difference": 2.961227183601034e-18
+      },
+      "jacobi-polynomial": {
+        "backend": "jacobi",
+        "method": "polynomial",
+        "setup_seconds": 2.664941541152075,
+        "versions": {
+          "drifft": "0.1.0",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1",
+          "scipy": "1.18.1"
+        },
+        "devices": [
+          "cpu:0"
+        ],
+        "passes": [
+          {
+            "label": "cold",
+            "seconds": 1.7595182920340449,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.5549814170226455,
+                "boundary_seconds": 0.3020815411582589,
+                "converged": true,
+                "error_estimate": 4.583306991167886e-17
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.5403233750257641,
+                "boundary_seconds": 0.29277287516742945,
+                "converged": true,
+                "error_estimate": 1.5993004484270478e-14
+              }
+            ],
+            "failed_intervals": 0
+          },
+          {
+            "label": "warm",
+            "seconds": 0.015522332862019539,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.007080166134983301,
+                "boundary_seconds": 0.0015310000162571669,
+                "converged": true,
+                "error_estimate": 4.583306991167886e-17
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.005274999886751175,
+                "boundary_seconds": 0.001503166975453496,
+                "converged": true,
+                "error_estimate": 1.5993004484270478e-14
+              }
+            ],
+            "failed_intervals": 0
+          }
+        ],
+        "peak_rss_bytes": 525664256,
+        "relative_l1_difference": 3.3170301962258827e-13,
+        "max_absolute_difference": 6.505213034913027e-19
+      },
+      "jacobi-rational": {
+        "backend": "jacobi",
+        "method": "rational",
+        "setup_seconds": 2.7855664999224246,
+        "versions": {
+          "drifft": "0.1.0",
+          "jax": "0.11.2",
+          "jaxlib": "0.11.2",
+          "equinox": "0.13.8",
+          "lineax": "0.1.1",
+          "scipy": "1.18.1"
+        },
+        "devices": [
+          "cpu:0"
+        ],
+        "passes": [
+          {
+            "label": "cold",
+            "seconds": 1.8678970420733094,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.5656861669849604,
+                "boundary_seconds": 0.3059617090038955,
+                "converged": true,
+                "error_estimate": 4.5851559109473664e-17
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.618230750085786,
+                "boundary_seconds": 0.3048862919677049,
+                "converged": true,
+                "error_estimate": 2.1323560755777774e-14
+              }
+            ],
+            "failed_intervals": 0
+          },
+          {
+            "label": "warm",
+            "seconds": 0.01916195801459253,
+            "intervals": [
+              {
+                "source_pop_size": 256,
+                "dest_pop_size": 224,
+                "generations": 100,
+                "hold_seconds": 0.008417416829615831,
+                "boundary_seconds": 0.0014485828578472137,
+                "converged": true,
+                "error_estimate": 4.5851559109473664e-17
+              },
+              {
+                "source_pop_size": 224,
+                "dest_pop_size": 256,
+                "generations": 50,
+                "hold_seconds": 0.007543999934569001,
+                "boundary_seconds": 0.0016157920472323895,
+                "converged": true,
+                "error_estimate": 2.1323560755777774e-14
+              }
+            ],
+            "failed_intervals": 0
+          }
+        ],
+        "peak_rss_bytes": 529334272,
+        "relative_l1_difference": 3.345008620203007e-13,
+        "max_absolute_difference": 6.471331717022855e-19
+      }
+    },
+    "initialization": {
+      "seconds": 0.8103135828860104,
+      "converged": true,
+      "residual_norm": 2.220446049250313e-16
+    },
+    "reference": "fft-sequential",
+    "converged": true
+  }
+}
