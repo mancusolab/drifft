@@ -70,6 +70,36 @@ fig.savefig("selection_sensitivity.svg")
 plt.show()
 ```
 
+## Positive selection in log coordinates
+
+The sweep above includes neutral selection (`s=0`), so it uses ordinary
+selection coordinates. For strictly positive selection, we recommend log inputs,
+particularly when using Krylov methods. Reuse `loss_probability` from above:
+
+```python
+def loss_from_log_selection(log_s):
+    return loss_probability(jnp.exp(log_s))
+
+
+log_s = jnp.log(0.02)
+value, log_gradient = jax.jit(jax.value_and_grad(loss_from_log_selection))(log_s)
+print("dP(loss)/dlog(s):", log_gradient)
+print("dP(loss)/ds:", log_gradient / jnp.exp(log_s))
+for step in (0.01, 0.003, 0.001):
+    finite_difference = (
+        loss_from_log_selection(log_s + step)
+        - loss_from_log_selection(log_s - step)
+    ) / (2 * step)
+    assert jnp.isclose(finite_difference, log_gradient, rtol=1e-4, atol=1e-8)
+```
+
+The log derivative equals $s$ times the ordinary derivative. It measures the
+change in loss probability per small relative change in selection strength.
+Taking logs excludes zero and negative selection and does not enforce the
+frequency map's upper bound. For a likelihood with two mutation rates and
+selection, see the [log-input JVP example](../methods/autodiff.md#use-log-inputs-for-positive-parameters).
+Log inputs can improve numerical scaling, but still require accuracy checks.
+
 ## Interpretation
 
 Positive derivatives indicate greater loss probability with increasing fitness

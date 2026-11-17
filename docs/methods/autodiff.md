@@ -22,6 +22,110 @@ accurate derivative of the representation can still contain backend error.
 A dot denotes a directional derivative, and all inner products here are real.
 See the [shared notation](../guide/notation.md) for other conventions.
 
+## Use log inputs for positive parameters
+
+For strictly positive mutation rates and positive selection strengths, we
+recommend differentiating with respect to their natural logarithms, especially
+for Krylov likelihood calculations. Pass log parameters into the objective and
+exponentiate them when constructing the frequency map. This rescales the
+parameter directions supplied to the sensitivity calculation; taking only the
+logarithm of the output likelihood does not provide that input scaling.
+
+For a positive parameter $\theta$ and objective $\ell$,
+
+$$
+\phi=\log\theta,\qquad
+\frac{\partial\ell}{\partial\phi}
+=\theta\frac{\partial\ell}{\partial\theta}.
+$$
+
+Small rates can otherwise produce sensitivity directions much larger than the
+state being propagated. Log inputs improved forward-mode mutation sensitivities
+in our synthetic-history and Schiffels–Durbin likelihood checks. The improvement
+is problem-dependent; it is not an accuracy guarantee, and the separate
+reverse-mode algorithm need not gain the same numerical benefit.
+
+### Likelihood derivatives for mutation and selection
+
+This small history starts with no derived copies and observes five derived
+copies in a sample of 40. Geometry stays outside the differentiated function.
+Three sequential JVPs compute derivatives with respect to the two log mutation
+rates and log selection strength without batching the three directions together.
+
+```python
+import jax
+import jax.numpy as jnp
+import drifft
+
+jax.config.update("jax_enable_x64", True)
+history = drifft.Demography([128, 96, 160], [200, 100])
+geometry = history.prepare(
+    backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+)
+sampling = drifft.HypergeometricSampling(160, sample_size=20, accuracy=1e-10)
+initial = jnp.zeros(257).at[0].set(1.0)
+method = drifft.RationalKrylov(
+    dimension=32, rtol=1e-10, atol=1e-13, check_sensitivity=False
+)
+
+
+@jax.jit
+def log_likelihood(log_parameters):
+    forward_rate, backward_rate, strength = jnp.exp(log_parameters)
+    process = drifft.Composition(
+        drifft.Mutation(forward_rate, backward_rate),
+        drifft.AdditiveSelection(strength),
+    )
+    model = drifft.DemographicTransition(geometry, process, method=method)
+    result = model.advance(initial)
+    return jnp.log(sampling.advance(result.distribution)[5])
+
+
+@jax.jit
+def directional_derivative(log_parameters, direction):
+    return jax.jvp(log_likelihood, (log_parameters,), (direction,))
+
+
+log_parameters = jnp.log(jnp.array([1e-8, 1e-8, 2e-4]))
+directions = jnp.eye(3)
+partials = []
+for direction in directions:
+    value, partial = jax.block_until_ready(
+        directional_derivative(log_parameters, direction)
+    )
+    partials.append(partial)
+log_gradient = jnp.stack(partials)
+print("Log likelihood:", value)
+print("Derivatives with respect to log parameters:", log_gradient)
+
+# Convert units afterward if derivatives with respect to rates are needed.
+rate_gradient = log_gradient / jnp.exp(log_parameters)
+
+# Perturb the log inputs, using several steps to inspect convergence or noise.
+for step in (0.03, 0.01, 0.003):
+    finite_difference = jnp.stack([
+        (log_likelihood(log_parameters + step * direction)
+         - log_likelihood(log_parameters - step * direction)) / (2 * step)
+        for direction in directions
+    ])
+    print("Log step:", step, "Finite differences:", finite_difference)
+```
+
+`log_gradient` contains $\partial\log L/\partial\log\theta$, not
+$\partial\log L/\partial\theta$. For small relative parameter changes,
+these derivatives give the corresponding change in log likelihood.
+`check_sensitivity=False` skips extra heuristic error estimation; it does not
+choose a different derivative algorithm or disable ordinary evolution checks.
+
+Log inputs require strictly positive parameters. Use ordinary coordinates for
+zero rates, neutral selection, or selection that may change sign. Exponentiation
+enforces positivity but not upper bounds: parameter choices must still satisfy
+the frequency map's domain and the backend's prepared selection bounds.
+The [selection example](../examples/selection_sensitivity.md#positive-selection-in-log-coordinates)
+shows both coordinate choices. Validate gradients at representative parameters;
+small finite-difference steps can amplify numerical error, especially for weak
+effects such as backward mutation from an initially ancestral population.
+
 ## Demographic actions
 
 [`DemographicTransition`](../api/demography.md#drifft.DemographicTransition)

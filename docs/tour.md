@@ -123,11 +123,13 @@ expectations indexed by initial count. For trajectories stopped at loss or fixat
 ## Differentiate selection
 
 Keep geometry outside the differentiated function. Construct the frequency map
-and bind a lightweight transition inside it, using the current parameters:
+and bind a lightweight transition inside it, using the current parameters.
+For positive selection, use its natural logarithm as the input:
 
 ```python
-def probability_absent(s):
-    # Selection depends on s; mutation rates and demographic geometry stay fixed.
+def probability_absent(log_s):
+    s = jnp.exp(log_s)
+    # Selection depends on log_s; mutation rates and demographic geometry stay fixed.
     process = drifft.Composition(
         drifft.AdditiveSelection(s=s),
         drifft.Mutation(forward_rate=1e-5, backward_rate=1e-5),
@@ -136,10 +138,16 @@ def probability_absent(s):
     return transition.advance(initial).distribution[0]
 
 
-# Differentiate the scalar absence probability with respect to s.
-probability, sensitivity = jax.value_and_grad(probability_absent)(jnp.asarray(0.02))
-print(f"Probability: {probability:.6f}; derivative: {sensitivity:.6f}")
+# Differentiate the scalar absence probability with respect to log(s).
+probability, sensitivity = jax.value_and_grad(probability_absent)(jnp.log(0.02))
+print(f"Probability: {probability:.6f}; dP/dlog(s): {sensitivity:.6f}")
 ```
+
+Here `sensitivity` is $s\,\partial P/\partial s$; divide by `0.02` to recover
+$\partial P/\partial s$ at this point. Use ordinary selection coordinates when
+including neutral or negative selection. See
+[log-input likelihood derivatives](methods/autodiff.md#use-log-inputs-for-positive-parameters)
+for mutation and selection together.
 
 Selection, mutation, and initial mass can be differentiable inputs. Population
 sizes, generation counts, and numerical dimensions remain fixed. The
