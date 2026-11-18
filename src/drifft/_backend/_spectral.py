@@ -8,13 +8,27 @@ import jax
 import jax.core
 import jax.numpy as jnp
 from jax.experimental import hijax
-from jax_finufft import nufft2
 
 from .._batching import BatchablePrimitive
 from .._polynomial import differentiate_cosine_coefficients
 
 if TYPE_CHECKING:
     from .nufft import NUFFT
+
+
+def _load_nufft2():
+    """Load the native transform when the NUFFT backend is requested."""
+    try:
+        from jax_finufft import nufft2
+    except ModuleNotFoundError as exc:
+        if exc.name != "jax_finufft":
+            raise
+        raise ImportError(
+            "NUFFT requires jax-finufft. From a drifft checkout, run "
+            "'uv sync --group nufft'. For pip installation, see "
+            "https://mancusolab.github.io/drifft/#dependencies-and-hardware"
+        ) from exc
+    return nufft2
 
 
 def _build_stencil(size: int, radius: int, probabilities: jax.Array):
@@ -199,6 +213,7 @@ def _evaluate_nufft(coefficients, probabilities, tolerance, endpoints):
         modes = jnp.concatenate(
             (coefficients[:0:-1] / 2, coefficients[:1], coefficients[1:] / 2)
         )
+        nufft2 = _load_nufft2()
         result = nufft2(modes.astype(jnp.complex128), theta, eps=tolerance).real
     return jnp.where(
         probabilities == 0,

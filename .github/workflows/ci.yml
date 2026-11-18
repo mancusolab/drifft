@@ -33,7 +33,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfftw3-dev
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --group nufft
       - name: Identify hook interpreter
         id: python
         run: echo "version=$(uv run --no-sync python -VV | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
@@ -68,10 +68,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfftw3-dev
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --group nufft
       - name: Run complete test shard
         run: >-
-          uv run --locked --no-sync pytest -q --ci-shard=${{ matrix.shard }}
+          uv run --locked --no-sync pytest -p no:capture -q --ci-shard=${{ matrix.shard }}
           --durations=20
           --junitxml=test-results/pytest-${{ matrix.python-version }}-${{ matrix.shard }}.xml
       - name: Upload test timings

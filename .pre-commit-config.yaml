@@ -33,6 +33,6 @@ repos:
   - id: ty
     name: ty
     description: Type-check with ty.
-    entry: uv run ty check src tests benchmarks
+    entry: uv run --group nufft ty check src tests benchmarks
     language: system
     pass_filenames: false

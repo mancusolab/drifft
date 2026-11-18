@@ -71,11 +71,16 @@ mutation, population history, and differentiation in one calculation.
 
 ## Dependencies and hardware
 
-`jax-finufft` is a core dependency for NUFFT. The project uses its Git version,
-with the exact commit recorded in `uv.lock`. Installing from Git builds the native
-extension and requires a C++ toolchain. The build uses installed FFTW development
-libraries when available; otherwise it downloads and builds FFTW automatically
-(OpenMP is optional).
+FFT and Jacobi work with the base installation. NUFFT requires a compatible
+`jax-finufft` build. The 1.3.1 release uses a batching API removed in JAX 0.12.
+From a checkout, run `uv sync --group nufft`. With pip, install the tested revision:
+
+```bash
+pip install "jax-finufft @ git+https://github.com/flatironinstitute/jax-finufft@8ae08bb11248b0a61c0c1e2ddc72e02741a5e7f7"
+```
+
+Building this revision requires a C++ toolchain and FFTW, which the build can
+download if needed.
 CPU execution is tested on Apple Silicon. CUDA requires a
 compatible CUDA-enabled FINUFFT installation and has not been validated here;
 TPU is unsupported. No dense fallback is used when a device lacks NUFFT support.

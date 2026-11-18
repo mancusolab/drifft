@@ -97,7 +97,9 @@ def run_worker(args: argparse.Namespace) -> dict[str, Any]:
             plan_settings=options,
             persistent_compilation_cache=False,
         )
-        packages = ("jax", "jaxlib", "equinox", "lineax", "jax-finufft")
+        packages = ("jax", "jaxlib", "equinox", "lineax")
+        if args.worker != "fft":
+            packages += ("jax-finufft",)
     else:
         # PyTorch is installed only with the optional fastdtwf dependency group.
         torch = importlib.import_module("torch")

@@ -21,7 +21,7 @@ from ._accuracy import (
     _validate_gradient,
 )
 from ._base import AbstractTransitionBackend
-from ._spectral import _evaluate, sample_bernstein
+from ._spectral import _evaluate, _load_nufft2, sample_bernstein
 
 
 @final
@@ -118,6 +118,7 @@ class NUFFT(AbstractTransitionBackend):
         supported; enable JAX x64 before construction.
         FFT-specific settings belong to the [`FFT`][drifft.FFT] backend.
         """
+        _load_nufft2()
         if isinstance(pop_size, bool) or not isinstance(pop_size, int) or pop_size < 1:
             raise ValueError("pop_size must be a Python integer >= 1")
         gene_copies = 2 * pop_size

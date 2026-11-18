@@ -65,10 +65,11 @@ def run_worker(args: argparse.Namespace) -> None:
             "jaxlib",
             "equinox",
             "lineax",
-            "jax-finufft",
             "numpy",
             "scipy",
         )
+        if args.worker != "fft":
+            packages += ("jax-finufft",)
     else:
         torch = importlib.import_module("torch")
         # Upstream's DoubleTensor annotations predate modern Tensor factories.

@@ -17,7 +17,7 @@ cd drifft
 uv sync
 ```
 
-The `jax-finufft` dependency currently builds from Git and requires a C++ toolchain.
+For the NUFFT backend, run `uv sync --group nufft` from the checkout.
 See [dependency and hardware constraints](https://mancusolab.github.io/drifft/#dependencies-and-hardware)
 for build details and device support.
 
@@ -57,7 +57,7 @@ Continue with [population histories](https://mancusolab.github.io/drifft/api/dem
 ```bash
 uv sync
 uv run pre-commit install
-uv run pytest -p no:capture
+uv run --group nufft pytest -p no:capture
 uv run pre-commit run --all-files
 ```
 

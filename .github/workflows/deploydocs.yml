@@ -22,10 +22,6 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-env:
-  # Keep cached FINUFFT builds portable across hosted-runner CPUs.
-  CMAKE_ARGS: "-DFINUFFT_ARCH_FLAGS="
-
 jobs:
   deploy:
     environment:
@@ -47,12 +43,6 @@ jobs:
         with:
           version: "0.11.24"
           enable-cache: true
-          cache-suffix: finufft-portable-v1
-
-      - name: Install FFTW development libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfftw3-dev
 
       - name: Install package and documentation dependencies
         run: uv sync --locked --group docs

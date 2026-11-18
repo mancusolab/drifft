@@ -5,7 +5,7 @@ Install the development tools and Git hooks from the repository root:
 ```bash
 uv sync
 uv run pre-commit install
-uv run pytest -p no:capture
+uv run --group nufft pytest -p no:capture
 uv run pre-commit run --all-files
 uv build
 ```
@@ -16,14 +16,14 @@ During development, run the affected test files first. For the numerical suite
 without benchmark integration or the marked large-population checks, use:
 
 ```bash
-uv run pytest -p no:capture -q -m "not benchmark and not slow"
+uv run --group nufft pytest -p no:capture -q -m "not benchmark and not slow"
 ```
 
 Default pytest and CI still run the complete suite. Run that suite before
 merging, and use per-test timings when investigating runtime:
 
 ```bash
-uv run pytest -p no:capture -q --durations=30
+uv run --group nufft pytest -p no:capture -q --durations=30
 ```
 
 JAX compiles different programs for different static shapes, configurations,
@@ -41,8 +41,8 @@ complete test suite across two parallel jobs each.
 Reproduce an individual test job with:
 
 ```bash
-uv run pytest -p no:capture -q --ci-shard=1 --durations=20
-uv run pytest -p no:capture -q --ci-shard=2 --durations=20
+uv run --group nufft pytest -p no:capture -q --ci-shard=1 --durations=20
+uv run --group nufft pytest -p no:capture -q --ci-shard=2 --durations=20
 ```
 
 The two shards are disjoint and together include every test. Whole modules stay

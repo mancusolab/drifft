@@ -54,3 +54,35 @@ def test_transition_flags_reject_traced_booleans(operation):
 
     with pytest.raises(ValueError, match="segregating must be a Python bool"):
         call(jnp.asarray(True))
+
+
+def test_import_and_fft_without_nufft_dependency():
+    """Exercise the public imports and missing-dependency hint in a fresh process."""
+    import subprocess
+    import sys
+    from textwrap import dedent
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            dedent("""
+                import sys
+                sys.modules["jax_finufft"] = None
+                import jax
+                import jax.numpy as jnp
+                from drifft import FFT, NUFFT
+
+                jax.config.update("jax_enable_x64", True)
+                value = FFT(4).expect(jnp.array([0.5]), jnp.arange(9.0))
+                assert jnp.allclose(value, 4.0)
+                try:
+                    NUFFT(4)
+                except ImportError as exc:
+                    assert "uv sync --group nufft" in str(exc)
+                else:
+                    raise AssertionError("Missing NUFFT dependency was accepted")
+            """),
+        ],
+        check=True,
+    )
