@@ -146,7 +146,7 @@ print(f"Probability: {probability:.6f}; dP/dlog(s): {sensitivity:.6f}")
 Here `sensitivity` is $s\,\partial P/\partial s$; divide by `0.02` to recover
 $\partial P/\partial s$ at this point. Use ordinary selection coordinates when
 including neutral or negative selection. See
-[log-input likelihood derivatives](methods/autodiff.md#use-log-inputs-for-positive-parameters)
+[log-input likelihood derivatives](examples/selection_sensitivity.md#likelihood-derivatives-for-mutation-and-selection)
 for mutation and selection together.
 
 Selection, mutation, and initial mass can be differentiable inputs. Population

@@ -38,7 +38,7 @@ condition and both mutation rates are part of the likelihood.
 For likelihood gradients with respect to positive mutation rates and selection,
 use natural-log parameters as objective inputs and exponentiate them when
 constructing the frequency map. The
-[log-input likelihood example](../methods/autodiff.md#use-log-inputs-for-positive-parameters)
+[log-input likelihood example](selection_sensitivity.md#likelihood-derivatives-for-mutation-and-selection)
 shows this on a small history using sequential JVPs. Apply the same pattern to
 this prepared history and sampling operator. This can improve forward-sensitivity
 scaling, but weak effects still need reference or finite-difference checks;
