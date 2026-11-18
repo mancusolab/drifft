@@ -21,6 +21,7 @@ from jax.scipy.special import xlog1py, xlogy
 from scipy.special import expit, logit
 from scipy.stats import binom
 
+from .._batching import BatchablePrimitive
 from ._accuracy import (
     BackendErrorReport,
     ErrorComponent,
@@ -961,7 +962,7 @@ class FFT(AbstractTransitionBackend):
         return jnp.where(is_boundary, direct, interpolated)
 
 
-class _BinomialWeights(hijax.HiPrim):
+class _BinomialWeights(BatchablePrimitive):
     r"""Evaluate binomial weights with endpoint-safe probability derivatives.
 
     For integer count $j$ and fixed degree $n$, the mathematical weight is

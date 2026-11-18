@@ -33,6 +33,7 @@ import jax.numpy as jnp
 import lineax as lx
 from jax.experimental import hijax
 
+from .._batching import BatchablePrimitive
 from .problem import _epoch_result, _PowerProblem
 
 
@@ -131,7 +132,7 @@ def _require_krylov_derivative_jvp(primals, tangents):
     return _require_krylov_derivative(value, supported), scale * tangent
 
 
-class _RequireKrylovDerivative(hijax.HiPrim):
+class _RequireKrylovDerivative(BatchablePrimitive):
     r"""Attach a support check to differentiation of a numerical projection value.
 
     The primal map is the identity $v\mapsto v$ and does not reject a value when

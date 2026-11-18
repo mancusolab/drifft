@@ -10,6 +10,7 @@ import jax.numpy as jnp
 from jax.experimental import hijax
 from jax_finufft import nufft2
 
+from .._batching import BatchablePrimitive
 from .._polynomial import differentiate_cosine_coefficients
 
 if TYPE_CHECKING:
@@ -74,7 +75,7 @@ def _sample_batches(nodes, values, *, size, radius, batch_size, transpose):
     return jax.lax.map(gather, batches).reshape(-1)[: nodes.size]
 
 
-class _BernsteinSampling(hijax.HiPrim):
+class _BernsteinSampling(BatchablePrimitive):
     r"""Sample a fixed Bernstein map and apply its matched streaming transpose.
 
     For prepared nodes $q_i$, the represented linear map approximates
@@ -194,7 +195,7 @@ def _evaluate_nufft(coefficients, probabilities, tolerance, endpoints):
     )
 
 
-class _CosineTranspose(hijax.HiPrim):
+class _CosineTranspose(BatchablePrimitive):
     r"""Apply the coefficient/endpoint adjoint of cosine evaluation at probabilities.
 
     For fixed probabilities, `_CosineEvaluation` is linear in its coefficient
@@ -309,7 +310,7 @@ def _transpose_cosine(probabilities, mass, count, tolerance):
     return coefficients + endpoints[0] + endpoints[1] * (-1.0) ** jnp.arange(count)
 
 
-class _CosineEvaluation(hijax.HiPrim):
+class _CosineEvaluation(BatchablePrimitive):
     r"""Evaluate a cosine polynomial with explicit endpoint values and polynomial AD.
 
     Coefficients $a_k$ represent $\sum_k a_k T_k(1-2q)$, evaluated through a

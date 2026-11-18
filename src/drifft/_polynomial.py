@@ -16,6 +16,8 @@ import jax.core
 import jax.numpy as jnp
 from jax.experimental import hijax
 
+from ._batching import BatchablePrimitive
+
 
 def gegenbauer_beta(degree):
     """Coefficient of p[n+1] in z*p[n] for the normalized Gegenbauer basis."""
@@ -87,7 +89,7 @@ def _moment_recurrence(points, values, *, rank, order, transposed):
     )
 
 
-class _GegenbauerMoments(hijax.HiPrim):
+class _GegenbauerMoments(BatchablePrimitive):
     r"""Compute polynomial moments or evaluation with a shared streaming recurrence.
 
     Let $p_j^{(r)}(z)$ denote derivative order $r$ of the represented Gegenbauer

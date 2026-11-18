@@ -48,6 +48,7 @@ import jax.numpy as jnp
 import lineax as lx
 from jax.experimental import hijax
 
+from .._batching import BatchablePrimitive
 from .operators import _contract_operator_factors, _operator_pushforward
 from .parameterized import (
     _contract_parameter_factors,
@@ -130,7 +131,7 @@ def _accumulate(accums, values):
     jax.tree.map(add, accums, values, is_leaf=lambda x: x is None or _is_ad_leaf(x))
 
 
-class _PowerAction(hijax.HiPrim):
+class _PowerAction(BatchablePrimitive):
     r"""Bind $A^k x$ with operator-PyTree and initial-state derivatives.
 
     The operator's active array leaves describe its differentiable coordinates;
@@ -252,7 +253,7 @@ def _cached_parameterized_power(
     )
 
 
-class _FrechetAction(hijax.HiPrim):
+class _FrechetAction(BatchablePrimitive):
     r"""Represent the linearized power in ordinary operator coordinates.
 
     For fixed $A,x,k$, the mathematical action is
@@ -347,7 +348,7 @@ def _frechet_action(method, operator, initial, t_operator, t_initial, steps):
     return _FrechetAction(avals, static)(*dynamic)
 
 
-class _Power(hijax.HiPrim):
+class _Power(BatchablePrimitive):
     r"""Bind $A(\theta)^k x$ with a parameter-space operator tangent.
 
     The primal operator is an opaque value containing parameters, fixed geometry
@@ -438,7 +439,7 @@ class _Power(hijax.HiPrim):
         return 0 if any(d is not None for d in jax.tree.leaves(dims)) else None
 
 
-class _Sensitivity(hijax.HiPrim):
+class _Sensitivity(BatchablePrimitive):
     r"""Linearize a parameterized power without differentiating its matrix cache.
 
     Given $\dot\theta$, assembly supplies $E=\mathrm D A(\theta)[\dot\theta]$.
@@ -507,7 +508,7 @@ class _Sensitivity(hijax.HiPrim):
             dx.accum(_power(_transpose(operator), cotangent, **self._settings()))
 
 
-class _Pullback(hijax.HiPrim):
+class _Pullback(BatchablePrimitive):
     r"""Return parameter cotangents for a power from fixed primal and adjoint seeds.
 
     For $y=A(\theta)^k x$ and output cotangent $g$, the result approximates

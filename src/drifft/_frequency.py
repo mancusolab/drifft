@@ -11,6 +11,8 @@ import jax.core
 import jax.numpy as jnp
 from jax.experimental import hijax
 
+from ._batching import BatchablePrimitive
+
 
 def _as_float64(value: float | jax.Array) -> jax.Array:
     """Normalize parameter leaves and retain useful generated constructor types."""
@@ -166,7 +168,7 @@ def _diploid_selection_jvp(primals, tangents):
     )
 
 
-class _DiploidSelection(hijax.HiPrim):
+class _DiploidSelection(BatchablePrimitive):
     r"""Apply diploid selection with factored analytic parameter and frequency AD.
 
     With fitnesses $1,h=1-s_{\mathrm{het}},a=1-s_{\mathrm{hom}}$, the selected
@@ -728,7 +730,7 @@ def _multiplicative_selection_jvp(primals, tangents):
     return _multiplicative_selection(*primals), partial_r * dr + partial_x * dx
 
 
-class _MultiplicativeSelection(hijax.HiPrim):
+class _MultiplicativeSelection(BatchablePrimitive):
     r"""Differentiate multiplicative selection without squaring the fitness ratio.
 
     For positive fitness multiplier $r$ and allele frequency $x$, the map is

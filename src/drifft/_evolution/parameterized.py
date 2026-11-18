@@ -48,6 +48,7 @@ from jax.experimental import hijax
 from jax.flatten_util import ravel_pytree
 
 from .._backend.jacobi import Jacobi, _assemble_reduced
+from .._batching import BatchablePrimitive
 from .._frequency import AbstractFrequencyMap
 from .operators import _numerical_operator
 
@@ -248,7 +249,7 @@ class _Axis(hijax.MappingSpec):
         # entire value. An explicit tuple can leave individual leaves shared.
         return (self.axis,) * count if self.geometry is None else self.geometry
 
-    # VmapOf adjusts mappings with d - (other < d) and d + (other < d).
+    # Nested vmap adjusts mappings with d - (other < d) and d + (other < d).
     # Geometry can have different mapped axes from the parameter payload, so
     # those comparisons and shifts must be component-wise as well.
     def __lt__(self, other):
@@ -494,7 +495,7 @@ def _unpack(operator):
     return _Operator(parameters, geometry, matrix, jax.typeof(operator).spec)
 
 
-class _Transpose(hijax.HiPrim):
+class _Transpose(BatchablePrimitive):
     r"""Reverse operator orientation while preserving parameter coordinates.
 
     The primal transposes the cached matrix and flips the reconstruction recipe's

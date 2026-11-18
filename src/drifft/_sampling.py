@@ -11,6 +11,8 @@ import jax.numpy as jnp
 import numpy as np
 from jax.experimental import hijax
 
+from ._batching import BatchablePrimitive
+
 
 def _interpolation_plan(population: int, sample: int, order: int, tolerance: float):
     """Bound the integer-grid Lagrange remainder using hypergeometric differences."""
@@ -144,7 +146,7 @@ def _interpolate_counts(
     return jax.lax.map(gather, jnp.arange(batches)).reshape(-1)[: population + 1]
 
 
-class _CountInterpolation(hijax.HiPrim):
+class _CountInterpolation(BatchablePrimitive):
     r"""Apply fixed count-grid interpolation or its matched mass transpose.
 
     For prepared knots and barycentric weights, let $I$ interpolate knot values

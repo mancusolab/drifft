@@ -41,6 +41,7 @@ import jax.numpy as jnp
 from jax.core import ShapedArray
 from jax.experimental import hijax
 
+from .._batching import BatchablePrimitive
 from .._evolution.autodiff import (
     _accumulate,
     _has_accum,
@@ -135,7 +136,7 @@ def _check_fixed(model_flags):
         )
 
 
-class _DemographicAction(hijax.HiPrim):
+class _DemographicAction(BatchablePrimitive):
     r"""Apply an oriented augmented history action with mathematical AD rules.
 
     With $\mathcal A=\begin{pmatrix}H^T&c\\0&1\end{pmatrix}$, the primitive
