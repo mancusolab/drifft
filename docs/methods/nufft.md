@@ -113,7 +113,9 @@ full population-sized output still requires work proportional to its length.
 Thus a transform on the retained modes is only one stage of the transition.
 
 Prepared nodes and stencil geometry are reused. Binomial weights are regenerated
-in batches, controlled by `batch_size`, rather than retained as a full table.
+in batches controlled by `batch_size`. Each pair of reflected nodes shares one
+stencil: the second node uses the same weights in reverse count order. The
+transpose scatters the two node masses separately using those weights.
 Sampling workspace depends on batch size and window width; native FINUFFT
 workspace is additional to JAX's reported memory. No dense reduced matrix is
 powered between generations.

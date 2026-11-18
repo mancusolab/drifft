@@ -16,7 +16,7 @@ from drifft._backend._spectral import sample_bernstein
 jax.config.update("jax_enable_x64", True)
 
 
-@pytest.mark.parametrize("size,batch_size", [(16, 3), (512, 17)])
+@pytest.mark.parametrize("size,batch_size", [(16, 1), (510, 17), (512, 17)])
 def test_sampling_signed_adjoint_and_transforms(size, batch_size):
     """Validate signed sampling, streaming adjoints, and JAX transformations."""
     backend = NUFFT(size // 2, batch_size=batch_size)

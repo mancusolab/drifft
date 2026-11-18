@@ -100,7 +100,8 @@ class NUFFT(AbstractTransitionBackend):
           meet the spectral budget. Neither guarantees positivity.
         - `tail_tol`: Optional stricter per-node discarded binomial mass tolerance.
         - `nufft_tol`: Optional stricter FINUFFT tolerance (at least `1e-15`).
-        - `batch_size`: Number of sampling nodes processed together.
+        - `batch_size`: Target sampling batch size in nodes. Reflected nodes are processed
+          in pairs, with at least one pair per batch.
         - `grad_atol`: Optional absolute first-derivative operator-error target,
           in `(0, 1)`. Requires `angular_sensitivity`; None plans only values.
         - `angular_sensitivity`: A finite nonnegative bound on

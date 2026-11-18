@@ -18,9 +18,8 @@ if TYPE_CHECKING:
 
 
 def _build_stencil(size: int, radius: int, probabilities: jax.Array):
-    """Generate normalized mode-relative weights for one fixed-size node batch."""
-    low = jnp.minimum(probabilities, 1 - probabilities)
-    safe = jnp.where(low == 0, 0.5, low)[:, None]
+    """Generate normalized mode-relative weights for nodes in the lower half."""
+    safe = jnp.where(probabilities == 0, 0.5, probabilities)[:, None]
     mode = jnp.floor((size + 1) * safe).astype(jnp.int32)
     distance = jnp.arange(radius)
     up = jnp.clip(mode + distance, 0, size - 1)
@@ -36,43 +35,56 @@ def _build_stencil(size: int, radius: int, probabilities: jax.Array):
     weights = jnp.where((indices >= 0) & (indices <= size), weights, 0)
     weights = weights / weights.sum(axis=-1, keepdims=True)
     indices = jnp.clip(indices, 0, size)
-    indices = jnp.where(probabilities[:, None] > 0.5, size - indices, indices)
-    # Exact endpoint samples; unused safe=.5 weights cannot contaminate them.
-    indices = jnp.where(
-        low[:, None] == 0, jnp.where(probabilities[:, None] == 0, 0, size), indices
-    )
+    # q=0 and its reflected q=1 sample only the corresponding endpoint.
+    indices = jnp.where(probabilities[:, None] == 0, 0, indices)
     weights = jnp.where(
-        low[:, None] == 0, (jnp.arange(2 * radius + 1) == radius)[None, :], weights
+        probabilities[:, None] == 0,
+        (jnp.arange(2 * radius + 1) == radius)[None, :],
+        weights,
     )
     return indices, weights
 
 
 def _sample_batches(nodes, values, *, size, radius, batch_size, transpose):
-    """Matched gather/scatter maps with one live batch of regenerated weights."""
-    padding = (-nodes.size) % batch_size
-    batches = jnp.pad(nodes, (0, padding), constant_values=0.5).reshape(-1, batch_size)
+    """Stream each Lobatto stencil once for its node and reflected partner."""
+    pairs = nodes.size // 2
+    retained = nodes.size - pairs  # Includes the unpaired midpoint for odd counts.
+    # Each stencil serves two nodes, so budget the batch in pairs.
+    pair_batch_size = min(max(1, batch_size // 2), retained)
+    padded_count = retained + (-retained) % pair_batch_size
+
+    def batches(array):
+        return jnp.pad(array, (0, padded_count - array.size)).reshape(
+            -1, pair_batch_size
+        )
+
+    lower_nodes = batches(nodes[:retained])
     if transpose:
-        mass = jnp.pad(values, (0, padding)).reshape(-1, batch_size)
+        lower_mass = batches(values[:retained])
+        # A zero partner makes the midpoint contribute exactly once.
+        upper_mass = batches(values[::-1][:pairs])
 
         def scatter(accumulator, batch):
-            """Scatter one node batch into the shared destination accumulator."""
-            probabilities, weights_out = batch
+            probabilities, lower, upper = batch
             indices, weights = _build_stencil(size, radius, probabilities)
-            updates = weights * weights_out[:, None]
-            return accumulator.at[indices.reshape(-1)].add(updates.reshape(-1)), None
+            accumulator = accumulator.at[indices].add(weights * lower[:, None])
+            accumulator = accumulator.at[size - indices].add(weights * upper[:, None])
+            return accumulator, None
 
-        # The only M-sized zero fill is outside the scan. Each batch scatters
-        # directly into this carry, rather than adding a fresh dense cotangent.
         return jax.lax.scan(
-            scatter, jnp.zeros(size + 1, dtype=values.dtype), (batches, mass)
+            scatter,
+            jnp.zeros(size + 1, dtype=values.dtype),
+            (lower_nodes, lower_mass, upper_mass),
         )[0]
 
     def gather(probabilities):
-        """Evaluate one node batch from its regenerated binomial stencil."""
         indices, weights = _build_stencil(size, radius, probabilities)
-        return jnp.sum(weights * values[indices], axis=-1)
+        lower = jnp.sum(weights * values[indices], axis=-1)
+        upper = jnp.sum(weights * values[size - indices], axis=-1)
+        return lower, upper
 
-    return jax.lax.map(gather, batches).reshape(-1)[: nodes.size]
+    lower, upper = jax.lax.map(gather, lower_nodes)
+    return jnp.concatenate((lower.ravel()[:retained], upper.ravel()[:pairs][::-1]))
 
 
 class _BernsteinSampling(BatchablePrimitive):
