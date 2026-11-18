@@ -479,7 +479,8 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         **Returns:**
 
         An [`EpochResult`][drifft.EpochResult] with reconstructed mass and a power-error estimate from
-        nested spaces and recurrence defects. This estimate is not a certificate
+        accumulated recurrence defects. Rational Krylov also checks a nested space.
+        The estimate is not a certificate
         and excludes backend approximation. With `throw=False`, inspect `converged`.
 
         **Raises:**

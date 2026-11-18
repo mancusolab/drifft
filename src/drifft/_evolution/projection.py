@@ -42,13 +42,13 @@ class ProjectionResult(NamedTuple):
 
     For basis V and operator images AV, `projected` is V.T @ AV,
     `coordinates` is V.T @ seed, and `defect` is AV - V @ projected.
-    `fine` and `coarse` are lifted powers in full and nested spaces; `success`
+    `coarse` is the optional nested rational approximation to `fine`. `success`
     records inner-solve validity, not outer power convergence. `basis` is None
     unless explicitly requested for sensitivities, avoiding unnecessary retention.
     """
 
     fine: jax.Array
-    coarse: jax.Array
+    coarse: jax.Array | None
     defect: jax.Array
     projected: jax.Array
     coordinates: jax.Array
@@ -70,16 +70,17 @@ def _orthogonalize(basis, candidate):
     return jnp.where(active, candidate / denominator, 0.0)
 
 
-def _project_basis(basis, images, seed, steps, *, exact, success, return_basis):
+def _project_basis(
+    basis, images, seed, steps, *, compare_nested, success, return_basis
+):
     """Project A itself and compare nested spaces while retaining raw defects."""
     projected = basis.T @ images
     coordinates = basis.T @ seed
     fine = basis @ _matrix_power_matvec(projected, coordinates, steps)
     fine = _guard_krylov_derivative(fine, basis, seed @ seed)
     defect = images - basis @ projected
-    if exact:
-        coarse = fine
-    else:
+    coarse = None
+    if compare_nested:
         half = max(1, basis.shape[1] // 2)
         coarse = basis[:, :half] @ _matrix_power_matvec(
             projected[:half, :half], coordinates[:half], steps
@@ -250,7 +251,7 @@ def _rational_projection(problem, dimension, shifted_solve, *, return_basis):
         images,
         seed,
         problem.steps,
-        exact=dimension == seed.size,
+        compare_nested=dimension < seed.size,
         success=success,
         return_basis=return_basis,
     )
@@ -347,10 +348,11 @@ def _projected_result(problem, projection, rtol, atol, throw):
     )
     defect_estimate *= problem.defect_scale
     result = problem.reconstruct(fine)
-    difference = problem.decode(fine - coarse)
-    error = jax.lax.stop_gradient(
-        jnp.maximum(jnp.sum(jnp.abs(difference)), defect_estimate)
-    )
+    error = defect_estimate
+    if coarse is not None:
+        difference = problem.decode(fine - coarse)
+        error = jnp.maximum(error, jnp.sum(jnp.abs(difference)))
+    error = jax.lax.stop_gradient(error)
     tolerance = atol + rtol * jnp.sum(jnp.abs(result))
     return _epoch_result(result, error, tolerance, throw, projection.success)
 
@@ -386,7 +388,7 @@ def _polynomial_power_action(
         images,
         seed,
         problem.steps,
-        exact=dimension == seed.size or dimension > problem.steps,
+        compare_nested=False,
         success=jnp.asarray(True),
         return_basis=return_basis,
     )

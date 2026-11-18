@@ -204,8 +204,8 @@ def test_polynomial_configuration_validation(options):
         drifft.PolynomialKrylov(**options)
 
 
-@pytest.mark.parametrize("lower, converged", [(0.05, False), (0.7, True)])
-def test_truncated_polynomial_power_and_jvp(lower, converged):
+@pytest.mark.parametrize("lower", [0.05, 0.7])
+def test_truncated_polynomial_power_and_jvp(lower):
     """A truncated basis approximates a long diagonal power and its derivative."""
     diagonal = jnp.linspace(lower, 0.8, 50)
     seed = jnp.linspace(0.1, 1.0, 50)
@@ -229,9 +229,10 @@ def test_truncated_polynomial_power_and_jvp(lower, converged):
 
     result = eqx.filter_jit(action)(jnp.asarray(1.0))
     expected = diagonal**25 * seed
-    # Broad spectra can have an accurate fine result while the nested-space
-    # comparison conservatively rejects convergence.
-    assert bool(result.converged) == converged
+    assert result.converged
+    assert jnp.sum(jnp.abs(result.distribution - expected)) <= (
+        method.atol + method.rtol * jnp.sum(jnp.abs(expected))
+    )
     assert jnp.allclose(result.distribution, expected, atol=1e-11, rtol=1e-7)
     tangent = jax.jvp(
         lambda scale: action(scale).distribution,
