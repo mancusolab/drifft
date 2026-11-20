@@ -42,7 +42,7 @@ class DensePower(drifft.AbstractEpochMethod):
     """
 
     def validate(self, backend, frequency_map):
-        """Require transition geometry and a frequency map for population coordinates."""
+        """Check the backend and frequency-map interfaces before epoch preparation."""
         # Check interfaces, not parameter values that may be traced by JAX.
         if not isinstance(backend, drifft.AbstractTransitionBackend):
             raise TypeError("DensePower requires an AbstractTransitionBackend")

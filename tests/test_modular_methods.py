@@ -272,6 +272,11 @@ def test_public_problem_result_applies_shared_failure_checks():
     )
     assert not result.converged
     assert result.status == drifft.EvolutionStatus.unconverged
+    # The L1 norm overflows, but the relative budget is only 5e305.
+    large = drifft.PowerResult(jnp.full(5, 1e308), error_estimate=1e307, rtol=1e-3)
+    assert (
+        problem.result(large, throw=False).status == drifft.EvolutionStatus.unconverged
+    )
     with pytest.raises(eqx.EquinoxRuntimeError, match="epoch failed"):
         eqx.filter_jit(problem.result)(
             drifft.PowerResult(jnp.full(5, jnp.nan))

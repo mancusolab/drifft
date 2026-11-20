@@ -941,9 +941,10 @@ class FFT(AbstractTransitionBackend):
         r = (eta - self.eta0[block]) * self.inverse_step[block]
         start = jnp.floor(r).astype(jnp.int32) - self.interp_order // 2 + 1
         t = r - start
-        k = jnp.arange(self.interp_order)
-        # Prefix and suffix products omit each node without division at a knot.
         order = self.interp_order
+        k = jnp.arange(order)
+        # At node j, prod(j-i for i != j) = j! (-1)^(m-1-j) (m-1-j)!,
+        # where m is the stencil order. These constants are computed at trace time.
         inverse_denominators = jnp.asarray(
             [
                 (-1) ** (order - 1 - j)
@@ -951,6 +952,8 @@ class FFT(AbstractTransitionBackend):
                 for j in range(order)
             ]
         )
+        # The static order lets JAX unroll the products. Pairing them skips
+        # the factor for the current node without dividing by zero at a knot.
         prefix = [jnp.ones_like(t)]
         suffix = [prefix[0]]
         for j in range(order - 1):
@@ -967,10 +970,7 @@ class FFT(AbstractTransitionBackend):
             * inverse_denominators
         )
         indices = (
-            self.offsets[block, None]
-            + start[:, None]
-            - self.rmin[block, None]
-            + jnp.asarray(k)
+            self.offsets[block, None] + start[:, None] - self.rmin[block, None] + k
         )
         interpolated = jnp.sum(weights * nodes[indices], axis=-1)
         return jnp.where(is_boundary, direct, interpolated)

@@ -33,7 +33,7 @@ from .._backend import AbstractTransitionBackend, Jacobi
 from .._frequency import AbstractFrequencyMap
 from .._operator import Transition
 from .parameterized import _JacobiOperator
-from .problem import EpochProblem
+from .problem import EpochProblem, _identity
 
 
 def validate_representation(backend, frequency_map, *, method_name):
@@ -57,19 +57,17 @@ def _prepare_epoch(backend, frequency_map, generations, segregating, source, aug
     raise TypeError("unsupported epoch backend")
 
 
-def _identity(value):
-    return value
-
-
 @_prepare_epoch.register(AbstractTransitionBackend)
 def _prepare_transition(
     backend, frequency_map, generations, segregating, source, augmented
 ):
+    """Use a one-generation population-space transition as the working operator."""
     transition = Transition(backend, frequency_map)
     operation = partial(transition.advance, segregating=segregating)
     size = source.size + int(augmented)
 
     def action(state):
+        """Advance mass and carry the homogeneous coordinate for source input."""
         if augmented:
             # Homogeneous coordinates turn x_next = A x + source into one
             # linear power: [x; 1] -> [A x + source; 1]. The auxiliary coordinate

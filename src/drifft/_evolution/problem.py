@@ -167,11 +167,16 @@ class EpochProblem(eqx.Module):
             "error_estimate must be nonnegative; tolerance must be finite and nonnegative",
         )
         distribution = self.reconstruct(state)
-        tolerance = jnp.where(
-            relative == 0,
-            tolerance,
-            tolerance + relative * jnp.sum(jnp.abs(distribution)),
+        magnitude = jnp.abs(distribution)
+        norm = jnp.sum(magnitude)
+        # Sum first to preserve small terms. If the unscaled sum overflows,
+        # scale before summing so a finite relative tolerance stays finite.
+        relative_error_budget = jax.lax.cond(
+            jnp.isinf(norm),
+            lambda: jnp.sum(relative * magnitude),
+            lambda: relative * norm,
         )
+        tolerance += jnp.where(relative == 0, 0.0, relative_error_budget)
         return _epoch_result(
             distribution, error_estimate, tolerance, throw, solution.solve_success
         )
@@ -221,13 +226,18 @@ def _epoch_result(distribution, error, tolerance, throw, solve_success=True):
     return EpochResult(distribution, error, converged, status)
 
 
+def _identity(value):
+    """Keep a vector in its current coordinates."""
+    return value
+
+
 def _working_problem(operator, steps):
-    """Represent an unencoded power action for sensitivity calculations."""
+    """Wrap a working-coordinate power with identity encoding and decoding."""
     return EpochProblem(
         operator,
-        lambda x: x,
+        _identity,
         steps,
-        lambda x: x,
+        _identity,
         jnp.zeros(operator.in_structure().shape, dtype=jnp.float64),
         False,
         jnp.asarray(1.0),

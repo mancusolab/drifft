@@ -63,7 +63,7 @@ Keep names aligned with the direction of the transition:
 
 | Name | Meaning |
 | --- | --- |
-| `backend` | Transition representation ([`FFT`](api/backends.md#drifft.FFT), [`NUFFT`](api/backends.md#drifft.NUFFT), [`Jacobi`](api/backends.md#drifft.Jacobi), or reference [`Dense`](api/backends.md#drifft.Dense)); Jacobi also supplies reduced Krylov geometry |
+| `backend` | Transition representation ([`FFT`](api/backends.md#drifft.FFT), [`NUFFT`](api/backends.md#drifft.NUFFT), [`Jacobi`](api/backends.md#drifft.Jacobi), or reference [`Dense`](api/backends.md#drifft.Dense)); Jacobi also supplies reduced coordinates for constant-size holds |
 | `method` | Geometry-free epoch algorithm ([`Sequential`](api/methods.md#drifft.Sequential), [`PolynomialKrylov`](api/methods.md#drifft.PolynomialKrylov), or [`RationalKrylov`](api/methods.md#drifft.RationalKrylov)) |
 | `backend_factory`, `boundary_backend_factory` | Prepare transition geometry for demographic holds and size changes |
 | `frequency_map` | Selection, mutation, or a composition of both |

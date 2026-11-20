@@ -44,7 +44,6 @@ from .._frequency import AbstractFrequencyMap
 from .autodiff import _cached_power_action, _frechet_action, _power_action
 from .operators import _numerical_operator, _operator_pushforward
 from .preparation import (
-    _identity,
     _prepare_epoch,
     validate_domain,
     validate_representation,
@@ -54,6 +53,7 @@ from .problem import (
     EpochResult,
     PowerResult,
     _epoch_source,
+    _identity,
     _working_problem,
 )
 from .projection import _projected_result, project
