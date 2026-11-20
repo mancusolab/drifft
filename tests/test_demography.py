@@ -17,12 +17,10 @@ def test_demographic_holds_use_custom_method_advance(duration):
     """Honor custom population-space evolution only when a hold is required."""
 
     class ScaledAdvance(drifft.AbstractEpochMethod):
-        allows_reduced_representation = False
-
         def validate(self, backend, frequency_map):
             drifft.Sequential().validate(backend, frequency_map)
 
-        def solve(self, problem, *, throw=True):
+        def solve(self, problem, initial):
             raise AssertionError("The custom advance handles the hold")
 
         def advance(self, backend, distribution, *, throw=True, **kwargs):

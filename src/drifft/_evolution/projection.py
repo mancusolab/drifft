@@ -34,7 +34,7 @@ import lineax as lx
 from jax.experimental import hijax
 
 from .._batching import BatchablePrimitive
-from .problem import _epoch_result, _PowerProblem
+from .problem import EpochProblem, PowerResult
 
 
 class ProjectionResult(NamedTuple):
@@ -218,9 +218,8 @@ def _dense_shifted_solve(matrix, steps):
     return solve
 
 
-def _rational_projection(problem, dimension, shifted_solve, *, return_basis):
+def _rational_projection(problem, seed, dimension, shifted_solve, *, return_basis):
     """Build one resolvent Arnoldi space using a checked solve callback."""
-    seed = problem.initial
     dimension = min(seed.size, dimension)
     # Zero seeds and invariant-subspace breakdown leave zero columns. Preserve
     # that convention for both dense and matrix-free resolvent applications.
@@ -258,7 +257,8 @@ def _rational_projection(problem, dimension, shifted_solve, *, return_basis):
 
 
 def _gmres_power_action(
-    problem: _PowerProblem,
+    problem: EpochProblem,
+    seed: jax.Array,
     dimension: int,
     *,
     rtol: float = 1e-11,
@@ -272,7 +272,6 @@ def _gmres_power_action(
     Private settings permit numerical experiments without exposing solver choice
     on the public method.
     """
-    seed = problem.initial
     shift = _rational_shift(problem.steps)
     population_size = seed.size - int(problem.augmented)
     spec = jax.ShapeDtypeStruct((population_size,), seed.dtype)
@@ -317,10 +316,12 @@ def _gmres_power_action(
             (solution.result == lx.RESULTS.successful) & (residual <= tolerance),
         )
 
-    return _rational_projection(problem, dimension, solve, return_basis=return_basis)
+    return _rational_projection(
+        problem, seed, dimension, solve, return_basis=return_basis
+    )
 
 
-def _projected_result(problem, projection, rtol, atol, throw):
+def _projected_result(problem, projection, rtol, atol):
     """Check decoded recurrence defects and nested-space differences."""
     fine, coarse = projection.fine, projection.coarse
     defect, projected, coordinates = (
@@ -347,21 +348,20 @@ def _projected_result(problem, projection, rtol, atol, throw):
         0, problem.steps, accumulate, (coordinates, jnp.asarray(0.0))
     )
     defect_estimate *= problem.defect_scale
-    result = problem.reconstruct(fine)
     error = defect_estimate
     if coarse is not None:
         difference = problem.decode(fine - coarse)
         error = jnp.maximum(error, jnp.sum(jnp.abs(difference)))
     error = jax.lax.stop_gradient(error)
-    tolerance = atol + rtol * jnp.sum(jnp.abs(result))
-    return _epoch_result(result, error, tolerance, throw, projection.success)
+    return PowerResult(
+        fine, error, atol=atol, rtol=rtol, solve_success=projection.success
+    )
 
 
 def _polynomial_power_action(
-    problem: _PowerProblem, dimension: int, *, return_basis=False
+    problem: EpochProblem, seed: jax.Array, dimension: int, *, return_basis=False
 ):
     """Build a reorthogonalized Arnoldi basis using only operator applications."""
-    seed = problem.initial
     # Powers through k live in K_{k+1}; do not build unused basis vectors.
     dimension = min(dimension, seed.size, problem.steps + 1)
     norm_squared = seed @ seed
@@ -394,10 +394,14 @@ def _polynomial_power_action(
     )
 
 
-def project(problem, dimension, *, polynomial, return_basis=False, shifted_solve=None):
+def project(
+    problem, seed, dimension, *, polynomial, return_basis=False, shifted_solve=None
+):
     """Select an Arnoldi kernel without exposing solver policy to callers."""
     if polynomial:
-        return _polynomial_power_action(problem, dimension, return_basis=return_basis)
+        return _polynomial_power_action(
+            problem, seed, dimension, return_basis=return_basis
+        )
     if isinstance(problem.operator, lx.MatrixLinearOperator):
         solve = (
             _dense_shifted_solve(problem.operator.matrix, problem.steps)
@@ -405,6 +409,6 @@ def project(problem, dimension, *, polynomial, return_basis=False, shifted_solve
             else shifted_solve
         )
         return _rational_projection(
-            problem, dimension, solve, return_basis=return_basis
+            problem, seed, dimension, solve, return_basis=return_basis
         )
-    return _gmres_power_action(problem, dimension, return_basis=return_basis)
+    return _gmres_power_action(problem, seed, dimension, return_basis=return_basis)

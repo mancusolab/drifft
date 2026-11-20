@@ -232,8 +232,8 @@ def test_truncated_frechet_actions_and_adjoint_pairing(
         expected = jax.jvp(lambda a, x: dense_action(a, x, steps), (a, x), (e, h))[1]
         expected_g = jax.grad(lambda a: c @ dense_action(a, x, steps))(a)
         state_cotangent = method.solve(
-            _working_problem(lx.MatrixLinearOperator(a.T), c, steps)
-        ).distribution
+            _working_problem(lx.MatrixLinearOperator(a.T), steps), c
+        ).state
         assert jnp.allclose(actual.distribution, expected, atol=2e-9, rtol=2e-8)
         assert jnp.allclose(left @ right.T, expected_g, atol=2e-8, rtol=2e-8)
         assert jnp.allclose(
@@ -264,7 +264,7 @@ def test_public_operator_rules_validate_truncated_jvp_and_vjp(method_type):
 
     def action(scale, initial):
         operator = lx.FunctionLinearOperator(lambda v: a @ v + scale * (e @ v), spec)
-        return method.solve(_working_problem(operator, initial, steps)).distribution
+        return method.solve(_working_problem(operator, steps), initial).state
 
     def ref(scale, initial):
         return dense_action(a + scale * e, initial, steps)
@@ -305,12 +305,7 @@ def test_derivative_nonconvergence_is_optional(method_type, reverse, check_sensi
 
     def objective(scale):
         operator = lx.FunctionLinearOperator(lambda v: scale * diagonal * v, spec)
-        return (
-            weights
-            @ method.solve(
-                _working_problem(operator, initial, steps), throw=False
-            ).distribution
-        )
+        return weights @ method.solve(_working_problem(operator, steps), initial).state
 
     fn = (
         jax.grad(objective)
@@ -339,7 +334,7 @@ def test_higher_operator_derivatives_fail_explicitly(method_type):
 
     def objective(scale):
         operator = lx.MatrixLinearOperator(jnp.diag(jnp.array([0.7, 0.8, 0.9])) * scale)
-        return method.solve(_working_problem(operator, initial, 5)).distribution.sum()
+        return method.solve(_working_problem(operator, 5), initial).state.sum()
 
     assert jnp.isfinite(jax.grad(objective)(jnp.asarray(1.0)))
     with pytest.raises(
@@ -372,7 +367,8 @@ def test_adjoint_estimate_detects_delayed_propagation(method_type, dimension, ac
         dimension=dimension, rtol=1e-8, atol=1e-12, check_sensitivity=True
     )
     operator = lx.MatrixLinearOperator(matrix)
-    primal = method.solve(_working_problem(operator, initial, steps), throw=False)
+    problem = _working_problem(operator, steps)
+    primal = problem.result(method.solve(problem, initial), throw=False)
     assert primal.converged
     assert jnp.allclose(primal.distribution, 0.0)
     expected = jax.grad(
@@ -401,12 +397,7 @@ def test_adjoint_estimate_detects_delayed_propagation(method_type, dimension, ac
 
     def objective(scale):
         op = lx.MatrixLinearOperator(matrix + scale * perturbation)
-        return (
-            cotangent
-            @ method.solve(
-                _working_problem(op, initial, steps), throw=False
-            ).distribution
-        )
+        return cotangent @ method.solve(_working_problem(op, steps), initial).state
 
     if accepted:
         assert jnp.allclose(

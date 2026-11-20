@@ -10,11 +10,11 @@ A custom method subclasses [`AbstractEpochMethod`](api/methods.md#drifft.Abstrac
 
 - `validate(backend, frequency_map)` rejects unsupported types or combinations.
   It runs before preparation and should not inspect traced parameter values.
-- `solve(problem, *, throw=True)` computes the prepared power and returns an
-  [`EpochResult`](api/methods.md#drifft.EpochResult) using `problem.result(...)`.
+- `solve(problem, initial)` computes the prepared power and returns a
+  [`PowerResult`](api/methods.md#drifft.PowerResult) in working coordinates.
 
-The inherited `advance` connects these methods: it calls [`prepare_epoch`](api/methods.md#drifft.prepare_epoch), then
-`solve`. Preparation handles state restriction, source mass, and backend-specific
+The inherited `advance` connects these methods: it calls [`prepare_epoch`](api/methods.md#drifft.prepare_epoch), encodes the input, calls
+`solve`, and reconstructs a checked population result. Preparation handles state restriction, source mass, and backend-specific
 coordinates, so the power algorithm can work with a single linear operator.
 
 ## Implement dense matrix powering
@@ -24,7 +24,7 @@ dense matrix multiplication. It exists solely to demonstrate how to extend the
 API with a different numerical algorithm. Run the blocks on this page in order.
 
 ```python
-from typing import ClassVar, final
+from typing import final
 
 import jax
 import jax.numpy as jnp
@@ -41,8 +41,6 @@ class DensePower(drifft.AbstractEpochMethod):
     interface. Preparation and reconstruction retain ownership of state layout.
     """
 
-    allows_reduced_representation: ClassVar[bool] = False
-
     def validate(self, backend, frequency_map):
         """Require transition geometry and a frequency map for population coordinates."""
         # Check interfaces, not parameter values that may be traced by JAX.
@@ -51,15 +49,14 @@ class DensePower(drifft.AbstractEpochMethod):
         if not isinstance(frequency_map, drifft.AbstractFrequencyMap):
             raise TypeError("frequency_map must be an AbstractFrequencyMap")
 
-    def solve(self, problem: drifft.EpochProblem, *, throw=True):
-        """Apply the prepared power and reconstruct checked population mass."""
+    def solve(self, problem: drifft.EpochProblem, initial):
+        """Apply the prepared power to the encoded initial vector."""
         # For illustration only: dense powering uses O(n**2) storage and
         # O(n**3) work per matrix product, making realistic problems costly.
         # Preparation supplies the exponent, including generation accounting.
         matrix = problem.operator.as_matrix()
-        state = jnp.linalg.matrix_power(matrix, problem.steps) @ problem.initial
-        # Decode the working state and apply the shared numerical checks.
-        return problem.result(state, throw=throw)
+        state = jnp.linalg.matrix_power(matrix, problem.steps) @ initial
+        return drifft.PowerResult(state)
 
 
 pop_size = 64
@@ -85,18 +82,13 @@ is applied.
 ## Work with the prepared problem
 
 For a prepared operator $A$, initial working vector $z_0$, and exponent $k$,
-`solve` computes $z_k=A^k z_0$. These are `problem.operator`, `problem.initial`,
+`solve` computes $z_k=A^k z_0$. These are `problem.operator`, `initial`,
 and `problem.steps`. Algorithms can use `operator.mv(state)` without storing
 a dense matrix. This example deliberately uses `operator.as_matrix()` to
 illustrate a different computation strategy.
 
-Declare `allows_reduced_representation=False` when your algorithm requires
-population coordinates. `True` permits preparation to use a backend's reduced
-coordinates, such as Jacobi coefficients. It does not guarantee a smaller
-problem for every backend. The validation method must also accept the
-backend/map combinations that the chosen representation supports. This example
-requests population coordinates and checks the public backend and frequency-map
-interfaces directly; it needs no additional restrictions for reduced assembly.
+Preparation selects reduced coordinates for supported Jacobi maps. The same solve
+implementation works on either representation.
 
 Even with population coordinates, source mass can append an auxiliary
 coordinate to turn an affine recurrence into a linear action. With reduced
@@ -104,10 +96,10 @@ coordinates, encoding can incorporate the first generation, leaving
 `problem.steps` smaller than the requested generation count. Reconstruction
 can also add a final source contribution. Consequently:
 
-- Use `problem.initial.shape` for working-vector allocations.
+- Use `initial.shape` for working-vector allocations.
 - Use `problem.steps` for the exponent, including when it is zero.
-- Finish with `problem.result(state, throw=throw)` to recover population mass
-  and apply the shared numerical checks.
+- Return `drifft.PowerResult(state)`. The driver reconstructs population mass
+  and checks convergence.
 
 Calling `problem.reconstruct(state)` alone converts coordinates but does not
 check convergence. Do not normalize the reconstructed mass: segregating mass
@@ -120,7 +112,7 @@ example uses the default zero error estimate. This does not claim that the
 backend is exact or that floating-point roundoff is absent.
 
 An approximate power algorithm must supply an absolute population-space L1
-error estimate and an absolute acceptance tolerance to `problem.result`.
+error estimate and an absolute acceptance tolerance in `PowerResult`.
 If the algorithm estimates a working-state error vector `delta`, use
 `problem.error_norm(delta)` to measure it in the required norm, including any
 auxiliary-coordinate defect. A small residual is not automatically an error

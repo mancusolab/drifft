@@ -132,34 +132,25 @@ def _expect_epoch(model, backend, values, generations, rate, segregating):
 
     Write preparation as initial = B mass + d and reconstruction as R state + e.
     The backward values are B.T (A.T)**k R.T values; the offset is
-    d.T (A.T)**k R.T values + e.T values. Preparing zero mass extracts d.
+    d.T (A.T)**k R.T values + e.T values. Encoding zero mass extracts d.
     This also handles Jacobi's reduced exponent and final-generation source.
     """
     zero = jnp.zeros_like(values)
     source = zero.at[0].set(2 * backend.pop_size * rate) if segregating else None
 
-    def prepare_initial(mass):
-        problem = prepare_epoch(
-            model.method,
-            backend,
-            mass,
-            frequency_map=model.frequency_map,
-            generations=generations,
-            segregating=segregating,
-            source_mass=source,
-        )
-        return problem.initial, problem
-
-    # Return the prepared problem as auxiliary data so encoding and its
-    # transpose share one preparation. Outer process derivatives remain live.
-    seed, encode_transpose, problem = eqx.filter_vjp(
-        prepare_initial, zero, has_aux=True
+    problem = prepare_epoch(
+        model.method,
+        backend,
+        frequency_map=model.frequency_map,
+        generations=generations,
+        segregating=segregating,
+        source_mass=source,
     )
-    _, decode_transpose = jax.vjp(problem.decode, jnp.zeros_like(problem.initial))
+    seed, encode_transpose = jax.vjp(problem.encode, zero)
+    _, decode_transpose = jax.vjp(problem.decode, jnp.zeros_like(seed))
     terminal = decode_transpose(values)[0]
-    working = model.method.solve(
-        _working_problem(problem.operator.T, terminal, problem.steps)
-    ).distribution
+    backward = _working_problem(problem.operator.T, problem.steps)
+    working = backward.result(model.method.solve(backward, terminal)).distribution
     offset = seed @ working + problem.output_offset @ values
     return encode_transpose(working)[0], offset
 
@@ -196,7 +187,6 @@ def _advance_history(model, distribution, *, segregating, singleton_rate, throw)
             model.geometry[size],
             distribution,
             model.frequency_map,
-            reduced=model.method.allows_reduced_representation,
         )
     initial_result = _epoch_result(distribution, jnp.asarray(0.0), 0.0, False)
     status = initial_result.status
@@ -279,7 +269,6 @@ def _expect_history(model, state, rate, *, segregating):
             model.geometry[size],
             values,
             model.frequency_map,
-            reduced=model.method.allows_reduced_representation,
         )
     history = model.demography
     for source, destination, duration in reversed(

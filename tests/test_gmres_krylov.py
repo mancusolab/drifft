@@ -11,7 +11,7 @@ import pytest
 from _reference import dense_history_derivatives, dense_transition
 
 import drifft
-from drifft._evolution.problem import _PowerProblem
+from drifft._evolution.problem import EpochProblem
 
 jax.config.update("jax_enable_x64", True)
 
@@ -108,10 +108,10 @@ def test_failed_gmres_budget_and_residual():
     operator = lx.FunctionLinearOperator(
         lambda x: diagonal * x, jax.ShapeDtypeStruct((40,), jnp.float64)
     )
-    problem = _PowerProblem(
-        operator, jnp.ones(40), 100, lambda x: x, jnp.zeros(40), False, jnp.asarray(1.0)
+    problem = EpochProblem(
+        operator, lambda x: x, 100, lambda x: x, jnp.zeros(40), False, jnp.asarray(1.0)
     )
-    action = _gmres_power_action(problem, 8, max_steps=1, restart=2)
+    action = _gmres_power_action(problem, jnp.ones(40), 8, max_steps=1, restart=2)
     assert not action.success
     assert jnp.all(jnp.isfinite(action.fine))
 
@@ -121,10 +121,12 @@ def test_singular_matrix_free_shift_reports_failure():
     operator = lx.FunctionLinearOperator(
         lambda x: 9 * x, jax.ShapeDtypeStruct((3,), jnp.float64)
     )
-    problem = _PowerProblem(
-        operator, jnp.ones(3), 1, lambda x: x, jnp.zeros(3), False, jnp.asarray(1.0)
+    problem = EpochProblem(
+        operator, lambda x: x, 1, lambda x: x, jnp.zeros(3), False, jnp.asarray(1.0)
     )
-    result = drifft.RationalKrylov(dimension=3).solve(problem, throw=False)
+    result = problem.result(
+        drifft.RationalKrylov(dimension=3).solve(problem, jnp.ones(3)), throw=False
+    )
     assert not result.converged
     assert result.status == drifft.EvolutionStatus.linear_solve_failed
 

@@ -122,13 +122,12 @@ def test_prepared_operator_keeps_parameter_derivatives():
         problem = drifft.prepare_epoch(
             method,
             backend,
-            mass,
             frequency_map=drifft.AdditiveSelection(s),
             generations=4,
         )
         return problem.reconstruct(
             problem.operator.mv(
-                problem.operator.mv(problem.operator.mv(problem.initial))
+                problem.operator.mv(problem.operator.mv(problem.encode(mass)))
             )
         )
 

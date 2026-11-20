@@ -26,7 +26,7 @@ from ._evolution.methods import (
     Sequential,
     prepare_epoch,
 )
-from ._evolution.problem import EpochProblem, EpochResult, EvolutionStatus
+from ._evolution.problem import EpochProblem, EpochResult, EvolutionStatus, PowerResult
 from ._frequency import (
     AbstractFrequencyMap,
     AdditiveSelection,
@@ -65,6 +65,7 @@ __all__ = [
     "DominantSelection",
     "EpochProblem",
     "EpochResult",
+    "PowerResult",
     "EvolutionStatus",
     "ErrorComponent",
     "ExpectedVisitsResult",

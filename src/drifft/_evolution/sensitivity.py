@@ -70,9 +70,10 @@ def _sensitivity_projection(
     shifted_solve=None,
 ):
     """Build the requested Arnoldi space, retaining its basis for adjoint factors."""
-    problem = _working_problem(operator, initial, steps)
+    problem = _working_problem(operator, steps)
     return project(
         problem,
+        initial,
         dimension,
         polynomial=polynomial,
         return_basis=True,
@@ -159,13 +160,14 @@ def _frechet_power(
         atol + rtol * jnp.sum(jnp.abs(fine[:size])),
         atol + rtol * jnp.sum(jnp.abs(fine[size:])),
     )
-    result = _projected_result(
-        _working_problem(block, seed, steps),
+    problem = _working_problem(block, steps)
+    solution = _projected_result(
+        problem,
         projection,
         0.0,
         tolerance,
-        False,
     )
+    result = problem.result(solution, throw=False)
     return EpochResult(
         result.distribution[:size],
         result.error_estimate,

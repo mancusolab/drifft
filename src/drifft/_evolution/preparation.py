@@ -33,30 +33,26 @@ from .._backend import AbstractTransitionBackend, Jacobi
 from .._frequency import AbstractFrequencyMap
 from .._operator import Transition
 from .parameterized import _JacobiOperator
-from .problem import _epoch_inputs, _PowerProblem
+from .problem import EpochProblem
 
 
-def validate_representation(backend, frequency_map, *, reduced, method_name):
-    """Check configuration, applying assembly restrictions only to reduced powers."""
+def validate_representation(backend, frequency_map, *, method_name):
+    """Validate the interfaces shared by epoch methods."""
     if not isinstance(frequency_map, AbstractFrequencyMap):
         raise TypeError("frequency_map must be an AbstractFrequencyMap")
     if not isinstance(backend, AbstractTransitionBackend):
         raise TypeError(f"{method_name} requires an AbstractTransitionBackend")
-    if reduced and isinstance(backend, Jacobi):
-        backend._validate_reduced_map(frequency_map)
 
 
-def validate_domain(backend, distribution, frequency_map, *, reduced):
+def validate_domain(backend, distribution, frequency_map):
     """Retain runtime domain checks even when no power action is scheduled."""
-    if reduced and isinstance(backend, Jacobi):
+    if isinstance(backend, Jacobi) and backend._supports_reduced_map(frequency_map):
         distribution = backend._validate_parameters(distribution, frequency_map)
     return distribution
 
 
 @singledispatch
-def _prepare_epoch(
-    backend, distribution, frequency_map, generations, segregating, source_mass
-):
+def _prepare_epoch(backend, frequency_map, generations, segregating, source, augmented):
     """Prepare a representation without requiring algorithm methods on every backend."""
     raise TypeError("unsupported epoch backend")
 
@@ -67,17 +63,11 @@ def _identity(value):
 
 @_prepare_epoch.register(AbstractTransitionBackend)
 def _prepare_transition(
-    backend, distribution, frequency_map, generations, segregating, source_mass
+    backend, frequency_map, generations, segregating, source, augmented
 ):
-    distribution, source = _epoch_inputs(
-        distribution, source_mass, backend._gene_copies, generations, segregating
-    )
     transition = Transition(backend, frequency_map)
     operation = partial(transition.advance, segregating=segregating)
-    augmented = source_mass is not None and generations > 0
-    initial = (
-        jnp.concatenate((distribution, jnp.ones(1))) if augmented else distribution
-    )
+    size = source.size + int(augmented)
 
     def action(state):
         if augmented:
@@ -90,14 +80,14 @@ def _prepare_transition(
         return operation(state)
 
     operator = lx.FunctionLinearOperator(
-        action, jax.ShapeDtypeStruct(initial.shape, initial.dtype)
+        action, jax.ShapeDtypeStruct((size,), source.dtype)
     )
-    return _PowerProblem(
+    return EpochProblem(
         operator,
-        initial,
+        _identity,
         generations,
         _identity,
-        jnp.zeros_like(distribution),
+        jnp.zeros_like(source),
         augmented,
         1 + generations * jnp.sum(jnp.abs(source)) if augmented else jnp.asarray(1.0),
     )
@@ -105,52 +95,44 @@ def _prepare_transition(
 
 @_prepare_epoch.register(Jacobi)
 def _prepare_jacobi(
-    backend, distribution, frequency_map, generations, segregating, source_mass
+    backend, frequency_map, generations, segregating, source, augmented
 ):
     """Encode the reduced action and affine forcing without choosing a power algorithm."""
-    distribution, source = _epoch_inputs(
-        distribution, source_mass, backend._gene_copies, generations, segregating
+    if not backend._supports_reduced_map(frequency_map):
+        return _prepare_transition(
+            backend, frequency_map, generations, segregating, source, augmented
+        )
+    source = backend._validate_parameters(source, frequency_map)
+    encode = eqx.Partial(
+        backend._geometry.encode, frequency_map=frequency_map, segregating=segregating
     )
-    distribution = backend._validate_parameters(distribution, frequency_map)
-    if generations == 0:
-        operator = lx.IdentityLinearOperator(
-            jax.ShapeDtypeStruct(distribution.shape, distribution.dtype)
-        )
-        return _PowerProblem(
-            operator,
-            distribution,
-            0,
-            _identity,
-            jnp.zeros_like(distribution),
-            False,
-            jnp.asarray(1.0),
-        )
-    seed = backend._geometry.encode(distribution, frequency_map, segregating)
     # Encoding already applies D.T, the selected one-step evaluation transpose.
     # Thus g generations need (H.T)**(g-1), followed by E.T decoding. In
     # particular, one generation requires no reduced matrix or power at all.
     decode = eqx.Partial(backend._geometry.decode, segregating=segregating)
     if generations == 1:
         operator = lx.IdentityLinearOperator(
-            jax.ShapeDtypeStruct(seed.shape, seed.dtype)
+            jax.ShapeDtypeStruct(
+                (backend.rank + (0 if segregating else 2),), source.dtype
+            )
         )
-        return _PowerProblem(operator, seed, 0, decode, source, False, jnp.asarray(1.0))
+        return EpochProblem(
+            operator, encode, 0, decode, source, False, jnp.asarray(1.0)
+        )
     encoded_source = None
-    augmented = source_mass is not None
     if augmented:
         # Earlier source events must pass through the next encoding step. The
         # final event has no subsequent transition and is added in physical
         # coordinates by output_offset, outside the reduced power.
         encoded_source = backend._geometry.encode(source, frequency_map, segregating)
-        seed = jnp.concatenate((seed, jnp.ones(1)))
     defect_scale = (
         1 + (generations - 1) * jnp.sum(jnp.abs(source))
         if augmented
         else jnp.asarray(1.0)
     )
-    return _PowerProblem(
+    return EpochProblem(
         _JacobiOperator(backend, frequency_map, encoded_source, segregating),
-        seed,
+        encode,
         generations - 1,
         decode,
         source,

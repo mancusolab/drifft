@@ -9,7 +9,7 @@ import pytest
 from _reference import dense_history_derivatives, dense_transition
 
 import drifft
-from drifft._evolution.problem import _PowerProblem
+from drifft._evolution.problem import EpochProblem
 from drifft._evolution.projection import _matrix_power_matvec
 
 jax.config.update("jax_enable_x64", True)
@@ -88,10 +88,10 @@ def test_polynomial_uses_only_operator_applications():
         jax.ShapeDtypeStruct((50,), jnp.float64),
     )
     seed = jnp.eye(50)[0]
-    problem = _PowerProblem(
-        operator, seed, 3, lambda x: x, jnp.zeros(50), False, jnp.asarray(1.0)
+    problem = EpochProblem(
+        operator, lambda x: x, 3, lambda x: x, jnp.zeros(50), False, jnp.asarray(1.0)
     )
-    result = drifft.PolynomialKrylov(dimension=4).solve(problem)
+    result = problem.result(drifft.PolynomialKrylov(dimension=4).solve(problem, seed))
     assert result.converged
     assert jnp.allclose(result.distribution, jnp.eye(50)[3] / 8, atol=1e-14)
 
@@ -216,16 +216,16 @@ def test_truncated_polynomial_power_and_jvp(lower):
             lambda x: scale * diagonal * x,
             jax.ShapeDtypeStruct(seed.shape, seed.dtype),
         )
-        problem = _PowerProblem(
+        problem = EpochProblem(
             operator,
-            seed,
+            lambda x: x,
             25,
             lambda x: x,
             jnp.zeros_like(seed),
             False,
             jnp.asarray(1.0),
         )
-        return method.solve(problem, throw=False)
+        return problem.result(method.solve(problem, seed), throw=False)
 
     result = eqx.filter_jit(action)(jnp.asarray(1.0))
     expected = diagonal**25 * seed

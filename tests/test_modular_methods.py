@@ -110,18 +110,20 @@ def test_inner_shifted_solve_failure_is_reported():
     """A singular resolvent must not be mistaken for happy Arnoldi breakdown."""
     import lineax as lx
 
-    from drifft._evolution.problem import _PowerProblem
+    from drifft._evolution.problem import EpochProblem
 
-    problem = _PowerProblem(
+    problem = EpochProblem(
         lx.MatrixLinearOperator(jnp.diag(jnp.array([9.0, 1.0]))),
-        jnp.ones(2),
+        lambda x: x,
         1,
         lambda value: value,
         jnp.zeros(2),
         False,
         jnp.asarray(1.0),
     )
-    result = drifft.RationalKrylov(dimension=2).solve(problem, throw=False)
+    result = problem.result(
+        drifft.RationalKrylov(dimension=2).solve(problem, jnp.ones(2)), throw=False
+    )
     assert not result.converged
     assert result.status == drifft.EvolutionStatus.linear_solve_failed
 
@@ -194,24 +196,22 @@ def test_composed_jacobi_history_gradients_match_dense_recurrence():
 @pytest.mark.parametrize("history", [([4], []), ([4, 4], [1]), ([4, 4], [3])])
 def test_custom_population_method_uses_same_representation_in_demography(history):
     """Honor method requirements for identity, boundary-only, and hold histories."""
-    from typing import ClassVar, final
+    from typing import final
 
     @final
     class PopulationMethod(drifft.AbstractEpochMethod):
         """Exercise the public extension contract without inheriting Sequential."""
 
-        allows_reduced_representation: ClassVar[bool] = False
-
         def validate(self, backend, frequency_map):
             """Accept the population-coordinate backend/map combinations."""
             drifft.Sequential().validate(backend, frequency_map)
 
-        def solve(self, problem: drifft.EpochProblem, *, throw=True):
+        def solve(self, problem: drifft.EpochProblem, initial):
             """Evaluate the prepared problem by repeated operator applications."""
             state = jax.lax.fori_loop(
-                0, problem.steps, lambda _, x: problem.operator.mv(x), problem.initial
+                0, problem.steps, lambda _, x: problem.operator.mv(x), initial
             )
-            return problem.result(state, throw=throw)
+            return drifft.PowerResult(state)
 
     frequency_map = drifft.FrequencyMap(lambda x: x**2)
     initial = jnp.eye(9)[1]
@@ -243,7 +243,6 @@ def test_public_prepared_problem_reconstructs_interior_source(method, generation
     problem = drifft.prepare_epoch(
         method,
         drifft.Jacobi(copies // 2),
-        initial,
         frequency_map=frequency_map,
         generations=generations,
         segregating=True,
@@ -253,7 +252,9 @@ def test_public_prepared_problem_reconstructs_interior_source(method, generation
     matrix = dense_transition(copies // 2, copies // 2, 0)[1:-1, 1:-1]
     for _ in range(generations):
         reference = matrix.T @ reference + source
-    result = eqx.filter_jit(method.solve)(problem)
+    result = problem.result(
+        eqx.filter_jit(method.solve)(problem, problem.encode(initial))
+    )
     assert result.converged
     assert jnp.allclose(result.distribution, reference, atol=2e-12)
 
@@ -263,22 +264,69 @@ def test_public_problem_result_applies_shared_failure_checks():
     problem = drifft.prepare_epoch(
         drifft.Sequential(),
         drifft.Dense(2),
-        jnp.ones(5),
         frequency_map=drifft.Neutral(),
         generations=0,
     )
     result = problem.result(
-        problem.initial, error_estimate=0.1, tolerance=0.01, throw=False
+        drifft.PowerResult(jnp.ones(5), error_estimate=0.1, atol=0.01), throw=False
     )
     assert not result.converged
     assert result.status == drifft.EvolutionStatus.unconverged
     with pytest.raises(eqx.EquinoxRuntimeError, match="epoch failed"):
         eqx.filter_jit(problem.result)(
-            jnp.full(5, jnp.nan)
+            drifft.PowerResult(jnp.full(5, jnp.nan))
         ).distribution.block_until_ready()
     with pytest.raises(eqx.EquinoxRuntimeError, match="tolerance must be finite"):
         eqx.filter_jit(problem.result)(
-            problem.initial, tolerance=-0.01, throw=False
+            drifft.PowerResult(jnp.ones(5), atol=-0.01), throw=False
         ).distribution.block_until_ready()
-    with pytest.raises(ValueError, match="prepared initial shape"):
-        problem.result(jnp.ones(4))
+    with pytest.raises(ValueError, match="prepared working shape"):
+        problem.result(drifft.PowerResult(jnp.ones(4)))
+
+
+@pytest.mark.parametrize("generations", [0, 1, 5])
+def test_reduced_sequential_reuses_problem_and_preserves_derivatives(generations):
+    """Compare the encoded power and its process derivatives with direct matvecs."""
+    backend = drifft.Jacobi(12, rank=8)
+    method = drifft.Sequential()
+    masses = jnp.eye(25)[jnp.array([3, 14])]
+    weights = jnp.cos(jnp.arange(25) / 5)
+
+    def evaluate(strength, reduced):
+        frequency_map = drifft.AdditiveSelection(strength)
+        if reduced:
+            problem = drifft.prepare_epoch(
+                method, backend, frequency_map=frequency_map, generations=generations
+            )
+            assert problem.steps == max(0, generations - 1)
+
+            def evolve(mass):
+                initial = problem.encode(mass)
+                assert initial.size == (backend.rank + 2 if generations else mass.size)
+                return problem.result(method.solve(problem, initial)).distribution
+        else:
+            transition = drifft.Transition(backend, frequency_map)
+
+            def evolve(mass):
+                return jax.lax.fori_loop(
+                    0, generations, lambda _, x: transition.advance(x), mass
+                )
+
+        return jax.vmap(evolve)(masses) @ weights
+
+    strength = jnp.asarray(0.02)
+
+    def reduced(s):
+        return evaluate(s, True)
+
+    def direct(s):
+        return evaluate(s, False)
+
+    actual_fn, expected_fn = reduced, direct
+    for derivative in range(3):
+        actual = jax.jit(actual_fn)(strength)
+        expected = jax.jit(expected_fn)(strength)
+        assert jnp.allclose(actual, expected, atol=3e-10, rtol=3e-9)
+        if generations == 1 and derivative == 1:
+            assert jnp.max(jnp.abs(actual)) > 1e-3
+        actual_fn, expected_fn = jax.jacfwd(actual_fn), jax.jacfwd(expected_fn)
