@@ -61,7 +61,7 @@ population mass and check the result. For a complete walkthrough, see
 
 ::: drifft.EpochProblem
     options:
-        members: [encode, decode, reconstruct, error_norm, result]
+        members: [encode, reconstruct, error_norm, result]
 
 ::: drifft.PowerResult
     options:

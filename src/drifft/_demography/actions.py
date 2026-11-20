@@ -147,7 +147,7 @@ def _expect_epoch(model, backend, values, generations, rate, segregating):
         source_mass=source,
     )
     seed, encode_transpose = jax.vjp(problem.encode, zero)
-    _, decode_transpose = jax.vjp(problem.decode, jnp.zeros_like(seed))
+    _, decode_transpose = jax.vjp(problem._decode, jnp.zeros_like(seed))
     terminal = decode_transpose(values)[0]
     backward = _working_problem(problem.operator.T, problem.steps)
     working = backward.result(model.method.solve(backward, terminal)).distribution

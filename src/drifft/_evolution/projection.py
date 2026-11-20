@@ -350,7 +350,7 @@ def _projected_result(problem, projection, rtol, atol):
     defect_estimate *= problem.defect_scale
     error = defect_estimate
     if coarse is not None:
-        difference = problem.decode(fine - coarse)
+        difference = problem._decode(fine - coarse)
         error = jnp.maximum(error, jnp.sum(jnp.abs(difference)))
     error = jax.lax.stop_gradient(error)
     return PowerResult(

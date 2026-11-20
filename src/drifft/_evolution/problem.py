@@ -158,17 +158,8 @@ class EpochProblem(eqx.Module):
             state = jnp.concatenate((state, jnp.ones(1, dtype=state.dtype)))
         return state
 
-    def decode(self, state: jax.Array) -> jax.Array:
-        r"""Apply only the linear physical-space output map, excluding the offset.
-
-        **Arguments:**
-
-        - `state`: Working vector with the shape returned by `encode`.
-
-        **Returns:**
-
-        Full or segregating population coordinates before the final source contribution.
-        """
+    def _decode(self, state: jax.Array) -> jax.Array:
+        """Map working coordinates to population coordinates without the source offset."""
         return self.output_map(state[:-1] if self.augmented else state)
 
     def reconstruct(self, state: jax.Array) -> jax.Array:
@@ -182,7 +173,7 @@ class EpochProblem(eqx.Module):
 
         Decoded population mass including the prepared output offset.
         """
-        return self.decode(state) + self.output_offset
+        return self._decode(state) + self.output_offset
 
     def error_norm(self, delta: jax.Array) -> jax.Array:
         r"""Measure physical and auxiliary-coordinate recurrence defects.
@@ -196,7 +187,7 @@ class EpochProblem(eqx.Module):
         The L1 norm of the decoded error plus the absolute error in the homogeneous coordinate, if present.
         """
         auxiliary = jnp.abs(delta[-1]) if self.augmented else 0.0
-        return jnp.sum(jnp.abs(self.decode(delta))) + auxiliary
+        return jnp.sum(jnp.abs(self._decode(delta))) + auxiliary
 
     def result(
         self,
