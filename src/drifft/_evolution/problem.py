@@ -84,11 +84,13 @@ result automatically; constructing it directly performs no numerical checks.
 
 
 class PowerResult(NamedTuple):
-    """Working solution, absolute error estimate and acceptance settings.
+    r"""Working-coordinate solution and diagnostics from an epoch solver.
 
-    The driver compares the error estimate with `atol + rtol *
-    norm1(distribution)` after reconstruction. A failed inner solve takes
-    precedence over the error estimate.
+    For reconstructed mass $p$, the absolute error threshold is
+    $a + r \lVert p\rVert_1$, where $a$ and $r$ are the absolute and relative tolerances.
+    A failed inner solve takes precedence
+    over the error estimate when [`EpochProblem.result`][drifft.EpochProblem.result]
+    determines the final status.
     """
 
     state: jax.Array
@@ -98,9 +100,25 @@ class PowerResult(NamedTuple):
     solve_success: bool | jax.Array = True
 
 
+PowerResult.__new__.__module__ = __name__
+PowerResult.__new__.__doc__ = r"""Construct a solver result in working coordinates.
+
+**Arguments:**
+
+- `state`: Final working vector with the shape of the encoded initial vector.
+- `error_estimate`: Nonnegative absolute power-error estimate in population coordinates.
+- `atol`, `rtol`: Finite, nonnegative absolute and relative acceptance tolerances.
+- `solve_success`: Scalar boolean indicating whether the required inner solves succeeded.
+
+**Returns:**
+
+A [`PowerResult`][drifft.PowerResult] for reconstruction and convergence checks.
+"""
+
+
 @final
 class EpochProblem(eqx.Module):
-    """Reusable epoch encoding, working operator, exponent and reconstruction.
+    r"""Reusable epoch encoding, working operator, exponent and reconstruction.
 
     Obtain a problem from `prepare_epoch`. Encode incoming population mass
     with `encode`, pass the seed to `method.solve`, and finish with `result`.
@@ -116,7 +134,20 @@ class EpochProblem(eqx.Module):
     defect_scale: jax.Array
 
     def encode(self, mass: jax.Array) -> jax.Array:
-        """Convert population mass to the initial working vector for this hold."""
+        r"""Convert population mass to the initial working vector for this hold.
+
+        **Arguments:**
+
+        - `mass`: Full or segregating population mass matching the prepared grid.
+
+        **Returns:**
+
+        A float64 working vector including the homogeneous coordinate when the hold uses one.
+
+        **Raises:**
+
+        `ValueError` if the mass has the wrong shape.
+        """
         mass = jnp.asarray(mass, dtype=jnp.float64)
         if mass.shape != self.output_offset.shape:
             raise ValueError(
@@ -128,15 +159,42 @@ class EpochProblem(eqx.Module):
         return state
 
     def decode(self, state: jax.Array) -> jax.Array:
-        """Apply only the linear physical-space output map, excluding the offset."""
+        r"""Apply only the linear physical-space output map, excluding the offset.
+
+        **Arguments:**
+
+        - `state`: Working vector with the shape returned by `encode`.
+
+        **Returns:**
+
+        Full or segregating population coordinates before the final source contribution.
+        """
         return self.output_map(state[:-1] if self.augmented else state)
 
     def reconstruct(self, state: jax.Array) -> jax.Array:
-        """Recover final population mass, including the final source contribution."""
+        r"""Recover final population mass, including the final source contribution.
+
+        **Arguments:**
+
+        - `state`: Final working vector with the shape returned by `encode`.
+
+        **Returns:**
+
+        Decoded population mass including the prepared output offset.
+        """
         return self.decode(state) + self.output_offset
 
     def error_norm(self, delta: jax.Array) -> jax.Array:
-        """Measure physical and auxiliary-coordinate recurrence defects."""
+        r"""Measure physical and auxiliary-coordinate recurrence defects.
+
+        **Arguments:**
+
+        - `delta`: Working-space error vector with the shape returned by `encode`.
+
+        **Returns:**
+
+        The L1 norm of the decoded error plus the absolute error in the homogeneous coordinate, if present.
+        """
         auxiliary = jnp.abs(delta[-1]) if self.augmented else 0.0
         return jnp.sum(jnp.abs(self.decode(delta))) + auxiliary
 
@@ -146,7 +204,23 @@ class EpochProblem(eqx.Module):
         *,
         throw: bool = True,
     ) -> EpochResult:
-        """Reconstruct the working solution and check its numerical diagnostics."""
+        r"""Reconstruct the working solution and check its numerical diagnostics.
+
+        **Arguments:**
+
+        - `solution`: [`PowerResult`][drifft.PowerResult] returned by the epoch solver.
+        - `throw`: Raise on numerical failure. With `False`, return the status for each batch member.
+
+        **Returns:**
+
+        An [`EpochResult`][drifft.EpochResult] with reconstructed mass, error estimate, convergence flag, and status.
+
+        **Raises:**
+
+        `ValueError` for an incompatible state or nonscalar error estimate or tolerance.
+        Invalid tolerances and negative error estimates raise even with `throw=False`.
+        With `throw=True`, a numerical failure in any batch member can raise for the batch.
+        """
         state = jnp.asarray(solution.state, dtype=jnp.float64)
         error_estimate = jnp.asarray(solution.error_estimate, dtype=jnp.float64)
         tolerance = jnp.asarray(solution.atol, dtype=jnp.float64)
@@ -180,6 +254,20 @@ class EpochProblem(eqx.Module):
         return _epoch_result(
             distribution, error_estimate, tolerance, throw, solution.solve_success
         )
+
+
+EpochProblem.__init__.__doc__ = r"""Bind the representation of a constant-size hold.
+
+Use [`prepare_epoch`][drifft.prepare_epoch] to select these components for a backend.
+
+**Arguments:**
+
+- `operator`, `steps`: Square working operator and nonnegative integer exponent.
+- `input_map`, `output_map`: Population-to-working and working-to-population linear maps.
+- `output_offset`: Population-space vector added after decoding.
+- `augmented`: Whether encoding appends a homogeneous coordinate for source input.
+- `defect_scale`: Multiplier applied to the accumulated recurrence-defect estimate.
+"""
 
 
 def _epoch_source(source_mass, gene_copies, generations, segregating):

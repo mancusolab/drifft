@@ -96,11 +96,19 @@ class AbstractEpochMethod(eqx.Module):
 
     @abstractmethod
     def solve(self, problem: EpochProblem, initial: jax.Array) -> PowerResult:
-        r"""Evaluate the working power on an encoded initial vector.
+        r"""Evaluate the prepared operator power on an encoded initial vector.
 
-        Return a PowerResult with the final working state. Approximate solvers
-        also supply a population-space error estimate and acceptance threshold.
-        The caller reconstructs the distribution and applies convergence checks.
+        **Arguments:**
+
+        - `problem`: An [`EpochProblem`][drifft.EpochProblem] from [`prepare_epoch`][drifft.prepare_epoch].
+          Its `steps` field gives the exponent in working coordinates.
+        - `initial`: Float64 working vector returned by `problem.encode(mass)`.
+
+        **Returns:**
+
+        A [`PowerResult`][drifft.PowerResult] containing the final working vector
+        and solver diagnostics. Call `problem.result(solution, throw=...)` to
+        reconstruct population mass and check convergence.
         """
         ...
 
@@ -303,10 +311,17 @@ class Sequential(AbstractEpochMethod):
         validate_representation(backend, frequency_map, method_name="Sequential")
 
     def solve(self, problem: EpochProblem, initial: jax.Array) -> PowerResult:
-        r"""Iterate the prepared operator in its working coordinates.
+        r"""Apply the prepared operator successively in working coordinates.
 
-        A reduced Jacobi matrix is assembled once, with its parameter derivatives
-        retained. Reconstruction belongs to the caller.
+        **Arguments:**
+
+        - `problem`: Prepared epoch supplying the operator and step count.
+        - `initial`: Encoded initial vector for this epoch.
+
+        **Returns:**
+
+        A [`PowerResult`][drifft.PowerResult] with the final vector and zero
+        power-approximation error. A zero exponent returns the initial vector.
         """
         operator = _numerical_operator(problem.operator)
         return PowerResult(_power_action(self, operator, initial, problem.steps))
@@ -456,11 +471,21 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         return left, right
 
     def solve(self, problem: EpochProblem, initial: jax.Array) -> PowerResult:
-        r"""Approximate the power on an encoded vector and attach its sensitivities.
+        r"""Approximate the prepared power in a Krylov space.
 
-        The returned working solution carries a decoded recurrence-defect
-        estimate and shifted-solve status. Rational Krylov also compares nested
-        spaces. Operator sensitivities support first derivatives.
+        **Arguments:**
+
+        - `problem`: Prepared epoch supplying the operator, exponent, and error norm.
+        - `initial`: Encoded initial vector used to build the Krylov basis.
+
+        **Returns:**
+
+        A [`PowerResult`][drifft.PowerResult] with the working vector, a population-space
+        error estimate, acceptance tolerances, and inner-solve success flag.
+
+        **Raises:**
+
+        `TypeError` if `problem` is not an [`EpochProblem`][drifft.EpochProblem].
         """
         if not isinstance(problem, EpochProblem):
             raise TypeError(
