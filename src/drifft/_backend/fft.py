@@ -470,9 +470,10 @@ def _build_block(
     b = np.exp(logb - shift).astype(np.float64)
     rlo, rhi = stride * rlo, stride * rhi
     L, R = hi - lo + 1, rhi - rlo + 1
-    nfft = 1 << (R + 2 * L - 3).bit_length()
-    # The kernel has R+L-1 entries; convolution with L inputs needs R+2L-2
-    # slots. Padding to at least that length prevents circular wraparound.
+    # Only indices L-1 through R+L-2 are retained. With R+L-1 slots,
+    # circular wraparound from the linear tail reaches at most index L-2.
+    required = R + L - 1
+    nfft = 1 << (required - 1).bit_length()
     d = np.arange(rlo - (hi - j0), rhi - (lo - j0) + 1, dtype=np.float64)
     kernel = np.exp(-float(h) * d * d / 2)
     if not (np.all(np.isfinite(a)) and np.all(np.isfinite(b))):
@@ -941,17 +942,30 @@ class FFT(AbstractTransitionBackend):
         start = jnp.floor(r).astype(jnp.int32) - self.interp_order // 2 + 1
         t = r - start
         k = jnp.arange(self.interp_order)
-        differences = k[:, None] - k[None, :]
-        denominators = jnp.prod(
-            jnp.where(jnp.eye(self.interp_order, dtype=bool), 1, differences), axis=-1
+        # Prefix and suffix products omit each node without division at a knot.
+        order = self.interp_order
+        inverse_denominators = jnp.asarray(
+            [
+                (-1) ** (order - 1 - j)
+                / (math.factorial(j) * math.factorial(order - 1 - j))
+                for j in range(order)
+            ]
         )
-        # Lagrange basis product, with its own node omitted by the diagonal mask.
-        # Weights depend on probabilities and geometry only, preserving linearity.
-        factors = t[:, None, None] - jnp.asarray(k)[None, None, :]
-        factors = jnp.where(
-            jnp.eye(self.interp_order, dtype=bool)[None, :, :], 1.0, factors
+        prefix = [jnp.ones_like(t)]
+        suffix = [prefix[0]]
+        for j in range(order - 1):
+            prefix.append(prefix[-1] * (t - j))
+            suffix.append(suffix[-1] * (t - (order - 1 - j)))
+        weights = (
+            jnp.stack(
+                [
+                    left * right
+                    for left, right in zip(prefix, reversed(suffix), strict=True)
+                ],
+                axis=1,
+            )
+            * inverse_denominators
         )
-        weights = jnp.prod(factors, axis=-1) / jnp.asarray(denominators)
         indices = (
             self.offsets[block, None]
             + start[:, None]
@@ -972,7 +986,8 @@ class _BinomialWeights(BatchablePrimitive):
     zero, rather than differentiating logarithms at $q=0$ or $q=1$.
 
     Counts are integer indices and the degree is static. The auxiliary log-weight
-    input also carries multiplicative weight tangents when active. Probability
+    input carries multiplicative weight tangents on interior rows. Endpoint
+    values are independent of this input. Probability
     rules recursively reuse lower-degree primitives, retaining finite polynomial
     endpoint derivatives under nested AD. The operation is nonlinear, so reverse
     mode transposes its JVP's linearization, not the weight evaluation itself.
@@ -1012,7 +1027,11 @@ class _BinomialWeights(BatchablePrimitive):
         tangent = (
             hijax.Zero(self.out_aval.to_tangent_aval())
             if isinstance(dlogchoose, hijax.Zero)
-            else weights * dlogchoose
+            else jnp.where(
+                ((probabilities == 0) | (probabilities == 1))[:, None],
+                0.0,
+                weights * dlogchoose,
+            )
         )
         if isinstance(dprobabilities, hijax.Zero) or size == 0:
             return weights, tangent
