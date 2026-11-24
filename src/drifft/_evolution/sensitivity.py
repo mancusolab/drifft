@@ -93,6 +93,7 @@ def _frechet_power(
     atol,
     polynomial,
     check_error=True,
+    direction_scale=1.0,
 ):
     """Approximate the power sensitivity by a coupled block operator action.
 
@@ -103,11 +104,15 @@ def _frechet_power(
     twice that budget. `polynomial` selects polynomial rather than rational
     projection. Both output blocks must satisfy their own `atol + rtol * L1`
     tolerance, so a large primal cannot mask an inaccurate tangent.
+    `direction_scale` restores a jointly normalized perturbation and state direction
+    to their original units before applying the tangent tolerance.
     With `check_error=False`, skip error estimation and retain only inner-solve
     and finite-output checks; the returned error estimate is zero (not computed).
     """
     if steps == 0:
-        return _epoch_result(tangent_initial, jnp.asarray(0.0), atol, False)
+        return _epoch_result(
+            direction_scale * tangent_initial, jnp.asarray(0.0), atol, False
+        )
     size = initial.size
     shifted_solve = None
     if isinstance(operator, lx.MatrixLinearOperator):
@@ -149,7 +154,9 @@ def _frechet_power(
         polynomial=polynomial,
         shifted_solve=shifted_solve,
     )
-    fine = projection.fine
+    fine = jnp.concatenate(
+        (direction_scale * projection.fine[:size], projection.fine[size:])
+    )
     if not check_error:
         # Check both blocks even though only the tangent is returned.
         result = _epoch_result(fine, jnp.asarray(0.0), 0.0, False, projection.success)
@@ -180,8 +187,10 @@ def _frechet_power(
         0, steps, accumulate, (projection.coordinates, jnp.zeros(2, dtype=fine.dtype))
     )
     if projection.coarse is not None:
-        difference = (fine - projection.coarse).reshape(2, size)
+        difference = (projection.fine - projection.coarse).reshape(2, size)
         errors = jnp.maximum(errors, jnp.sum(jnp.abs(difference), axis=1))
+    # Restore the caller's units before checking the tangent's absolute budget.
+    errors = errors.at[0].multiply(direction_scale)
     tolerances = atol + jax.vmap(_relative_l1_budget, in_axes=(0, None))(
         fine.reshape(2, size), rtol
     )

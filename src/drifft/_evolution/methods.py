@@ -430,7 +430,9 @@ class AbstractKrylovMethod(AbstractEpochMethod):
             self, operator, initial, operator_direction, tangent, steps
         )
 
-    def _sensitivity_action(self, operator, perturbation, initial, tangent, steps):
+    def _sensitivity_action(
+        self, operator, perturbation, initial, tangent, steps, *, direction_scale=1.0
+    ):
         """Check numerical failures and optionally the sensitivity error estimate."""
         result = _frechet_power(
             operator,
@@ -443,6 +445,7 @@ class AbstractKrylovMethod(AbstractEpochMethod):
             atol=self.atol,
             polynomial=self._polynomial,
             check_error=self.check_sensitivity,
+            direction_scale=direction_scale,
         )
         return eqx.error_if(
             result.distribution,

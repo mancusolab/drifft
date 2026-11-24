@@ -253,6 +253,22 @@ def _cached_parameterized_power(
     )
 
 
+def _normalize_direction(method, parameters, state):
+    """Balance the tangent block before estimating relative sensitivity error."""
+    if not method.check_sensitivity:
+        return parameters, state, 1.0
+    # The JVP is homogeneous in the joint parameter/state direction. Work in
+    # units of that direction so Arnoldi and its inner solves can resolve a
+    # small tangent alongside an order-one primal. Keep geometry inactive.
+    arrays, static = eqx.partition((parameters, state), eqx.is_array)
+    scale = jnp.max(
+        jnp.stack([jnp.max(jnp.abs(x), initial=0.0) for x in jax.tree.leaves(arrays)])
+    )
+    divisor = jnp.where((scale > 0) & jnp.isfinite(scale), scale, 1.0)
+    parameters, state = eqx.combine(jax.tree.map(lambda x: x / divisor, arrays), static)
+    return parameters, state, scale
+
+
 class _FrechetAction(BatchablePrimitive):
     r"""Represent the linearized power in ordinary operator coordinates.
 
@@ -283,12 +299,16 @@ class _FrechetAction(BatchablePrimitive):
         operator, initial, t_operator, t_initial, steps, method = eqx.combine(
             args, cast(tuple, self.params["static"])
         )
+        t_operator, t_initial, scale = _normalize_direction(
+            method, t_operator, t_initial
+        )
         return method._sensitivity_action(
             operator,
             _operator_pushforward(operator, t_operator),
             initial,
             t_initial,
             steps,
+            direction_scale=scale,
         )
 
     def jvp(self, primals, tangents):
@@ -465,12 +485,15 @@ class _Sensitivity(BatchablePrimitive):
     def expand(self, *args):
         operator, initial, dp, dx = args
         operator = _unpack(operator)
-        return cast(Any, self.params["method"])._sensitivity_action(
+        method = cast(Any, self.params["method"])
+        dp, dx, scale = _normalize_direction(method, dp, dx)
+        return method._sensitivity_action(
             lx.MatrixLinearOperator(operator.matrix),
             _parameter_pushforward(operator, dp),
             initial,
             dx,
             self.params["steps"],
+            direction_scale=scale,
         )
 
     def jvp(self, primals, tangents):

@@ -534,3 +534,30 @@ def test_strict_pullback_preserves_large_finite_gradient(method_type):
 
     gradient = jax.jit(jax.grad(objective))(jnp.asarray(0.5))
     assert jnp.allclose(gradient / initial[0], 0.5, rtol=1e-12, atol=0.0)
+
+
+def test_strict_jvp_preserves_absolute_tangent_budget():
+    """A fixed absolute budget can accept a small but underresolved direction."""
+    from drifft._evolution.problem import _working_problem
+
+    initial = jnp.eye(7)[0]
+    # The primal stays at e0. Its derivative enters e1 and shifts down the
+    # chain, eventually leaving the four-dimensional coupled Krylov space.
+    matrix = jnp.diag(jnp.ones(6), -1).at[0, 0].set(1).at[1, 0].set(0)
+    perturbation = jnp.zeros_like(matrix).at[1, 0].set(1)
+    method = drifft.PolynomialKrylov(
+        dimension=2, rtol=0, atol=1e-8, check_sensitivity=True
+    )
+
+    def action(parameter):
+        operator = lx.MatrixLinearOperator(matrix + parameter * perturbation)
+        return method.solve(_working_problem(operator, 6), initial).state
+
+    def tangent(scale):
+        return jax.jvp(action, (jnp.asarray(0.0),), (jnp.asarray(scale),))[1]
+
+    with pytest.raises(Exception, match="Krylov sensitivity action did not converge"):
+        jax.block_until_ready(tangent(1.0))
+    expected = jnp.ones_like(initial).at[0].set(0) * 1e-18
+    error = jnp.sum(jnp.abs(tangent(1e-18) - expected))
+    assert 0 < error < method.atol

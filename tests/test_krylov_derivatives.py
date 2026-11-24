@@ -321,9 +321,11 @@ def test_jacobi_ad_of_batched_parameters(method_type):
 @pytest.mark.parametrize(
     "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
 )
-def test_strict_sensitivity_accepts_scaled_directions(method_type):
+@pytest.mark.parametrize("backend_type", [drifft.Dense, drifft.Jacobi])
+@pytest.mark.parametrize("scale", [0.0, 1e-18, 1e-10, 1.0])
+def test_strict_sensitivity_accepts_scaled_directions(method_type, backend_type, scale):
     """A relative-only tangent budget follows the scale of its direction."""
-    backend = drifft.Dense(2)
+    backend = backend_type(2)
     mass = jnp.eye(5)[2]
 
     def tangent(method, direction):
@@ -338,10 +340,9 @@ def test_strict_sensitivity_accepts_scaled_directions(method_type):
         return jax.jvp(epoch, (jnp.asarray(0.1),), (direction,))[1]
 
     method = method_type(dimension=12, rtol=1e-6, atol=0, check_sensitivity=True)
-    for scale in (0.0, 1e-10, 1.0):
-        actual = tangent(method, jnp.asarray(scale))
-        expected = tangent(drifft.Sequential(), jnp.asarray(scale))
-        assert jnp.allclose(actual, expected, atol=scale * 1e-8, rtol=1e-6)
+    actual = tangent(method, jnp.asarray(scale))
+    expected = tangent(drifft.Sequential(), jnp.asarray(scale))
+    assert jnp.allclose(actual, expected, atol=scale * 1e-8, rtol=1e-6)
 
 
 def test_reverse_rejects_overflow_in_parameter_contraction():
