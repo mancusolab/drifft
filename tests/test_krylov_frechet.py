@@ -515,3 +515,22 @@ def test_unchecked_sensitivity_rejects_nonfinite_output(method_type, reverse):
                     operator, operator, seed, bad, 2
                 )
             )
+
+
+@pytest.mark.parametrize(
+    "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
+)
+def test_strict_pullback_preserves_large_finite_gradient(method_type):
+    """The exact derivative of scale * t**4 stays finite at large seed scales."""
+    from drifft._evolution.problem import _working_problem
+
+    method = method_type(dimension=2, check_sensitivity=True, atol=0.0)
+    initial = jnp.array([1e180, 0.0, 0.0])
+
+    def objective(t):
+        matrix = jnp.diag(jnp.stack((t, jnp.asarray(0.7), jnp.asarray(0.9))))
+        problem = _working_problem(lx.MatrixLinearOperator(matrix), 4)
+        return problem.result(method.solve(problem, initial)).distribution[0]
+
+    gradient = jax.jit(jax.grad(objective))(jnp.asarray(0.5))
+    assert jnp.allclose(gradient / initial[0], 0.5, rtol=1e-12, atol=0.0)

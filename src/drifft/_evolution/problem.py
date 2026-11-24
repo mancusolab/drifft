@@ -232,16 +232,7 @@ class EpochProblem(eqx.Module):
             "error_estimate must be nonnegative; tolerance must be finite and nonnegative",
         )
         distribution = self.reconstruct(state)
-        magnitude = jnp.abs(distribution)
-        norm = jnp.sum(magnitude)
-        # Sum first to preserve small terms. If the unscaled sum overflows,
-        # scale before summing so a finite relative tolerance stays finite.
-        relative_error_budget = jax.lax.cond(
-            jnp.isinf(norm),
-            lambda: jnp.sum(relative * magnitude),
-            lambda: relative * norm,
-        )
-        tolerance += jnp.where(relative == 0, 0.0, relative_error_budget)
+        tolerance += _relative_l1_budget(distribution, relative)
         return _epoch_result(
             distribution, error_estimate, tolerance, throw, solution.solve_success
         )
@@ -282,13 +273,27 @@ def _epoch_source(source_mass, gene_copies, generations, segregating):
     return source_mass
 
 
+def _relative_l1_budget(vector, relative):
+    """Apply the relative tolerance even when the unscaled L1 sum overflows."""
+    magnitude = jnp.abs(vector)
+    norm = jnp.sum(magnitude)
+    budget = jax.lax.cond(
+        jnp.isinf(norm),
+        lambda: jnp.sum(relative * magnitude),
+        lambda: relative * norm,
+    )
+    return jnp.where(relative == 0, 0.0, budget)
+
+
 def _epoch_result(distribution, error, tolerance, throw, solve_success=True):
     """Apply the finite-output, inner-solve and power-approximation failure policy."""
-    finite = jnp.all(jnp.isfinite(distribution)) & jnp.isfinite(error)
+    finite = jnp.all(jnp.isfinite(distribution)) & jnp.all(jnp.isfinite(error))
     # Apply failure precedence from least to most fundamental: a failed inner
     # solve invalidates the projected action even if its error estimate is small.
     status = EvolutionStatus.where(
-        error <= tolerance, EvolutionStatus.successful, EvolutionStatus.unconverged
+        jnp.all(error <= tolerance),
+        EvolutionStatus.successful,
+        EvolutionStatus.unconverged,
     )
     status = EvolutionStatus.where(finite, status, EvolutionStatus.nonfinite)
     status = EvolutionStatus.where(
@@ -302,7 +307,7 @@ def _epoch_result(distribution, error, tolerance, throw, solve_success=True):
             "epoch failed: nonfinite output, failed shifted solve or unconverged power action; "
             "check inputs and increase dimension or use Sequential",
         )
-    return EpochResult(distribution, error, converged, status)
+    return EpochResult(distribution, jnp.max(error), converged, status)
 
 
 def _identity(value):

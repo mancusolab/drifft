@@ -1,9 +1,17 @@
 """Batch HiJAX actions together with their mathematical derivative rules."""
 
+from functools import singledispatch
+
 import equinox.internal as eqxi
 import jax
 from jax._src.interpreters import batching
 from jax.experimental import hijax
+
+
+@singledispatch
+def tangent_axis(dim):
+    """Return the mapping of the tangent representation for a primal mapping."""
+    return dim
 
 
 class BatchablePrimitive(hijax.HiPrim):
@@ -31,6 +39,8 @@ class _MappedAction(BatchablePrimitive):
         self.params = dict(action=action, axis=axis, inputs=inputs, outputs=outputs)
         self.action, self.axis = action, axis
         self.inputs, self.outputs = inputs, outputs
+        self.tangent_inputs = jax.tree.map(tangent_axis, inputs)
+        self.tangent_outputs = jax.tree.map(tangent_axis, outputs)
         self.skip_linearization_on_zero_tangents = (
             action.skip_linearization_on_zero_tangents
         )
@@ -47,8 +57,8 @@ class _MappedAction(BatchablePrimitive):
         return hijax.vmap_rule(
             self.axis,
             self.action.jvp,
-            (self.inputs, self.inputs),
-            (self.outputs, self.outputs),
+            (self.inputs, self.tangent_inputs),
+            (self.outputs, self.tangent_outputs),
         )(primals, tangents)
 
     lin, linearized = hijax.linearize_from_jvp
@@ -70,13 +80,13 @@ class _MappedAction(BatchablePrimitive):
         values, dims = residual
         axes = jax.tree.map(
             lambda d: batching.sum_axis if d is None else d,
-            self.inputs,
+            self.tangent_inputs,
             is_leaf=lambda x: x is None,
         )
         return hijax.vmap_rule(
             self.axis,
             self.action.vjp_bwd_retval,
-            (dims.value, self.outputs),
+            (dims.value, self.tangent_outputs),
             axes,
             sum_match=True,
         )(values, cotangent)

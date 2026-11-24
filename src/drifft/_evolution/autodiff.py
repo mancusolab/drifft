@@ -329,7 +329,7 @@ class _FrechetAction(BatchablePrimitive):
                 operator, initial, cotangent, steps
             )
             operator_ct = _contract_operator_factors(operator, template, left, right)
-            _accumulate(t_operator, operator_ct)
+            _accumulate(t_operator, _checked_parameter_cotangent(operator_ct))
         if _has_accum(t_initial):
             _accumulate(t_initial, _power_action(method, operator.T, cotangent, steps))
 
@@ -508,6 +508,18 @@ class _Sensitivity(BatchablePrimitive):
             dx.accum(_power(_transpose(operator), cotangent, **self._settings()))
 
 
+def _checked_parameter_cotangent(cotangent):
+    """Check active leaves after contraction into the parameter coordinates."""
+    return jax.tree.map(
+        lambda x: eqx.error_if(
+            x,
+            ~jnp.all(jnp.isfinite(x)),
+            "Krylov operator pullback returned a nonfinite parameter cotangent",
+        ),
+        cotangent,
+    )
+
+
 class _Pullback(BatchablePrimitive):
     r"""Return parameter cotangents for a power from fixed primal and adjoint seeds.
 
@@ -555,8 +567,10 @@ class _Pullback(BatchablePrimitive):
             cotangent,
             self.params["steps"],
         )
-        return _contract_parameter_factors(
-            operator, left, right, self.params["active_process"]
+        return _checked_parameter_cotangent(
+            _contract_parameter_factors(
+                operator, left, right, self.params["active_process"]
+            )
         )
 
 

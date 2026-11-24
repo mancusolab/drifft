@@ -232,17 +232,9 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     return matrix.at[:, 2:].set((1 - 1 / copies) * columns.T)
 
 
-def _assemble_reduced(
-    frequency_map,
-    copies,
-    rank,
-    padded_rank,
-    diploid_padded_rank,
-    endpoint_correction,
-    *,
-    segregating,
-):
+def _assemble_reduced(frequency_map, settings, endpoint_correction):
     """Assemble ED from shape configuration and only required runtime geometry."""
+    copies, rank, padded_rank, diploid_padded_rank, segregating = settings
     if isinstance(frequency_map, (Neutral, Underdominance)):
         strength = (
             jnp.asarray(0.0)
@@ -832,21 +824,24 @@ class Jacobi(AbstractTransitionBackend):
         selection-family dispatch, padding, and endpoint corrections here so
         evolution code need not know the representation's assembly details.
         """
-        return _assemble_reduced(
-            frequency_map,
+        settings, correction = self._reduced_inputs(
+            frequency_map, segregating=segregating
+        )
+        return _assemble_reduced(frequency_map, settings, correction)
+
+    def _reduced_inputs(self, frequency_map, *, segregating):
+        """Select shared assembly settings and the optional runtime correction."""
+        settings = (
             self._gene_copies,
             self.rank,
             self.padded_rank,
             self._diploid_padded_rank,
-            self._reduced_correction(frequency_map, segregating=segregating),
-            segregating=segregating,
+            segregating,
         )
-
-    def _reduced_correction(self, frequency_map, *, segregating):
-        """Select the sole runtime geometry array needed by reduced assembly."""
+        correction = None
         if segregating and not isinstance(frequency_map, (Neutral, Underdominance)):
-            return self._geometry.endpoint_correction
-        return None
+            correction = self._geometry.endpoint_correction
+        return settings, correction
 
     def _validate_parameters(
         self, distribution: jax.Array, frequency_map: AbstractFrequencyMap

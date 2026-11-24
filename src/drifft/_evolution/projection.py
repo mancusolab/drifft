@@ -27,13 +27,10 @@ distinct outcomes passed back to the calling method or sensitivity rule.
 # pattern: Functional Core
 from typing import NamedTuple
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import lineax as lx
-from jax.experimental import hijax
 
-from .._batching import BatchablePrimitive
 from .problem import EpochProblem, PowerResult
 
 
@@ -56,8 +53,23 @@ class ProjectionResult(NamedTuple):
     basis: jax.Array | None
 
 
+def _norm_scale(vector):
+    """Scale by the largest magnitude before squaring, using one for zero."""
+    scale = jnp.max(jnp.abs(vector))
+    return jnp.where(scale == 0, 1.0, scale)
+
+
+def _initial_basis(seed, dimension):
+    """Form the first Arnoldi vector without squaring the unscaled seed."""
+    scaled = seed / _norm_scale(seed)
+    length = jnp.sqrt(scaled @ scaled)
+    unit = scaled / jnp.where(length == 0, 1.0, length)
+    return jnp.zeros((seed.size, dimension), dtype=seed.dtype).at[:, 0].set(unit)
+
+
 def _orthogonalize(basis, candidate):
     """Reorthogonalize twice and return zero at invariant-subspace breakdown."""
+    candidate = candidate / _norm_scale(candidate)
     original_squared = candidate @ candidate
     # Two passes recover orthogonality when the first subtraction loses relative
     # accuracy. Keep zero columns at breakdown instead of dividing roundoff by
@@ -77,7 +89,6 @@ def _project_basis(
     projected = basis.T @ images
     coordinates = basis.T @ seed
     fine = basis @ _matrix_power_matvec(projected, coordinates, steps)
-    fine = _guard_krylov_derivative(fine, basis, seed @ seed)
     defect = images - basis @ projected
     coarse = None
     if compare_nested:
@@ -114,76 +125,6 @@ def _matrix_power_matvec(matrix: jax.Array, vector: jax.Array, steps: int):
         if steps:
             matrix = matrix @ matrix
     return vector
-
-
-def _require_krylov_derivative_jvp(primals, tangents):
-    """Keep the failure check in both the tangent and transposed tangent paths."""
-    value, supported = primals
-    tangent, _ = tangents
-    tangent = hijax.instantiate_zeros(tangent)
-    # A checked residual multiplier survives transposition to reverse mode.
-    # Checking only the primal result can be eliminated when requesting grad.
-    scale = eqx.error_if(
-        jnp.ones((), dtype=value.dtype),
-        ~supported,
-        "Krylov derivatives require a nonzero seed and no Arnoldi breakdown; "
-        "use Sequential for derivatives in this regime. "
-        "throw=False applies only to forward evolution failures.",
-    )
-    return _require_krylov_derivative(value, supported), scale * tangent
-
-
-class _RequireKrylovDerivative(BatchablePrimitive):
-    r"""Attach a support check to differentiation of a numerical projection value.
-
-    The primal map is the identity $v\mapsto v$ and does not reject a value when
-    the dynamic support predicate is false. Its tangent is the identity only
-    when the predicate holds; otherwise differentiation raises. The projection
-    code uses this for nonzero-seed and no-breakdown requirements of direct
-    Arnoldi differentiation.
-
-    A checked unit multiplier on the tangent path survives reverse transposition,
-    so requesting a gradient alone cannot eliminate the check with the unused
-    primal. The predicate is diagnostic, not a derivative target. This guard
-    concerns AD through the numerical projection; the mathematical power rules
-    use stopped primal construction and their own sensitivity checks.
-    """
-
-    def __init__(self, value, supported):
-        """Declare an identity operation with a dynamic support predicate."""
-        self.in_avals = (value, supported)
-        self.out_aval = value
-        self.params = {}
-        super().__init__()
-
-    def expand(self, *args):
-        """Return the unchecked forward value."""
-        value, _ = args
-        return value
-
-    def jvp(self, primals, tangents):
-        """Check support on the tangent path."""
-        return _require_krylov_derivative_jvp(primals, tangents)
-
-    lin, linearized = hijax.linearize_from_jvp
-    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
-
-    def batch_dim_rule(self, axis_data, dims):
-        """Map the result when either input is mapped."""
-        return 0 if any(dim is not None for dim in dims) else None
-
-
-def _require_krylov_derivative(value, supported):
-    """Bind the derivative-only support check."""
-    return _RequireKrylovDerivative(jax.typeof(value), jax.typeof(supported))(
-        value, supported
-    )
-
-
-def _guard_krylov_derivative(value, basis, norm_squared):
-    """Reject zero seeds and any zero column left by the breakdown branch."""
-    supported = (norm_squared > 0) & jnp.all(jnp.sum(basis * basis, axis=0) > 0)
-    return _require_krylov_derivative(value, supported)
 
 
 class _ShiftedSolveResult(NamedTuple):
@@ -223,10 +164,7 @@ def _rational_projection(problem, seed, dimension, shifted_solve, *, return_basi
     dimension = min(seed.size, dimension)
     # Zero seeds and invariant-subspace breakdown leave zero columns. Preserve
     # that convention for both dense and matrix-free resolvent applications.
-    norm_squared = seed @ seed
-    norm = jnp.sqrt(jnp.where(norm_squared > 0, norm_squared, 1.0))
-    basis = jnp.zeros((seed.size, dimension), dtype=seed.dtype)
-    basis = basis.at[:, 0].set(seed / norm)
+    basis = _initial_basis(seed, dimension)
 
     def step(index, carry):
         """Apply the resolvent and accumulate checks before reorthogonalization."""
@@ -364,11 +302,7 @@ def _polynomial_power_action(
     """Build a reorthogonalized Arnoldi basis using only operator applications."""
     # Powers through k live in K_{k+1}; do not build unused basis vectors.
     dimension = min(dimension, seed.size, problem.steps + 1)
-    norm_squared = seed @ seed
-    norm = jnp.sqrt(jnp.where(norm_squared > 0, norm_squared, 1.0))
-    basis = (
-        jnp.zeros((seed.size, dimension), dtype=seed.dtype).at[:, 0].set(seed / norm)
-    )
+    basis = _initial_basis(seed, dimension)
 
     def step(index, carry):
         """Extend the polynomial space, keeping zero columns after breakdown."""

@@ -48,7 +48,7 @@ from jax.experimental import hijax
 from jax.flatten_util import ravel_pytree
 
 from .._backend.jacobi import Jacobi, _assemble_reduced
-from .._batching import BatchablePrimitive
+from .._batching import BatchablePrimitive, tangent_axis
 from .._frequency import AbstractFrequencyMap
 from .operators import _numerical_operator
 
@@ -163,11 +163,7 @@ class _Spec:
 
     static: tuple
     unravel: Callable
-    copies: int
-    rank: int
-    padded_rank: int
-    diploid_padded_rank: int
-    segregating: bool
+    reduced_settings: tuple[int, int, int, int, bool]
     process_size: int
     augmented: bool
     transposed: bool
@@ -176,12 +172,8 @@ class _Spec:
         frequency_map, source = eqx.combine(self.unravel(parameters), self.static)
         expectation = _assemble_reduced(
             frequency_map,
-            self.copies,
-            self.rank,
-            self.padded_rank,
-            self.diploid_padded_rank,
+            self.reduced_settings,
             geometry[0] if geometry else None,
-            segregating=self.segregating,
         )
         return _forward_matrix(expectation, source, self.transposed)
 
@@ -288,6 +280,12 @@ class _Axis(hijax.MappingSpec):
 
     def __add__(self, offset):
         return self._shift(offset, 1)
+
+
+@tangent_axis.register
+def _(dim: _Axis):
+    """The operator tangent carries only the mapped parameter vector."""
+    return dim.axis
 
 
 @dataclass(frozen=True)
@@ -435,8 +433,7 @@ def _pack(operator, matrix):
         (operator.frequency_map, operator.source), eqx.is_array
     )
     parameters, unravel = ravel_pytree(dynamic)
-    backend = operator.backend
-    correction = backend._reduced_correction(
+    settings, correction = operator.backend._reduced_inputs(
         operator.frequency_map, segregating=operator.segregating
     )
     geometry = () if correction is None else (correction,)
@@ -444,11 +441,7 @@ def _pack(operator, matrix):
     spec = _Spec(
         static,
         unravel,
-        backend._gene_copies,
-        backend.rank,
-        backend.padded_rank,
-        backend._diploid_padded_rank,
-        operator.segregating,
+        settings,
         process_size,
         operator.source is not None,
         operator.transposed,
