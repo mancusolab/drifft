@@ -109,12 +109,20 @@ def test_jacobi_sequential_history_matches_its_actual_transition_transpose():
 
 
 @pytest.mark.parametrize("throw", [False, True])
-def test_sequential_jacobi_one_step_does_not_apply_reduced_assembly_domain(throw):
-    """Strong selection is valid for arbitrary-probability one-step evaluation."""
+def test_sequential_jacobi_validates_bound_process_even_for_one_generation(throw):
+    """Direct rows accept strong selection; reduced holds require planned geometry."""
     backend = drifft.Jacobi(8)
     rule = drifft.DiploidSelection(0.8, 0.99)
     initial = jnp.eye(17)[5]
     expected = drifft.Transition(drifft.FFT(8), rule).advance(initial)
+    direct = drifft.Transition(backend, rule).advance(initial)
+    assert jnp.allclose(direct, expected, atol=2e-12)
+    with pytest.raises(eqx.EquinoxRuntimeError, match="max_strength"):
+        drifft.Sequential().advance(
+            backend, initial, frequency_map=rule, generations=1, throw=throw
+        ).distribution.block_until_ready()
+
+    backend = drifft.Jacobi(8, max_strength=0.99)
     actual = drifft.Sequential().advance(
         backend, initial, frequency_map=rule, generations=1, throw=throw
     )

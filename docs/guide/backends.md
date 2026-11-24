@@ -49,10 +49,11 @@ need not be monotone or have absorbing endpoints. For arbitrary evaluation
 points, use `backend.expect(probabilities, values)` or
 `backend.advance(probabilities, distribution)` directly.
 
-!!! warning "Jacobi reduced Krylov restrictions"
+!!! warning "Jacobi reduced assembly"
 
     All backends support arbitrary valid frequency maps for one-generation
-    operations and Sequential evolution. Jacobi's reduced Krylov assembly supports
+    operations and Sequential evolution. Jacobi uses reduced coordinates for supported maps in Sequential and Krylov.
+    Sequential falls back to ordinary transitions for other map structures. Reduced assembly supports
     a restricted family of selection and mutation maps within configured parameter
     bounds; check the [Jacobi API](../api/backends.md#drifft.Jacobi) before using it.
 

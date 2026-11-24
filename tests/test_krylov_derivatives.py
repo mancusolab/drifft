@@ -252,3 +252,112 @@ def test_zero_source_mass_sensitivity(backend_type, method_type):
     assert jnp.allclose(
         actual, jax.grad(reference)(jnp.asarray(0.0)), atol=2e-9, rtol=2e-8
     )
+
+
+@pytest.mark.parametrize(
+    "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
+)
+def test_absorbing_mass_preserves_extreme_scales(method_type):
+    """Representable absorbing mass survives seed normalization at either extreme."""
+    backend = drifft.Dense(2)
+    method = method_type(dimension=4, atol=0.0)
+    mass = jnp.eye(5)[0]
+
+    def advance(scale):
+        result = method.advance(
+            backend,
+            mass * scale,
+            frequency_map=drifft.Neutral(),
+            generations=2,
+            throw=False,
+        )
+        return result.distribution / scale, result.converged
+
+    states, converged = jax.jit(jax.vmap(advance))(jnp.array([1e-180, 1e180]))
+    assert jnp.all(converged)
+    assert jnp.allclose(states, mass, atol=0.0)
+
+
+@pytest.mark.parametrize(
+    "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
+)
+def test_jacobi_ad_of_batched_parameters(method_type):
+    """Differentiate mapped operators against the direct sequential recurrence."""
+    backend = drifft.Jacobi(3)
+    mass = jnp.eye(5)[2]
+    rates = jnp.array([0.01, 0.04])
+    direction = jnp.array([0.3, -0.2])
+
+    def batched(method, rates, mass):
+        def epoch(rate):
+            return method.advance(
+                backend,
+                mass,
+                frequency_map=drifft.Mutation(rate, 0.03),
+                generations=4,
+                segregating=True,
+            ).distribution
+
+        return jnp.cos(jax.vmap(epoch)(rates)).sum()
+
+    def derivatives(method):
+        def fn(p, x):
+            return batched(method, p, x)
+
+        grad = jax.jit(jax.grad(fn, argnums=(0, 1)))(rates, mass)
+        jvp = jax.jit(lambda p, d: jax.jvp(lambda q: fn(q, mass), (p,), (d,))[1])(
+            rates, direction
+        )
+        return *grad, jvp
+
+    for actual, expected in zip(
+        derivatives(method_type(dimension=8)),
+        derivatives(drifft.Sequential()),
+        strict=True,
+    ):
+        assert jnp.allclose(actual, expected, atol=2e-9, rtol=2e-8)
+
+
+@pytest.mark.parametrize(
+    "method_type", [drifft.PolynomialKrylov, drifft.RationalKrylov]
+)
+@pytest.mark.parametrize("backend_type", [drifft.Dense, drifft.Jacobi])
+@pytest.mark.parametrize("scale", [0.0, 1e-18, 1e-10, 1.0])
+def test_strict_sensitivity_accepts_scaled_directions(method_type, backend_type, scale):
+    """A relative-only tangent budget follows the scale of its direction."""
+    backend = backend_type(2)
+    mass = jnp.eye(5)[2]
+
+    def tangent(method, direction):
+        def epoch(selection):
+            return method.advance(
+                backend,
+                mass,
+                frequency_map=drifft.AdditiveSelection(selection),
+                generations=5,
+            ).distribution
+
+        return jax.jvp(epoch, (jnp.asarray(0.1),), (direction,))[1]
+
+    method = method_type(dimension=12, rtol=1e-6, atol=0, check_sensitivity=True)
+    actual = tangent(method, jnp.asarray(scale))
+    expected = tangent(drifft.Sequential(), jnp.asarray(scale))
+    assert jnp.allclose(actual, expected, atol=scale * 1e-8, rtol=1e-6)
+
+
+def test_reverse_rejects_overflow_in_parameter_contraction():
+    """Finite adjoint factors can still overflow when contracted into parameters."""
+    backend = drifft.Dense(4)
+    mass = jnp.eye(9)[4]
+    method = drifft.PolynomialKrylov(dimension=9)
+
+    def objective(t):
+        mapping = drifft.FrequencyMap(
+            lambda x: jnp.broadcast_to(jax.nn.sigmoid(1e308 * t), x.shape)
+        )
+        result = method.advance(backend, mass, frequency_map=mapping, generations=2)
+        return jnp.arange(9) @ result.distribution
+
+    assert jnp.isclose(objective(0.0), 4.0)
+    with pytest.raises(Exception, match="nonfinite parameter cotangent"):
+        jax.block_until_ready(jax.jit(jax.grad(objective))(0.0))

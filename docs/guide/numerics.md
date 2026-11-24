@@ -125,7 +125,7 @@ the frequency map construction. This rescales forward sensitivity directions
 and can improve Krylov accuracy. It does not guarantee accuracy or make the
 frequency map itself operate in log space. Use ordinary coordinates for zero
 rates or selection that can be zero or negative. The
-[log-input likelihood example](../methods/autodiff.md#use-log-inputs-for-positive-parameters)
+[log-input likelihood example](../examples/selection_sensitivity.md#likelihood-derivatives-for-mutation-and-selection)
 shows the chain rule, sequential JVPs, and finite-difference checks.
 
 Krylov operator sensitivities support first derivatives; use Sequential for

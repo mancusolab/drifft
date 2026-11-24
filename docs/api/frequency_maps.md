@@ -17,15 +17,14 @@ compositions use the same interface.
     [`FrequencyMap`](#drifft.FrequencyMap) must satisfy the same contract, and
     every component of a [`Composition`](#drifft.Composition) must be valid.
 
-!!! note "Jacobi reduced Krylov restrictions"
+!!! note "Jacobi reduced assembly"
 
     [`Jacobi`](backends.md#drifft.Jacobi) imposes additional restrictions when used
-    for reduced Krylov evolution: the map must support reduced assembly, and
+    for reduced evolution. The map must support reduced assembly, and
     both derived diploid selection coefficients must have absolute value at
     most its configured `max_strength`, which is strictly below one. These
-    restrictions do not apply to one-generation operations or
-    [`Sequential`](methods.md#drifft.Sequential) evolution; the frequency maps'
-    own parameter domains still apply.
+    bounds apply to both Sequential and Krylov in reduced coordinates. Sequential uses
+    ordinary transitions for map structures that reduced assembly cannot represent.
 
 ??? abstract "AbstractFrequencyMap"
 

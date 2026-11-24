@@ -21,11 +21,10 @@ has $r+2$ coordinates, or $r$ when retaining only segregating states.
 Repeated count-space evolution processes a population-sized vector at every
 step. A dense transition costs $O(M^2)$ per application; FFT and NUFFT reduce
 that cost but still operate on population-sized states. Jacobi instead
-factors the transition through polynomial coordinates, allowing Krylov to
+factors the transition through polynomial coordinates, allowing Sequential and Krylov to
 work with a reduced matrix whose products cost $O(r^2)$. When $r\ll M$,
 long intervals can amortize the cost of encoding and decoding the state.
-This saving applies to reduced Krylov evolution; Sequential repeats the
-count-space transforms each generation.
+Sequential encodes once, iterates the reduced matrix, and decodes once per supported hold.
 
 For destination values $f_j$, separate the endpoint interpolant and expand
 the remaining binomial expectation as
@@ -104,9 +103,9 @@ power approximation.
 | `grad_atol`, `angular_sensitivity` | Optional first-derivative target and parameter-domain sensitivity bound |
 | `max_strength` | Static absolute bound on both diploid coefficients, used to plan padding |
 
-The `max_strength` bound and supported-map restrictions apply to reduced Krylov
-assembly. One-generation operations and Sequential evaluate the frequency map
-directly and accept any map producing valid probabilities.
+The `max_strength` bound and supported-map restrictions apply to reduced
+assembly. Sequential falls back to ordinary one-generation operations for map
+structures outside the supported family.
 
 The one-step `error_report` separates ideal projection, coefficient quadrature,
 and sampled-tail bounds. Numerical arithmetic remains uncertified. Explicit

@@ -38,11 +38,11 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 
-from .problem import EpochResult, _epoch_result, _working_problem
+from .problem import _epoch_result, _relative_l1_budget, _working_problem
 from .projection import (
     _dense_shifted_solve,
     _matrix_power_matvec,
-    _projected_result,
+    _norm_scale,
     _rational_shift,
     project,
 )
@@ -70,9 +70,10 @@ def _sensitivity_projection(
     shifted_solve=None,
 ):
     """Build the requested Arnoldi space, retaining its basis for adjoint factors."""
-    problem = _working_problem(operator, initial, steps)
+    problem = _working_problem(operator, steps)
     return project(
         problem,
+        initial,
         dimension,
         polynomial=polynomial,
         return_basis=True,
@@ -92,6 +93,7 @@ def _frechet_power(
     atol,
     polynomial,
     check_error=True,
+    direction_scale=1.0,
 ):
     """Approximate the power sensitivity by a coupled block operator action.
 
@@ -102,11 +104,15 @@ def _frechet_power(
     twice that budget. `polynomial` selects polynomial rather than rational
     projection. Both output blocks must satisfy their own `atol + rtol * L1`
     tolerance, so a large primal cannot mask an inaccurate tangent.
+    `direction_scale` restores a jointly normalized perturbation and state direction
+    to their original units before applying the tangent tolerance.
     With `check_error=False`, skip error estimation and retain only inner-solve
     and finite-output checks; the returned error estimate is zero (not computed).
     """
     if steps == 0:
-        return _epoch_result(tangent_initial, jnp.asarray(0.0), atol, False)
+        return _epoch_result(
+            direction_scale * tangent_initial, jnp.asarray(0.0), atol, False
+        )
     size = initial.size
     shifted_solve = None
     if isinstance(operator, lx.MatrixLinearOperator):
@@ -148,30 +154,48 @@ def _frechet_power(
         polynomial=polynomial,
         shifted_solve=shifted_solve,
     )
-    fine = projection.fine
+    fine = jnp.concatenate(
+        (direction_scale * projection.fine[:size], projection.fine[size:])
+    )
     if not check_error:
         # Check both blocks even though only the tangent is returned.
         result = _epoch_result(fine, jnp.asarray(0.0), 0.0, False, projection.success)
         return result._replace(distribution=result.distribution[:size])
-    # Require the combined error to satisfy each output block's tolerance. A large
-    # primal must not mask an inaccurate, small sensitivity. This remains an estimate.
-    tolerance = jnp.minimum(
-        atol + rtol * jnp.sum(jnp.abs(fine[:size])),
-        atol + rtol * jnp.sum(jnp.abs(fine[size:])),
+    # Keep separate L1 budgets for [dx, x]. A lower-block defect also
+    # drives the upper block via E on each remaining step. Estimate this
+    # transfer on the defect columns, assuming unit propagation by A as in
+    # the primal estimator. This avoids materializing a matrix-free E.
+    tangent_defect, primal_defect = jnp.split(projection.defect, 2)
+    weights = jnp.stack(
+        (
+            jnp.sum(jnp.abs(tangent_defect), axis=0),
+            jnp.sum(jnp.abs(primal_defect), axis=0),
+        )
     )
-    result = _projected_result(
-        _working_problem(block, seed, steps),
-        projection,
-        0.0,
-        tolerance,
-        False,
+    transfer = jax.lax.map(
+        lambda d: jnp.sum(jnp.abs(perturbation.mv(d))), primal_defect.T
     )
-    return EpochResult(
-        result.distribution[:size],
-        result.error_estimate,
-        result.converged,
-        result.status,
+
+    def accumulate(index, carry):
+        state, errors = carry
+        coefficients = jnp.abs(state)
+        errors = errors + weights @ coefficients
+        errors = errors.at[0].add((steps - 1 - index) * (transfer @ coefficients))
+        return projection.projected @ state, errors
+
+    _, errors = jax.lax.fori_loop(
+        0, steps, accumulate, (projection.coordinates, jnp.zeros(2, dtype=fine.dtype))
     )
+    if projection.coarse is not None:
+        difference = (projection.fine - projection.coarse).reshape(2, size)
+        errors = jnp.maximum(errors, jnp.sum(jnp.abs(difference), axis=1))
+    # Restore the caller's units before checking the tangent's absolute budget.
+    errors = errors.at[0].multiply(direction_scale)
+    tolerances = atol + jax.vmap(_relative_l1_budget, in_axes=(0, None))(
+        fine.reshape(2, size), rtol
+    )
+    result = _epoch_result(fine, errors, tolerances, False, projection.success)
+    return result._replace(distribution=fine[:size])
 
 
 def _frechet_core(left_matrix, right_matrix, left_seed, right_seed, steps):
@@ -188,6 +212,12 @@ def _frechet_core(left_matrix, right_matrix, left_seed, right_seed, steps):
     )
     seed = jnp.concatenate((jnp.zeros((n, m)), jnp.eye(m)), axis=0)
     return _matrix_power_matvec(block, seed, steps)[:n]
+
+
+def _scaled_norm(value):
+    """Compute a Euclidean or Frobenius norm without squaring unscaled entries."""
+    scale = _norm_scale(value)
+    return scale * jnp.linalg.norm(value / scale)
 
 
 def _frechet_adjoint_factors(
@@ -248,20 +278,20 @@ def _frechet_adjoint_factors(
             steps,
         )
         difference = core.at[:left_half, :right_half].add(-coarse)
-        error = jnp.linalg.norm(difference)
+        error = _scaled_norm(difference)
     # A nested difference can vanish before either projected orbit reaches the
     # part of the spectrum contributing to the pullback. Track intermediate
     # recurrence defects as well. Unit amplification mirrors the primal defect
     # diagnostic; for general nonnormal operators this remains a heuristic,
     # rather than a certified error bound.
-    left_weights = jnp.linalg.norm(left_projection.defect, axis=0)
-    right_weights = jnp.linalg.norm(right_projection.defect, axis=0)
+    left_weights = jax.vmap(_scaled_norm, in_axes=1)(left_projection.defect)
+    right_weights = jax.vmap(_scaled_norm, in_axes=1)(right_projection.defect)
 
     def orbit_step(carry, _):
         left_state, right_state, left_error, right_error = carry
         diagnostics = (
-            jnp.linalg.norm(left_state),
-            jnp.linalg.norm(right_state),
+            _scaled_norm(left_state),
+            _scaled_norm(right_state),
             left_error,
             right_error,
         )
@@ -274,8 +304,8 @@ def _frechet_adjoint_factors(
         return following, diagnostics
 
     seed_errors = (
-        jnp.linalg.norm(cotangent - u @ c),
-        jnp.linalg.norm(initial - v @ x),
+        _scaled_norm(cotangent - u @ c),
+        _scaled_norm(initial - v @ x),
     )
     _, (left_norms, right_norms, left_errors, right_errors) = jax.lax.scan(
         orbit_step, (c, x, *seed_errors), None, length=steps
@@ -290,6 +320,6 @@ def _frechet_adjoint_factors(
     converged = (
         numerical_success
         & jnp.isfinite(error)
-        & (error <= atol + rtol * jnp.linalg.norm(core))
+        & (error <= atol + rtol * _scaled_norm(core))
     )
     return left, v, error, converged

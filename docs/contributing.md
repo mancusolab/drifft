@@ -63,7 +63,7 @@ Keep names aligned with the direction of the transition:
 
 | Name | Meaning |
 | --- | --- |
-| `backend` | Transition representation ([`FFT`](api/backends.md#drifft.FFT), [`NUFFT`](api/backends.md#drifft.NUFFT), [`Jacobi`](api/backends.md#drifft.Jacobi), or reference [`Dense`](api/backends.md#drifft.Dense)); Jacobi also supplies reduced Krylov geometry |
+| `backend` | Transition representation ([`FFT`](api/backends.md#drifft.FFT), [`NUFFT`](api/backends.md#drifft.NUFFT), [`Jacobi`](api/backends.md#drifft.Jacobi), or reference [`Dense`](api/backends.md#drifft.Dense)); Jacobi also supplies reduced coordinates for constant-size holds |
 | `method` | Geometry-free epoch algorithm ([`Sequential`](api/methods.md#drifft.Sequential), [`PolynomialKrylov`](api/methods.md#drifft.PolynomialKrylov), or [`RationalKrylov`](api/methods.md#drifft.RationalKrylov)) |
 | `backend_factory`, `boundary_backend_factory` | Prepare transition geometry for demographic holds and size changes |
 | `frequency_map` | Selection, mutation, or a composition of both |
@@ -84,8 +84,8 @@ remain comparable; live code calls the prepared object a backend.
 [`DemographicTransition`](api/demography.md#drifft.DemographicTransition) binds that geometry to a frequency map and epoch method
 without rebuilding backends; binding is supported inside JAX transformations.
 Do not introduce a public epoch wrapper. [`prepare_epoch`](api/methods.md#drifft.prepare_epoch) returns a PyTree
-described by the read-only [`EpochProblem`](api/methods.md#drifft.EpochProblem) protocol: the working operator,
-initial state, exponent, reconstruction, and physical error measurements.
+with the [`EpochProblem`](api/methods.md#drifft.EpochProblem) interface for encoding, applying the
+working operator, reconstruction, and physical error measurements.
 Custom methods use this public contract; projection bookkeeping remains private.
 The method computes a power action without knowing the
 biological observation likelihood. Shifted linear solves use Lineax internally;
@@ -120,14 +120,12 @@ autodiff layer. Keep these imports one-way; the `_demography` package re-exports
 the public classes without defining execution logic.
 
 Projection and sensitivity kernels do not import backends. Preparation owns
-the representation boundary; Sequential uses the one-generation transition,
-while Krylov methods may use a reduced representation. Keep Dense's reference
-calculation independent of the optimized polynomial kernels.
+the representation boundary. Supported Jacobi holds use reduced coordinates for
+both Sequential and Krylov. Sequential uses ordinary transitions for other
+maps. Keep Dense's reference calculation independent of the optimized
+polynomial kernels.
 
-Evolution methods declare `allows_reduced_representation` on the abstract method
-contract. True permits reduction when the backend provides it; false requires
-population coordinates. Preparation and demographic validation use that declaration rather
-than concrete method-type checks. The internal power protocol owns primal/JVP
+The internal power protocol owns primal/JVP
 callbacks; HiJAX calls the sensitivity kernels directly for Krylov pullbacks.
 Dense and GMRES resolvent applications share one rational Arnoldi loop, while
 Jacobi owns its reduced expectation assembly in `_backend/jacobi.py`.

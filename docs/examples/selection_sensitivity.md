@@ -97,7 +97,7 @@ The log derivative equals $s$ times the ordinary derivative. It measures the
 change in loss probability per small relative change in selection strength.
 Taking logs excludes zero and negative selection and does not enforce the
 frequency map's upper bound. For a likelihood with two mutation rates and
-selection, see the [log-input JVP example](../methods/autodiff.md#use-log-inputs-for-positive-parameters).
+selection, see the [log-input JVP example](#likelihood-derivatives-for-mutation-and-selection).
 Log inputs can improve numerical scaling, but still require accuracy checks.
 
 ## Interpretation
@@ -111,3 +111,75 @@ The finite-difference comparison checks differentiation of this numerical
 calculation. See [accuracy and differentiation](../guide/numerics.md) for
 backend validation and [population histories](../api/demography.md) for
 changing-size models.
+
+## Likelihood derivatives for mutation and selection
+
+This small history starts with no derived copies and observes five derived
+copies in a sample of 40. Geometry stays outside the differentiated function.
+Three sequential JVPs compute derivatives with respect to the two log mutation
+rates and log selection strength without batching the three directions together.
+
+```python
+import jax
+import jax.numpy as jnp
+import drifft
+
+jax.config.update("jax_enable_x64", True)
+history = drifft.Demography([128, 96, 160], [200, 100])
+geometry = history.prepare(
+    backend_factory=drifft.Jacobi, boundary_backend_factory=drifft.FFT
+)
+sampling = drifft.HypergeometricSampling(160, sample_size=20, accuracy=1e-10)
+initial = jnp.zeros(257).at[0].set(1.0)
+method = drifft.RationalKrylov(
+    dimension=32, rtol=1e-10, atol=1e-13, check_sensitivity=False
+)
+
+
+@jax.jit
+def log_likelihood(log_parameters):
+    forward_rate, backward_rate, strength = jnp.exp(log_parameters)
+    process = drifft.Composition(
+        drifft.Mutation(forward_rate, backward_rate),
+        drifft.AdditiveSelection(strength),
+    )
+    model = drifft.DemographicTransition(geometry, process, method=method)
+    result = model.advance(initial)
+    return jnp.log(sampling.advance(result.distribution)[5])
+
+
+@jax.jit
+def directional_derivative(log_parameters, direction):
+    return jax.jvp(log_likelihood, (log_parameters,), (direction,))
+
+
+log_parameters = jnp.log(jnp.array([1e-8, 1e-8, 2e-4]))
+directions = jnp.eye(3)
+partials = []
+for direction in directions:
+    value, partial = jax.block_until_ready(
+        directional_derivative(log_parameters, direction)
+    )
+    partials.append(partial)
+log_gradient = jnp.stack(partials)
+print("Log likelihood:", value)
+print("Derivatives with respect to log parameters:", log_gradient)
+
+# Convert units afterward if derivatives with respect to rates are needed.
+rate_gradient = log_gradient / jnp.exp(log_parameters)
+
+# Perturb the log inputs, using several steps to inspect convergence or noise.
+for step in (0.03, 0.01, 0.003):
+    finite_difference = jnp.stack([
+        (log_likelihood(log_parameters + step * direction)
+         - log_likelihood(log_parameters - step * direction)) / (2 * step)
+        for direction in directions
+    ])
+    print("Log step:", step, "Finite differences:", finite_difference)
+```
+
+`log_gradient` contains $\partial\log L/\partial\log\theta$, not
+$\partial\log L/\partial\theta$. For small relative parameter changes,
+these derivatives give the corresponding change in log likelihood.
+`check_sensitivity=False` skips extra heuristic error estimation; it does not
+choose a different derivative algorithm or disable ordinary evolution checks.

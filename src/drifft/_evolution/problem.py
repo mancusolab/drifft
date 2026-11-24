@@ -20,7 +20,7 @@ alone does not establish the accuracy of a sensitivity calculation.
 """
 
 from collections.abc import Callable
-from typing import NamedTuple, Protocol, final
+from typing import NamedTuple, final
 
 import equinox as eqx
 import jax
@@ -83,159 +83,176 @@ result automatically; constructing it directly performs no numerical checks.
 """
 
 
-class EpochProblem(Protocol):
-    r"""Read-only algorithm inputs returned by [`prepare_epoch`][drifft.prepare_epoch].
+class PowerResult(NamedTuple):
+    r"""Working-coordinate solution and diagnostics from an epoch solver.
 
-    Approximate `operator**steps @ initial` in the provided working coordinates,
-    then use `result` to reconstruct population mass and check convergence.
-    `steps` is the prepared exponent; reduced representations may absorb an
-    initial generation into encoding. Use this exponent rather than the original
-    requested generation count. A source term may add an auxiliary coordinate.
-
-    This protocol describes drifft's prepared PyTree; obtain instances through
-    [`prepare_epoch`][drifft.prepare_epoch]. It is not a constructor or an interface for supplying
-    arbitrary user-defined problem objects to built-in methods.
-
-    **Working inputs:**
-
-    - `operator`: Square Lineax operator acting on working vectors. Apply it with
-      `operator.mv(state)`; a dense matrix representation is not required.
-    - `initial`: One-dimensional float64 working vector. Its length may differ
-      from the population distribution because of reduction or a source term.
-    - `steps`: Nonnegative Python integer specifying the prepared power. Zero
-      steps means passing `initial` directly to `result`, not skipping reconstruction.
-
-    Treat these inputs as read-only. `reconstruct` converts working coordinates
-    to population mass; `error_norm` measures a working-state error; `result`
-    combines reconstruction with finite-output and convergence checks.
+    For reconstructed mass $p$, the absolute error threshold is
+    $a + r \lVert p\rVert_1$, where $a$ and $r$ are the absolute and relative tolerances.
+    A failed inner solve takes precedence
+    over the error estimate when [`EpochProblem.result`][drifft.EpochProblem.result]
+    determines the final status.
     """
 
-    @property
-    def operator(self) -> lx.AbstractLinearOperator:
-        r"""Linear one-step action in the prepared working coordinates."""
-        ...
+    state: jax.Array
+    error_estimate: float | jax.Array = 0.0
+    atol: float | jax.Array = 0.0
+    rtol: float | jax.Array = 0.0
+    solve_success: bool | jax.Array = True
 
-    @property
-    def initial(self) -> jax.Array:
-        r"""Initial working-state vector, including any auxiliary coordinate."""
-        ...
 
-    @property
-    def steps(self) -> int:
-        r"""Nonnegative static exponent for the prepared linear action."""
-        ...
+PowerResult.__new__.__module__ = __name__
+PowerResult.__new__.__doc__ = r"""Construct a solver result in working coordinates.
 
-    def reconstruct(self, state: jax.Array) -> jax.Array:
-        r"""Convert a final working state to full or interior population mass.
+**Arguments:**
 
-        **Arguments:**
+- `state`: Final working vector with the shape of the encoded initial vector.
+- `error_estimate`: Nonnegative absolute power-error estimate in population coordinates.
+- `atol`, `rtol`: Finite, nonnegative absolute and relative acceptance tolerances.
+- `solve_success`: Scalar boolean indicating whether the required inner solves succeeded.
 
-        - `state`: Vector matching `initial.shape`.
+**Returns:**
 
-        **Returns:**
-
-        Population mass including any final source event and affine offset.
-        """
-        ...
-
-    def error_norm(self, delta: jax.Array) -> jax.Array:
-        r"""Measure working-state error in the representation's acceptance norm.
-
-        **Arguments:**
-
-        - `delta`: Error vector matching `initial.shape`.
-
-        **Returns:**
-
-        Scalar absolute L1 error in population coordinates, including any
-        auxiliary-coordinate defect. Reconstruction's affine offset is excluded.
-        """
-        ...
-
-    def result(
-        self,
-        state: jax.Array,
-        *,
-        error_estimate: float | jax.Array = 0.0,
-        tolerance: float | jax.Array = 0.0,
-        throw: bool = True,
-    ) -> EpochResult:
-        r"""Reconstruct mass and apply the shared finite-output/error checks.
-
-        **Arguments:**
-
-        - `state`: Final working vector, matching `initial.shape`.
-        - `error_estimate`: Nonnegative absolute power-error estimate in population
-          coordinates; zero for exact iteration. Excludes backend error.
-        - `tolerance`: Nonnegative absolute acceptance threshold for that estimate.
-        - `throw`: Raise on failure by default; false retains the candidate.
-
-        **Returns:**
-
-        An [`EpochResult`][drifft.EpochResult] with reconstructed mass, estimate, status and convergence.
-
-        **Raises:**
-
-        `ValueError` for incompatible state or scalar shapes. Negative estimates
-        or invalid tolerances raise regardless of `throw`.
-        Runtime errors for nonfinite mass/estimate or an excessive estimate when
-        `throw=True`. A failed batch member may fail the whole batch.
-        """
-        ...
+A [`PowerResult`][drifft.PowerResult] for reconstruction and convergence checks.
+"""
 
 
 @final
-class _PowerProblem(eqx.Module):
-    """A linear power in working coordinates with an affine output reconstruction."""
+class EpochProblem(eqx.Module):
+    r"""Reusable epoch encoding, working operator, exponent and reconstruction.
+
+    Obtain a problem from `prepare_epoch`. Encode incoming population mass
+    with `encode`, pass the seed to `method.solve`, and finish with `result`.
+    A zero working exponent still requires reconstruction.
+    """
 
     operator: lx.AbstractLinearOperator
-    initial: jax.Array
+    input_map: Callable[[jax.Array], jax.Array]
     steps: int
     output_map: Callable[[jax.Array], jax.Array]
     output_offset: jax.Array
     augmented: bool
     defect_scale: jax.Array
 
-    def decode(self, state: jax.Array) -> jax.Array:
-        """Apply only the linear physical-space output map, excluding the offset."""
+    def encode(self, mass: jax.Array) -> jax.Array:
+        r"""Convert population mass to the initial working vector for this hold.
+
+        **Arguments:**
+
+        - `mass`: Full or segregating population mass matching the prepared grid.
+
+        **Returns:**
+
+        A float64 working vector including the homogeneous coordinate when the hold uses one.
+
+        **Raises:**
+
+        `ValueError` if the mass has the wrong shape.
+        """
+        mass = jnp.asarray(mass, dtype=jnp.float64)
+        if mass.shape != self.output_offset.shape:
+            raise ValueError(
+                f"distribution must have {self.output_offset.size} entries"
+            )
+        state = self.input_map(mass)
+        if self.augmented:
+            state = jnp.concatenate((state, jnp.ones(1, dtype=state.dtype)))
+        return state
+
+    def _decode(self, state: jax.Array) -> jax.Array:
+        """Map working coordinates to population coordinates without the source offset."""
         return self.output_map(state[:-1] if self.augmented else state)
 
     def reconstruct(self, state: jax.Array) -> jax.Array:
-        """Recover final population mass, including the final source contribution."""
-        return self.decode(state) + self.output_offset
+        r"""Recover final population mass, including the final source contribution.
+
+        **Arguments:**
+
+        - `state`: Final working vector with the shape returned by `encode`.
+
+        **Returns:**
+
+        Decoded population mass including the prepared output offset.
+        """
+        return self._decode(state) + self.output_offset
 
     def error_norm(self, delta: jax.Array) -> jax.Array:
-        """Measure physical and auxiliary-coordinate recurrence defects."""
+        r"""Measure physical and auxiliary-coordinate recurrence defects.
+
+        **Arguments:**
+
+        - `delta`: Working-space error vector with the shape returned by `encode`.
+
+        **Returns:**
+
+        The L1 norm of the decoded error plus the absolute error in the homogeneous coordinate, if present.
+        """
         auxiliary = jnp.abs(delta[-1]) if self.augmented else 0.0
-        return jnp.sum(jnp.abs(self.decode(delta))) + auxiliary
+        return jnp.sum(jnp.abs(self._decode(delta))) + auxiliary
 
     def result(
         self,
-        state: jax.Array,
+        solution: PowerResult,
         *,
-        error_estimate: float | jax.Array = 0.0,
-        tolerance: float | jax.Array = 0.0,
         throw: bool = True,
     ) -> EpochResult:
-        """Implement the public prepared-problem result contract."""
-        state = jnp.asarray(state, dtype=self.initial.dtype)
-        error_estimate = jnp.asarray(error_estimate, dtype=jnp.float64)
-        tolerance = jnp.asarray(tolerance, dtype=jnp.float64)
-        if state.shape != self.initial.shape:
-            raise ValueError("state must match the prepared initial shape")
-        if error_estimate.shape != () or tolerance.shape != ():
+        r"""Reconstruct the working solution and check its numerical diagnostics.
+
+        **Arguments:**
+
+        - `solution`: [`PowerResult`][drifft.PowerResult] returned by the epoch solver.
+        - `throw`: Raise on numerical failure. With `False`, return the status for each batch member.
+
+        **Returns:**
+
+        An [`EpochResult`][drifft.EpochResult] with reconstructed mass, error estimate, convergence flag, and status.
+
+        **Raises:**
+
+        `ValueError` for an incompatible state or nonscalar error estimate or tolerance.
+        Invalid tolerances and negative error estimates raise even with `throw=False`.
+        With `throw=True`, a numerical failure in any batch member can raise for the batch.
+        """
+        state = jnp.asarray(solution.state, dtype=jnp.float64)
+        error_estimate = jnp.asarray(solution.error_estimate, dtype=jnp.float64)
+        tolerance = jnp.asarray(solution.atol, dtype=jnp.float64)
+        relative = jnp.asarray(solution.rtol, dtype=state.dtype)
+        if state.shape != self.operator.in_structure().shape:
+            raise ValueError("state must match the prepared working shape")
+        if error_estimate.shape != () or tolerance.shape != () or relative.shape != ():
             raise ValueError("error_estimate and tolerance must be scalars")
         # These are algorithm-domain preconditions. A nonfinite estimate remains
         # a recoverable numerical outcome, while a negative one is invalid input.
         state = eqx.error_if(
             state,
-            (error_estimate < 0) | ~jnp.isfinite(tolerance) | (tolerance < 0),
+            (error_estimate < 0)
+            | ~jnp.isfinite(tolerance)
+            | (tolerance < 0)
+            | ~jnp.isfinite(relative)
+            | (relative < 0),
             "error_estimate must be nonnegative; tolerance must be finite and nonnegative",
         )
-        return _epoch_result(self.reconstruct(state), error_estimate, tolerance, throw)
+        distribution = self.reconstruct(state)
+        tolerance += _relative_l1_budget(distribution, relative)
+        return _epoch_result(
+            distribution, error_estimate, tolerance, throw, solution.solve_success
+        )
 
 
-def _epoch_inputs(distribution, source_mass, gene_copies, generations, segregating):
+EpochProblem.__init__.__doc__ = r"""Bind the representation of a constant-size hold.
+
+Use [`prepare_epoch`][drifft.prepare_epoch] to select these components for a backend.
+
+**Arguments:**
+
+- `operator`, `steps`: Square working operator and nonnegative integer exponent.
+- `input_map`, `output_map`: Population-to-working and working-to-population linear maps.
+- `output_offset`: Population-space vector added after decoding.
+- `augmented`: Whether encoding appends a homogeneous coordinate for source input.
+- `defect_scale`: Multiplier applied to the accumulated recurrence-defect estimate.
+"""
+
+
+def _epoch_source(source_mass, gene_copies, generations, segregating):
     """Normalize shared inputs and enforce static shape contracts."""
     if (
         isinstance(generations, bool)
@@ -245,27 +262,38 @@ def _epoch_inputs(distribution, source_mass, gene_copies, generations, segregati
         raise ValueError("generations must be a nonnegative Python integer")
     if not isinstance(segregating, bool):
         raise ValueError("segregating must be a Python bool")
-    distribution = jnp.asarray(distribution, dtype=jnp.float64)
     size = gene_copies - 1 if segregating else gene_copies + 1
-    if distribution.shape != (size,):
-        raise ValueError(f"distribution must have {size} entries")
     source_mass = (
-        jnp.zeros_like(distribution)
+        jnp.zeros(size, dtype=jnp.float64)
         if source_mass is None
         else jnp.asarray(source_mass, dtype=jnp.float64)
     )
-    if source_mass.shape != distribution.shape:
+    if source_mass.shape != (size,):
         raise ValueError("source_mass must have the same shape as distribution")
-    return distribution, source_mass
+    return source_mass
+
+
+def _relative_l1_budget(vector, relative):
+    """Apply the relative tolerance even when the unscaled L1 sum overflows."""
+    magnitude = jnp.abs(vector)
+    norm = jnp.sum(magnitude)
+    budget = jax.lax.cond(
+        jnp.isinf(norm),
+        lambda: jnp.sum(relative * magnitude),
+        lambda: relative * norm,
+    )
+    return jnp.where(relative == 0, 0.0, budget)
 
 
 def _epoch_result(distribution, error, tolerance, throw, solve_success=True):
     """Apply the finite-output, inner-solve and power-approximation failure policy."""
-    finite = jnp.all(jnp.isfinite(distribution)) & jnp.isfinite(error)
+    finite = jnp.all(jnp.isfinite(distribution)) & jnp.all(jnp.isfinite(error))
     # Apply failure precedence from least to most fundamental: a failed inner
     # solve invalidates the projected action even if its error estimate is small.
     status = EvolutionStatus.where(
-        error <= tolerance, EvolutionStatus.successful, EvolutionStatus.unconverged
+        jnp.all(error <= tolerance),
+        EvolutionStatus.successful,
+        EvolutionStatus.unconverged,
     )
     status = EvolutionStatus.where(finite, status, EvolutionStatus.nonfinite)
     status = EvolutionStatus.where(
@@ -279,17 +307,22 @@ def _epoch_result(distribution, error, tolerance, throw, solve_success=True):
             "epoch failed: nonfinite output, failed shifted solve or unconverged power action; "
             "check inputs and increase dimension or use Sequential",
         )
-    return EpochResult(distribution, error, converged, status)
+    return EpochResult(distribution, jnp.max(error), converged, status)
 
 
-def _working_problem(operator, initial, steps):
-    """Represent an unencoded power action for sensitivity calculations."""
-    return _PowerProblem(
+def _identity(value):
+    """Keep a vector in its current coordinates."""
+    return value
+
+
+def _working_problem(operator, steps):
+    """Wrap a working-coordinate power with identity encoding and decoding."""
+    return EpochProblem(
         operator,
-        initial,
+        _identity,
         steps,
-        lambda x: x,
-        jnp.zeros_like(initial),
+        _identity,
+        jnp.zeros(operator.in_structure().shape, dtype=jnp.float64),
         False,
         jnp.asarray(1.0),
     )

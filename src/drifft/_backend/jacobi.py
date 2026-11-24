@@ -232,17 +232,9 @@ def _assemble_diploid(frequency_map, copies: int, rank: int, padded_rank: int):
     return matrix.at[:, 2:].set((1 - 1 / copies) * columns.T)
 
 
-def _assemble_reduced(
-    frequency_map,
-    copies,
-    rank,
-    padded_rank,
-    diploid_padded_rank,
-    endpoint_correction,
-    *,
-    segregating,
-):
+def _assemble_reduced(frequency_map, settings, endpoint_correction):
     """Assemble ED from shape configuration and only required runtime geometry."""
+    copies, rank, padded_rank, diploid_padded_rank, segregating = settings
     if isinstance(frequency_map, (Neutral, Underdominance)):
         strength = (
             jnp.asarray(0.0)
@@ -580,15 +572,15 @@ class Jacobi(AbstractTransitionBackend):
     $3(1-\xi^2)/4$ on $[-1,1]$. The coefficients $c_k$ represent the interior
     contribution of $v$. Its basis vanishes at both endpoints, preserving $v_0$
     and $v_M$ explicitly. The full representation has $r+2$ coordinates;
-    the segregating representation has $r$. Krylov methods evolve this reduced
-    state; [`Sequential`][drifft.Sequential] applies the count-space transition each generation.
+    the segregating representation has $r$. Sequential and Krylov methods evolve this reduced
+    state for supported frequency maps.
 
     !!! note "Theory"
 
         See [Jacobi reduction](../methods/jacobi.md) for coefficient
         construction, reduced evolution, and approximation errors.
 
-    !!! warning "Reduced Krylov limitations"
+    !!! warning "Reduced assembly limitations"
 
         Reduced assembly supports neutral and diploid selection, standalone
         mutation, and one mutation composed with one supported selection rule
@@ -634,7 +626,7 @@ class Jacobi(AbstractTransitionBackend):
         - `rank`: Interior polynomial count, between one and `2 * pop_size - 1`.
           If omitted, use an ideal one-step polynomial tail bound.
         - `max_strength`: Static bound in `[0, 1)` on the absolute values of
-          both diploid fitness reductions, used for reduced Krylov padding.
+          both diploid fitness reductions, used for reduced assembly padding.
           In reduced assembly, [`Underdominance`][drifft.Underdominance] and [`Overdominance`][drifft.Overdominance] retain their
           finite, nonnegative strength domains, including in mutation compositions.
         - `atol`: Requested one-step maximum row L1 error, in `(0, 1)`.
@@ -796,8 +788,16 @@ class Jacobi(AbstractTransitionBackend):
             * polynomial
         )
 
+    def _supports_reduced_map(self, frequency_map: AbstractFrequencyMap) -> bool:
+        """Whether reduced assembly supports the structure of this map."""
+        try:
+            self._validate_reduced_map(frequency_map)
+        except TypeError:
+            return False
+        return True
+
     def _validate_reduced_map(self, frequency_map: AbstractFrequencyMap) -> None:
-        r"""Check whether a frequency map supports reduced Krylov assembly.
+        r"""Check whether a frequency map supports reduced epoch assembly.
 
         **Arguments:**
 
@@ -807,8 +807,7 @@ class Jacobi(AbstractTransitionBackend):
         **Returns:**
 
         `None`. Checks the map structure only. Reduced evolution checks dynamic
-        parameter domains separately, even for zero generations. One-generation
-        `expect` and [`Sequential`][drifft.Sequential] do not impose these assembly restrictions.
+        parameter domains separately, even for zero generations. Sequential uses ordinary transitions for unsupported map structures.
 
         **Raises:**
 
@@ -825,21 +824,24 @@ class Jacobi(AbstractTransitionBackend):
         selection-family dispatch, padding, and endpoint corrections here so
         evolution code need not know the representation's assembly details.
         """
-        return _assemble_reduced(
-            frequency_map,
+        settings, correction = self._reduced_inputs(
+            frequency_map, segregating=segregating
+        )
+        return _assemble_reduced(frequency_map, settings, correction)
+
+    def _reduced_inputs(self, frequency_map, *, segregating):
+        """Select shared assembly settings and the optional runtime correction."""
+        settings = (
             self._gene_copies,
             self.rank,
             self.padded_rank,
             self._diploid_padded_rank,
-            self._reduced_correction(frequency_map, segregating=segregating),
-            segregating=segregating,
+            segregating,
         )
-
-    def _reduced_correction(self, frequency_map, *, segregating):
-        """Select the sole runtime geometry array needed by reduced assembly."""
+        correction = None
         if segregating and not isinstance(frequency_map, (Neutral, Underdominance)):
-            return self._geometry.endpoint_correction
-        return None
+            correction = self._geometry.endpoint_correction
+        return settings, correction
 
     def _validate_parameters(
         self, distribution: jax.Array, frequency_map: AbstractFrequencyMap

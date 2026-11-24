@@ -144,7 +144,9 @@ def test_exact_factorization_for_refined_grid(stride, M, j0, lo, hi):
         * np.asarray(factors.b)[None, :]
     )
     assert max(np.sum(abs(actual - expected[:, lo : hi + 1]), axis=1)) < 1e-14
-    # Reconstruct the actual zero-padded convolution, including strided gathers.
+    kernel_length = factors.length + factors.stride * (factors.rows - 1)
+    assert factors.nfft == 1 << (kernel_length - 1).bit_length()
+    # Reconstruct the retained convolution outputs, including strided gathers.
     values = np.random.default_rng(321).choice([-1.0, 1.0], hi - lo + 1)
     convolution = np.fft.irfft(
         np.fft.rfft(np.asarray(factors.b) * values, factors.nfft)

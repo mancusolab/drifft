@@ -39,8 +39,7 @@ Here $j_0$ is a reference count, $h$ is the fine log-odds spacing, $k$ is an int
 stride, and $a_t,b_j$ are scaling weights. After scaling $f_j$ by $b_j$, the kernel
 depends only on the difference between the fine output index $kt$ and $j-j_0$.
 FFTs turn this convolution into pointwise multiplication in Fourier
-space; an inverse FFT and scaling by $a_t$ recover the result. Zero-padding
-prevents circular wraparound, and no dense block is constructed.
+space; an inverse FFT and scaling by $a_t$ recover the result. Padding keeps circular wraparound outside the retained output indices.
 Local polynomial interpolation evaluates
 the result at the required offspring probabilities. Near the endpoints,
 direct binomial sums replace the log-odds interpolation.
@@ -48,9 +47,10 @@ direct binomial sums replace the log-odds interpolation.
 The two grids have separate roles. Convolution starts at
 $h=1/(4Mp(1-p))$, where $p=j_0/M$, to control diagonal-factor growth.
 Interpolation uses $H=kh$, selecting a power-of-two stride from the value and
-gradient bounds. Only these coarse nodes are retained. FFT padding covers the
-entire fine-grid span, and strided gathers select its coarse outputs without
-adding a transform.
+gradient bounds. Only these coarse nodes are retained. For $L$ input values and a fine-grid output span of $R$ indices, the
+kernel has $K=R+L-1$ entries. At a transform length of at least $K$, any
+wrapped tail lands before index $L-1$. The coarse gather reads indices from
+$L-1$ through $K-1$.
 
 The input factors use outward `log1p` recurrences from the reference count.
 The output factors use a centered binomial cumulant: a series resolves its

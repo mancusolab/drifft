@@ -66,9 +66,8 @@ the backend that represents one generation.
 [`Sequential`](../api/methods.md#drifft.Sequential) applies the represented transition once per generation.
 [Polynomial and rational Krylov methods](jacobi_krylov.md) instead approximate
 a power action in a smaller, input-dependent subspace. The **working state**
-is the vector evolved by that calculation: population mass for Sequential and
-for FFT, NUFFT, and Dense with Krylov, or encoded coefficients for Jacobi with
-Krylov. Source mass may append an auxiliary coordinate to this vector. The
+contains Jacobi coefficients for supported reduced holds and population mass
+for ordinary transitions. Source mass may append an auxiliary coordinate to this vector. The
 [Jacobi chapter](jacobi.md#problem-and-representation) derives the reduced
 operator and its relation to the physical interval.
 

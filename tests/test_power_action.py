@@ -121,8 +121,6 @@ def test_prepared_epoch_derivatives_include_encoding_and_source(
     """Preparation and reconstruction remain differentiated around the power boundary."""
     from scipy.special import comb
 
-    from drifft._evolution.preparation import _prepare_epoch
-
     copies, steps = 12, 5
     backend = backend_type(copies // 2)
     size = copies - 1 if segregating else copies + 1
@@ -138,10 +136,17 @@ def test_prepared_epoch_derivatives_include_encoding_and_source(
         )
 
     def action(parameters, initial, source):
-        problem = _prepare_epoch(
-            backend, initial, frequency_map(parameters), steps, segregating, source
+        problem = drifft.prepare_epoch(
+            drifft.Sequential(),
+            backend,
+            frequency_map=frequency_map(parameters),
+            generations=steps,
+            segregating=segregating,
+            source_mass=source,
         )
-        return drifft.Sequential().solve(problem).distribution
+        return problem.result(
+            drifft.Sequential().solve(problem, problem.encode(initial))
+        ).distribution
 
     def ref(parameters, initial, source):
         q = frequency_map(parameters)(jnp.arange(copies + 1) / copies)
@@ -197,7 +202,7 @@ def test_krylov_linearized_state_transpose_skips_known_operator_tangent(
             if implicit
             else lx.MatrixLinearOperator(a)
         )
-        return method.solve(_working_problem(operator, state, steps)).distribution
+        return method.solve(_working_problem(operator, steps), state).state
 
     _, linearized = jax.linearize(action, jnp.asarray(0.0), initial)
     transpose = jax.linear_transpose(lambda h: linearized(jnp.asarray(0.0), h), initial)

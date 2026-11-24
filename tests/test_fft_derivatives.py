@@ -9,9 +9,27 @@ import pytest
 from scipy.stats import binom
 
 from drifft import Transition, Underdominance
-from drifft._backend.fft import FFT
+from drifft._backend.fft import FFT, _binomial_weights
 
 jax.config.update("jax_enable_x64", True)
+
+
+def test_binomial_logchoose_tangent_matches_endpoint_overrides():
+    """Only interior rows depend on supplied log coefficients at fixed probability."""
+    counts = jnp.arange(3)
+    probabilities = jnp.array([0.0, 0.3, 1.0])
+    coefficients = jnp.log(jnp.array([1.0, 2.0, 1.0]))
+    direction = jnp.array([2.0, -3.0, 5.0])
+
+    def weights(logchoose):
+        return _binomial_weights(2, counts, logchoose, probabilities)
+
+    value, tangent = jax.jvp(weights, (coefficients,), (direction,))
+    expected = jnp.zeros_like(value).at[1].set(value[1] * direction)
+    np.testing.assert_allclose(tangent, expected, atol=1e-15)
+    np.testing.assert_allclose(
+        jax.grad(lambda c: weights(c).sum())(coefficients), value[1]
+    )
 
 
 def test_fft_probability_derivatives_above_binomial_degree_vanish():

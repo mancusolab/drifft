@@ -27,14 +27,11 @@ distinct outcomes passed back to the calling method or sensitivity rule.
 # pattern: Functional Core
 from typing import NamedTuple
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import lineax as lx
-from jax.experimental import hijax
 
-from .._batching import BatchablePrimitive
-from .problem import _epoch_result, _PowerProblem
+from .problem import EpochProblem, PowerResult
 
 
 class ProjectionResult(NamedTuple):
@@ -56,8 +53,23 @@ class ProjectionResult(NamedTuple):
     basis: jax.Array | None
 
 
+def _norm_scale(vector):
+    """Scale by the largest magnitude before squaring, using one for zero."""
+    scale = jnp.max(jnp.abs(vector))
+    return jnp.where(scale == 0, 1.0, scale)
+
+
+def _initial_basis(seed, dimension):
+    """Form the first Arnoldi vector without squaring the unscaled seed."""
+    scaled = seed / _norm_scale(seed)
+    length = jnp.sqrt(scaled @ scaled)
+    unit = scaled / jnp.where(length == 0, 1.0, length)
+    return jnp.zeros((seed.size, dimension), dtype=seed.dtype).at[:, 0].set(unit)
+
+
 def _orthogonalize(basis, candidate):
     """Reorthogonalize twice and return zero at invariant-subspace breakdown."""
+    candidate = candidate / _norm_scale(candidate)
     original_squared = candidate @ candidate
     # Two passes recover orthogonality when the first subtraction loses relative
     # accuracy. Keep zero columns at breakdown instead of dividing roundoff by
@@ -77,7 +89,6 @@ def _project_basis(
     projected = basis.T @ images
     coordinates = basis.T @ seed
     fine = basis @ _matrix_power_matvec(projected, coordinates, steps)
-    fine = _guard_krylov_derivative(fine, basis, seed @ seed)
     defect = images - basis @ projected
     coarse = None
     if compare_nested:
@@ -116,76 +127,6 @@ def _matrix_power_matvec(matrix: jax.Array, vector: jax.Array, steps: int):
     return vector
 
 
-def _require_krylov_derivative_jvp(primals, tangents):
-    """Keep the failure check in both the tangent and transposed tangent paths."""
-    value, supported = primals
-    tangent, _ = tangents
-    tangent = hijax.instantiate_zeros(tangent)
-    # A checked residual multiplier survives transposition to reverse mode.
-    # Checking only the primal result can be eliminated when requesting grad.
-    scale = eqx.error_if(
-        jnp.ones((), dtype=value.dtype),
-        ~supported,
-        "Krylov derivatives require a nonzero seed and no Arnoldi breakdown; "
-        "use Sequential for derivatives in this regime. "
-        "throw=False applies only to forward evolution failures.",
-    )
-    return _require_krylov_derivative(value, supported), scale * tangent
-
-
-class _RequireKrylovDerivative(BatchablePrimitive):
-    r"""Attach a support check to differentiation of a numerical projection value.
-
-    The primal map is the identity $v\mapsto v$ and does not reject a value when
-    the dynamic support predicate is false. Its tangent is the identity only
-    when the predicate holds; otherwise differentiation raises. The projection
-    code uses this for nonzero-seed and no-breakdown requirements of direct
-    Arnoldi differentiation.
-
-    A checked unit multiplier on the tangent path survives reverse transposition,
-    so requesting a gradient alone cannot eliminate the check with the unused
-    primal. The predicate is diagnostic, not a derivative target. This guard
-    concerns AD through the numerical projection; the mathematical power rules
-    use stopped primal construction and their own sensitivity checks.
-    """
-
-    def __init__(self, value, supported):
-        """Declare an identity operation with a dynamic support predicate."""
-        self.in_avals = (value, supported)
-        self.out_aval = value
-        self.params = {}
-        super().__init__()
-
-    def expand(self, *args):
-        """Return the unchecked forward value."""
-        value, _ = args
-        return value
-
-    def jvp(self, primals, tangents):
-        """Check support on the tangent path."""
-        return _require_krylov_derivative_jvp(primals, tangents)
-
-    lin, linearized = hijax.linearize_from_jvp
-    vjp_fwd, vjp_bwd_retval = hijax.vjp_from_jvp
-
-    def batch_dim_rule(self, axis_data, dims):
-        """Map the result when either input is mapped."""
-        return 0 if any(dim is not None for dim in dims) else None
-
-
-def _require_krylov_derivative(value, supported):
-    """Bind the derivative-only support check."""
-    return _RequireKrylovDerivative(jax.typeof(value), jax.typeof(supported))(
-        value, supported
-    )
-
-
-def _guard_krylov_derivative(value, basis, norm_squared):
-    """Reject zero seeds and any zero column left by the breakdown branch."""
-    supported = (norm_squared > 0) & jnp.all(jnp.sum(basis * basis, axis=0) > 0)
-    return _require_krylov_derivative(value, supported)
-
-
 class _ShiftedSolveResult(NamedTuple):
     """Resolvent application and its solver and residual acceptance flag."""
 
@@ -218,16 +159,12 @@ def _dense_shifted_solve(matrix, steps):
     return solve
 
 
-def _rational_projection(problem, dimension, shifted_solve, *, return_basis):
+def _rational_projection(problem, seed, dimension, shifted_solve, *, return_basis):
     """Build one resolvent Arnoldi space using a checked solve callback."""
-    seed = problem.initial
     dimension = min(seed.size, dimension)
     # Zero seeds and invariant-subspace breakdown leave zero columns. Preserve
     # that convention for both dense and matrix-free resolvent applications.
-    norm_squared = seed @ seed
-    norm = jnp.sqrt(jnp.where(norm_squared > 0, norm_squared, 1.0))
-    basis = jnp.zeros((seed.size, dimension), dtype=seed.dtype)
-    basis = basis.at[:, 0].set(seed / norm)
+    basis = _initial_basis(seed, dimension)
 
     def step(index, carry):
         """Apply the resolvent and accumulate checks before reorthogonalization."""
@@ -258,7 +195,8 @@ def _rational_projection(problem, dimension, shifted_solve, *, return_basis):
 
 
 def _gmres_power_action(
-    problem: _PowerProblem,
+    problem: EpochProblem,
+    seed: jax.Array,
     dimension: int,
     *,
     rtol: float = 1e-11,
@@ -272,7 +210,6 @@ def _gmres_power_action(
     Private settings permit numerical experiments without exposing solver choice
     on the public method.
     """
-    seed = problem.initial
     shift = _rational_shift(problem.steps)
     population_size = seed.size - int(problem.augmented)
     spec = jax.ShapeDtypeStruct((population_size,), seed.dtype)
@@ -317,10 +254,12 @@ def _gmres_power_action(
             (solution.result == lx.RESULTS.successful) & (residual <= tolerance),
         )
 
-    return _rational_projection(problem, dimension, solve, return_basis=return_basis)
+    return _rational_projection(
+        problem, seed, dimension, solve, return_basis=return_basis
+    )
 
 
-def _projected_result(problem, projection, rtol, atol, throw):
+def _projected_result(problem, projection, rtol, atol):
     """Check decoded recurrence defects and nested-space differences."""
     fine, coarse = projection.fine, projection.coarse
     defect, projected, coordinates = (
@@ -347,28 +286,23 @@ def _projected_result(problem, projection, rtol, atol, throw):
         0, problem.steps, accumulate, (coordinates, jnp.asarray(0.0))
     )
     defect_estimate *= problem.defect_scale
-    result = problem.reconstruct(fine)
     error = defect_estimate
     if coarse is not None:
-        difference = problem.decode(fine - coarse)
+        difference = problem._decode(fine - coarse)
         error = jnp.maximum(error, jnp.sum(jnp.abs(difference)))
     error = jax.lax.stop_gradient(error)
-    tolerance = atol + rtol * jnp.sum(jnp.abs(result))
-    return _epoch_result(result, error, tolerance, throw, projection.success)
+    return PowerResult(
+        fine, error, atol=atol, rtol=rtol, solve_success=projection.success
+    )
 
 
 def _polynomial_power_action(
-    problem: _PowerProblem, dimension: int, *, return_basis=False
+    problem: EpochProblem, seed: jax.Array, dimension: int, *, return_basis=False
 ):
     """Build a reorthogonalized Arnoldi basis using only operator applications."""
-    seed = problem.initial
     # Powers through k live in K_{k+1}; do not build unused basis vectors.
     dimension = min(dimension, seed.size, problem.steps + 1)
-    norm_squared = seed @ seed
-    norm = jnp.sqrt(jnp.where(norm_squared > 0, norm_squared, 1.0))
-    basis = (
-        jnp.zeros((seed.size, dimension), dtype=seed.dtype).at[:, 0].set(seed / norm)
-    )
+    basis = _initial_basis(seed, dimension)
 
     def step(index, carry):
         """Extend the polynomial space, keeping zero columns after breakdown."""
@@ -394,10 +328,14 @@ def _polynomial_power_action(
     )
 
 
-def project(problem, dimension, *, polynomial, return_basis=False, shifted_solve=None):
+def project(
+    problem, seed, dimension, *, polynomial, return_basis=False, shifted_solve=None
+):
     """Select an Arnoldi kernel without exposing solver policy to callers."""
     if polynomial:
-        return _polynomial_power_action(problem, dimension, return_basis=return_basis)
+        return _polynomial_power_action(
+            problem, seed, dimension, return_basis=return_basis
+        )
     if isinstance(problem.operator, lx.MatrixLinearOperator):
         solve = (
             _dense_shifted_solve(problem.operator.matrix, problem.steps)
@@ -405,6 +343,6 @@ def project(problem, dimension, *, polynomial, return_basis=False, shifted_solve
             else shifted_solve
         )
         return _rational_projection(
-            problem, dimension, solve, return_basis=return_basis
+            problem, seed, dimension, solve, return_basis=return_basis
         )
-    return _gmres_power_action(problem, dimension, return_basis=return_basis)
+    return _gmres_power_action(problem, seed, dimension, return_basis=return_basis)

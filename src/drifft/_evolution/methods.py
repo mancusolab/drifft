@@ -37,17 +37,23 @@ from typing import ClassVar, final
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import lineax as lx
 
-from .._backend import AbstractTransitionBackend
+from .._backend import AbstractTransitionBackend, Jacobi
 from .._frequency import AbstractFrequencyMap
 from .autodiff import _cached_power_action, _frechet_action, _power_action
 from .operators import _numerical_operator, _operator_pushforward
-from .preparation import _prepare_epoch, _prepare_transition, validate_representation
+from .preparation import (
+    _prepare_epoch,
+    validate_domain,
+    validate_representation,
+)
 from .problem import (
     EpochProblem,
     EpochResult,
-    _epoch_result,
-    _PowerProblem,
+    PowerResult,
+    _epoch_source,
+    _identity,
     _working_problem,
 )
 from .projection import _projected_result, project
@@ -61,15 +67,9 @@ from .sensitivity import (
 class AbstractEpochMethod(eqx.Module):
     r"""An algorithm for a prepared linear power action, independent of geometry.
 
-    Concrete methods declare `allows_reduced_representation`: true allows backend
-    reduction during preparation; false retains population coordinates. Direct
-    calls and demographic histories use the same declaration. Implement
-    `validate` and `solve`; the default `advance` prepares and solves an epoch.
+    Implement `validate` and `solve`. The default `advance` prepares a reusable
+    representation, encodes mass, solves the working power, and reconstructs mass.
     """
-
-    allows_reduced_representation: eqx.AbstractClassVar[bool]
-    # This is a preparation requirement, not a test of the concrete method type.
-    # Custom population-coordinate methods must declare False.
 
     @abstractmethod
     def validate(
@@ -95,30 +95,20 @@ class AbstractEpochMethod(eqx.Module):
         ...
 
     @abstractmethod
-    def solve(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
-        r"""Evaluate a power problem returned by [`prepare_epoch`][drifft.prepare_epoch].
+    def solve(self, problem: EpochProblem, initial: jax.Array) -> PowerResult:
+        r"""Evaluate the prepared operator power on an encoded initial vector.
 
         **Arguments:**
 
-        - `problem`: Read-only [`EpochProblem`][drifft.EpochProblem] with the working operator, initial
-          state, exponent, reconstruction and result checks. Use [`prepare_epoch`][drifft.prepare_epoch]
-          to obtain it from population-space inputs; custom methods should use
-          `problem.result` to finish the action.
-        - `throw`: Raise on numerical failure when true; otherwise return status.
+        - `problem`: An [`EpochProblem`][drifft.EpochProblem] from [`prepare_epoch`][drifft.prepare_epoch].
+          Its `steps` field gives the exponent in working coordinates.
+        - `initial`: Float64 working vector returned by `problem.encode(mass)`.
 
         **Returns:**
 
-        An [`EpochResult`][drifft.EpochResult] in population coordinates. Its error estimate covers
-        the power approximation, excluding backend and representation errors.
-
-        **Raises:**
-
-        Runtime errors for numerical failure with `throw=True`. A failed batch
-        member may fail the entire call. For the built-in Krylov methods,
-        sensitivity numerical failures (and heuristic failures when
-        `check_sensitivity=True`) raise even with `throw=False`, and higher-order
-        operator sensitivities are unsupported. Custom methods define their own
-        differentiation and batching behavior.
+        A [`PowerResult`][drifft.PowerResult] containing the final working vector
+        and solver diagnostics. Call `problem.result(solution, throw=...)` to
+        reconstruct population mass and check convergence.
         """
         ...
 
@@ -201,19 +191,21 @@ class AbstractEpochMethod(eqx.Module):
         problem = prepare_epoch(
             self,
             backend,
-            distribution,
             frequency_map=frequency_map,
             generations=generations,
             segregating=segregating,
             source_mass=source_mass,
         )
-        return self.solve(problem, throw=throw)
+        initial = problem.encode(distribution)
+        solution = (
+            PowerResult(initial) if generations == 0 else self.solve(problem, initial)
+        )
+        return problem.result(solution, throw=throw)
 
 
 def prepare_epoch(
     method: AbstractEpochMethod,
     backend: AbstractTransitionBackend,
-    distribution: jax.Array,
     *,
     frequency_map: AbstractFrequencyMap,
     generations: int,
@@ -222,8 +214,8 @@ def prepare_epoch(
 ) -> EpochProblem:
     r"""Prepare a method's working problem from population-space inputs.
 
-    Selects working coordinates using the method's representation declaration,
-    after validating the backend and frequency map. The returned operator
+    Selects working coordinates from the backend and frequency map after method
+    validation. The problem can encode multiple initial distributions. The returned operator
     includes per-generation source mass when supplied; reconstruction restores
     the requested population layout and any final source contribution.
 
@@ -231,16 +223,15 @@ def prepare_epoch(
 
         ```python
         # Split the preparation and solve stages of method.advance.
-        problem = drifft.prepare_epoch(method, backend, initial,
+        problem = drifft.prepare_epoch(method, backend,
             frequency_map=drifft.Neutral(), generations=10, segregating=True)
-        result = method.solve(problem)
+        result = problem.result(method.solve(problem, problem.encode(initial)))
         ```
 
     **Arguments:**
 
-    - `method`: Epoch algorithm whose representation requirement selects preparation.
+    - `method`: Epoch algorithm used for compatibility validation.
     - `backend`: Prepared geometry, constructed outside JIT.
-    - `distribution`: Full or interior mass, as in [`AbstractEpochMethod.advance`][drifft.AbstractEpochMethod.advance].
     - `frequency_map`, `generations`, `segregating`, `source_mass`: Process, static
       duration, state layout and per-generation source as in that interface.
 
@@ -260,12 +251,22 @@ def prepare_epoch(
     if not isinstance(method, AbstractEpochMethod):
         raise TypeError("method must be an AbstractEpochMethod")
     method.validate(backend, frequency_map)
-    if not method.allows_reduced_representation:
-        return _prepare_transition(
-            backend, distribution, frequency_map, generations, segregating, source_mass
+    source = _epoch_source(source_mass, backend._gene_copies, generations, segregating)
+    if generations == 0:
+        offset = validate_domain(backend, jnp.zeros_like(source), frequency_map)
+        operator = lx.IdentityLinearOperator(
+            jax.ShapeDtypeStruct(offset.shape, offset.dtype)
+        )
+        return EpochProblem(
+            operator, _identity, 0, _identity, offset, False, jnp.asarray(1.0)
         )
     return _prepare_epoch(
-        backend, distribution, frequency_map, generations, segregating, source_mass
+        backend,
+        frequency_map,
+        generations,
+        segregating,
+        source,
+        source_mass is not None,
     )
 
 
@@ -290,8 +291,6 @@ class Sequential(AbstractEpochMethod):
     backend approximation and floating-point errors remain.
     """
 
-    allows_reduced_representation: ClassVar[bool] = False
-
     def validate(
         self, backend: AbstractTransitionBackend, frequency_map: AbstractFrequencyMap
     ) -> None:
@@ -309,25 +308,23 @@ class Sequential(AbstractEpochMethod):
 
         `TypeError` for objects outside the backend and frequency-map interfaces.
         """
-        validate_representation(
-            backend, frequency_map, reduced=False, method_name="Sequential"
-        )
+        validate_representation(backend, frequency_map, method_name="Sequential")
 
-    def solve(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
-        r"""Iterate in working coordinates and reconstruct population mass.
+    def solve(self, problem: EpochProblem, initial: jax.Array) -> PowerResult:
+        r"""Apply the prepared operator successively in working coordinates.
 
         **Arguments:**
 
-        - `problem`: Prepared problem; see [`AbstractEpochMethod.solve`][drifft.AbstractEpochMethod.solve].
-        - `throw`: Raise on nonfinite output when true.
+        - `problem`: Prepared epoch supplying the operator and step count.
+        - `initial`: Encoded initial vector for this epoch.
 
         **Returns:**
 
-        An [`EpochResult`][drifft.EpochResult] with zero power-approximation error. This does not
-        measure accumulated backend error or floating-point roundoff.
+        A [`PowerResult`][drifft.PowerResult] with the final vector and zero
+        power-approximation error. A zero exponent returns the initial vector.
         """
-        state = _power_action(self, problem.operator, problem.initial, problem.steps)
-        return problem.result(state, throw=throw)
+        operator = _numerical_operator(problem.operator)
+        return PowerResult(_power_action(self, operator, initial, problem.steps))
 
     def _power_action(self, operator, initial, steps):
         """Apply repeated operator actions in working coordinates."""
@@ -370,7 +367,6 @@ class AbstractKrylovMethod(AbstractEpochMethod):
     or shifted-solve strategies.
     """
 
-    allows_reduced_representation: ClassVar[bool] = True
     _polynomial: eqx.AbstractClassVar[bool]
 
     dimension: int = 64
@@ -414,13 +410,19 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         `TypeError` for unsupported types or [`Jacobi`][drifft.Jacobi] map compositions. Parameter
         value checks are deferred to preparation, including for zero generations.
         """
-        validate_representation(
-            backend, frequency_map, reduced=True, method_name=type(self).__name__
-        )
+        validate_representation(backend, frequency_map, method_name=type(self).__name__)
+        if isinstance(backend, Jacobi):
+            backend._validate_reduced_map(frequency_map)
 
     def _power_action(self, operator, initial, steps):
-        """Evaluate an unencoded power and require its numerical checks to pass."""
-        return self.solve(_working_problem(operator, initial, steps)).distribution
+        """Evaluate an uncached power on an initial-state tangent or cotangent."""
+        problem = _working_problem(operator, steps)
+        result = problem.result(self.solve(problem, initial), throw=False)
+        return eqx.error_if(
+            result.distribution,
+            ~result.converged,
+            "Krylov sensitivity action did not converge for the state direction",
+        )
 
     def _linearize_power(self, operator, initial, operator_direction, tangent, steps):
         """Retain the cached primal and bind a mathematically transposable direction."""
@@ -428,7 +430,9 @@ class AbstractKrylovMethod(AbstractEpochMethod):
             self, operator, initial, operator_direction, tangent, steps
         )
 
-    def _sensitivity_action(self, operator, perturbation, initial, tangent, steps):
+    def _sensitivity_action(
+        self, operator, perturbation, initial, tangent, steps, *, direction_scale=1.0
+    ):
         """Check numerical failures and optionally the sensitivity error estimate."""
         result = _frechet_power(
             operator,
@@ -441,6 +445,7 @@ class AbstractKrylovMethod(AbstractEpochMethod):
             atol=self.atol,
             polynomial=self._polynomial,
             check_error=self.check_sensitivity,
+            direction_scale=direction_scale,
         )
         return eqx.error_if(
             result.distribution,
@@ -468,37 +473,29 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         )
         return left, right
 
-    def solve(self, problem: EpochProblem, *, throw: bool = True) -> EpochResult:
-        r"""Approximate a prepared power and attach its mathematical sensitivities.
+    def solve(self, problem: EpochProblem, initial: jax.Array) -> PowerResult:
+        r"""Approximate the prepared power in a Krylov space.
 
         **Arguments:**
 
-        - `problem`: Prepared problem; see [`AbstractEpochMethod.solve`][drifft.AbstractEpochMethod.solve].
-        - `throw`: Raise on a failed primal action when true.
+        - `problem`: Prepared epoch supplying the operator, exponent, and error norm.
+        - `initial`: Encoded initial vector used to build the Krylov basis.
 
         **Returns:**
 
-        An [`EpochResult`][drifft.EpochResult] with reconstructed mass and a power-error estimate from
-        accumulated recurrence defects. Rational Krylov also checks a nested space.
-        The estimate is not a certificate
-        and excludes backend approximation. With `throw=False`, inspect `converged`.
+        A [`PowerResult`][drifft.PowerResult] with the working vector, a population-space
+        error estimate, acceptance tolerances, and inner-solve success flag.
 
         **Raises:**
 
-        Runtime errors for failed primal checks with `throw=True`, or failed
-        sensitivity solves/nonfinite outputs regardless of `throw`. Additional
-        sensitivity-error checks raise only with `check_sensitivity=True`.
-        Higher-order operator sensitivities
-        raise explicitly; use [`Sequential`][drifft.Sequential] when they are needed.
+        `TypeError` if `problem` is not an [`EpochProblem`][drifft.EpochProblem].
         """
-        if not isinstance(problem, _PowerProblem):
+        if not isinstance(problem, EpochProblem):
             raise TypeError(
                 "Krylov methods require a problem returned by prepare_epoch"
             )
         if problem.steps == 0:
-            return _epoch_result(
-                problem.reconstruct(problem.initial), jnp.asarray(0.0), self.atol, throw
-            )
+            return PowerResult(initial)
         arrays, static = eqx.partition(problem, eqx.is_array)
         # Basis construction is an adaptive approximation, not the derivative of
         # A**g x. Stop its AD path and attach that mathematical rule to the cached
@@ -507,17 +504,22 @@ class AbstractKrylovMethod(AbstractEpochMethod):
         raw_problem = eqx.tree_at(
             lambda p: p.operator, raw_problem, _numerical_operator(raw_problem.operator)
         )
-        projection = project(raw_problem, self.dimension, polynomial=self._polynomial)
+        projection = project(
+            raw_problem,
+            jax.lax.stop_gradient(initial),
+            self.dimension,
+            polynomial=self._polynomial,
+        )
         fine = _cached_power_action(
             problem.operator,
             self,
-            problem.initial,
+            initial,
             problem.steps,
             projection.fine,
             raw_problem.operator,
         )
         return _projected_result(
-            problem, projection._replace(fine=fine), self.rtol, self.atol, throw
+            problem, projection._replace(fine=fine), self.rtol, self.atol
         )
 
 
